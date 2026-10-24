@@ -17,6 +17,12 @@ importers:
       '@ruobai/chat':
         specifier: workspace:*
         version: link:packages/chat
+      '@ruobai/checkpoints':
+        specifier: workspace:*
+        version: link:packages/checkpoints
+      '@ruobai/checkpoints-web':
+        specifier: workspace:*
+        version: link:packages/checkpoints-web
       '@ruobai/client-modules':
         specifier: workspace:*
         version: link:packages/client-modules
@@ -107,6 +113,9 @@ importers:
       '@ruobai/tool-fs':
         specifier: workspace:*
         version: link:packages/tool-fs
+      '@ruobai/tool-task':
+        specifier: workspace:*
+        version: link:packages/tool-task
       '@ruobai/tools':
         specifier: workspace:*
         version: link:packages/tools
@@ -227,6 +236,33 @@ importers:
         version: link:../session
 
   packages/chat-protocol: {}
+
+  packages/checkpoints:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/checkpoints-web:
+    dependencies:
+      '@ruobai/checkpoints':
+        specifier: workspace:*
+        version: link:../checkpoints
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/client-api:
     devDependencies:
@@ -514,6 +550,21 @@ importers:
       '@ruobai/approval':
         specifier: workspace:*
         version: link:../approval
+
+  packages/tool-task:
+    dependencies:
+      '@ruobai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/tools:
     dependencies:

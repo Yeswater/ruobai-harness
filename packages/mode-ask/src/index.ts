@@ -9,7 +9,7 @@ const mode: ModeDefinition = {
   name: 'Ask',
   order: 10,
   description: '只读问答，不修改文件',
-  allowTools: ['read_file', 'list_dir'],
+  allowTools: ['read_file', 'list_dir', 'grep', 'glob'],
   systemPrompt: [
     'You are in Ask mode.',
     'Answer questions and inspect the workspace with read-only tools.',

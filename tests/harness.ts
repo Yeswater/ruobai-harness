@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import AgentService from '@ruobai/agent'
 import ApprovalService from '@ruobai/approval'
 import ChatService from '@ruobai/chat'
+import CheckpointsService from '@ruobai/checkpoints'
+import CheckpointsWeb from '@ruobai/checkpoints-web'
 import ContextService from '@ruobai/context'
 import { Context } from '@ruobai/cordis'
 import LlmService from '@ruobai/llm'
@@ -23,6 +25,7 @@ import SettingsWeb from '@ruobai/settings-web'
 import ToolRegistry from '@ruobai/tools'
 import BashTools from '@ruobai/tool-bash'
 import FsTools from '@ruobai/tool-fs'
+import ToolTask from '@ruobai/tool-task'
 import UiApi from '@ruobai/ui-server'
 import WebServer, { type Config as WebConfig } from '@ruobai/web-server'
 import WebWs from '@ruobai/web-ws'
@@ -57,6 +60,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(LlmService, { provider: 'mock', model: 'mock-1' }))
   await mount(ctx.plugin(MockProvider, { delay: options.delay ?? 0 }))
   await mount(ctx.plugin(SessionService))
+  await mount(ctx.plugin(CheckpointsService, {
+    root: process.cwd(),
+    store: join(dir, 'checkpoints'),
+  }))
   await mount(ctx.plugin(ToolRegistry))
   await mount(ctx.plugin(FsTools, { root: process.cwd() }))
   await mount(ctx.plugin(BashTools, { root: process.cwd() }))
@@ -75,12 +82,14 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(ContextService, { compactAt: 1_000_000 }))
   await mount(ctx.plugin(ApprovalService))
   await mount(ctx.plugin(AgentService, { maxSteps: 4 }))
+  await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))
 
   await mount(ctx.plugin(WebServer, { port: 0, host: '127.0.0.1', ...options.web }))
   await mount(ctx.plugin(UiApi))
   await mount(ctx.plugin(WorkspaceWeb))
+  await mount(ctx.plugin(CheckpointsWeb))
   await mount(ctx.plugin(SettingsWeb))
   await mount(ctx.plugin(WebWs))
   await mount(ctx.plugin(McpWeb))

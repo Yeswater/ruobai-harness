@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
 import { api, type ContextInfo, type RuntimeInfo } from '../api.ts'
+import { ChangesPanel } from './ChangesPanel.tsx'
 import { FileBrowser } from './FileBrowser.tsx'
 import { CloseIcon } from './Icons.tsx'
 import { Slot } from './Slot.tsx'
@@ -10,7 +11,7 @@ interface DetailsPanelProps {
   onClose: () => void
 }
 
-type Tab = 'session' | 'files' | 'runtime'
+type Tab = 'session' | 'files' | 'changes' | 'runtime'
 
 export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
   const [tab, setTab] = useState<Tab>('session')
@@ -65,6 +66,7 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
         <div className="tabs">
           <button className={`tab ${tab === 'session' ? 'active' : ''}`} onClick={() => setTab('session')}>Session</button>
           <button className={`tab ${tab === 'files' ? 'active' : ''}`} onClick={() => setTab('files')}>Files</button>
+          <button className={`tab ${tab === 'changes' ? 'active' : ''}`} onClick={() => setTab('changes')}>Changes</button>
           <button className={`tab ${tab === 'runtime' ? 'active' : ''}`} onClick={() => setTab('runtime')}>Runtime</button>
         </div>
         <button className="icon-btn subtle" onClick={onClose} aria-label="Close details"><CloseIcon /></button>
@@ -107,7 +109,13 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
               <FileBrowser />
             </div>
           )
-          : (
+          : tab === 'changes'
+            ? (
+              <div className="details-body">
+                <ChangesPanel sessionId={session?.id ?? ''} />
+              </div>
+            )
+            : (
             <div className="details-body">
               {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
               {runtime

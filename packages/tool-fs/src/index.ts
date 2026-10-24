@@ -4,6 +4,7 @@ import type { Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
 import type { ToolDefinition } from '@ruobai/tools'
 import { createDiff } from './diff.ts'
+import { searchTools } from './search.ts'
 
 export interface Config {
   /** Filesystem boundary for every tool. Defaults to the process cwd. */
@@ -52,7 +53,41 @@ async function writeAtomic(target: string, content: string) {
   await rename(temp, target)
 }
 
-function tools(root: string, maxBytes: number): ToolDefinition[] {
+export interface CaptureInput {
+  sessionId?: string
+  path: string
+  tool: string
+  callId?: string
+  before?: Buffer
+  beforeExisted: boolean
+  beforeBytes?: number
+  skipped?: 'too-large' | 'unreadable'
+  after: Buffer
+  diff?: string
+}
+
+export type CaptureFn = (input: CaptureInput) => Promise<void>
+
+interface Snapshot {
+  buffer?: Buffer
+  existed: boolean
+  bytes?: number
+  skipped?: 'too-large' | 'unreadable'
+}
+
+async function snapshot(target: string, maxBytes: number): Promise<Snapshot> {
+  try {
+    const info = await stat(target)
+    if (!info.isFile()) return { existed: false }
+    if (info.size > maxBytes) return { existed: true, bytes: info.size, skipped: 'too-large' }
+    return { existed: true, bytes: info.size, buffer: await readFile(target) }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { existed: false }
+    return { existed: true, skipped: 'unreadable' }
+  }
+}
+
+function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinition[] {
   const pathSubject = (args: any) => {
     const target = resolveInside(root, args?.path)
     const path = relative(root, target).split(/[\\/]/).join('/')
@@ -119,11 +154,31 @@ function tools(root: string, maxBytes: number): ToolDefinition[] {
           diff: createDiff(before ?? '', content, String(args?.path)),
         }
       },
-      async execute(args) {
+      async execute(args, run) {
         const target = resolveInside(root, args?.path)
         const content = String(args?.content ?? '')
         if (Buffer.byteLength(content) > maxBytes) throw new Error(`content is larger than ${maxBytes} bytes`)
+        const before = await snapshot(target, maxBytes)
         await writeAtomic(target, content)
+
+        if (capture) {
+          const beforeText = before.buffer && !before.buffer.includes(0)
+            ? before.buffer.toString('utf8')
+            : undefined
+          await capture({
+            sessionId: run?.sessionId,
+            path: relative(root, target).split(/[\\/]/).join('/'),
+            tool: 'write_file',
+            callId: run?.callId,
+            before: before.buffer,
+            beforeExisted: before.existed,
+            beforeBytes: before.bytes,
+            skipped: before.skipped,
+            after: Buffer.from(content),
+            diff: createDiff(beforeText ?? '', content, String(args?.path)),
+          })
+        }
+
         return `Wrote ${Buffer.byteLength(content)} bytes to ${args?.path}`
       },
     },
@@ -152,16 +207,41 @@ function tools(root: string, maxBytes: number): ToolDefinition[] {
           diff: createDiff(before, after, String(args?.path)),
         }
       },
-      async execute(args) {
+      async execute(args, run) {
         const target = resolveInside(root, args?.path)
-        const before = await readText(target)
-        if (before === undefined) throw new Error(`not a text file: ${args?.path}`)
-        const after = replaceOnce(before, String(args?.oldText ?? ''), String(args?.newText ?? ''))
+        const before = await snapshot(target, maxBytes)
+        const beforeText = before.buffer && !before.buffer.includes(0)
+          ? before.buffer.toString('utf8')
+          : await readText(target)
+        if (beforeText === undefined) throw new Error(`not a text file: ${args?.path}`)
+        const after = replaceOnce(beforeText, String(args?.oldText ?? ''), String(args?.newText ?? ''))
         if (Buffer.byteLength(after) > maxBytes) throw new Error(`result is larger than ${maxBytes} bytes`)
         await writeAtomic(target, after)
+
+        if (capture) {
+          await capture({
+            sessionId: run?.sessionId,
+            path: relative(root, target).split(/[\\/]/).join('/'),
+            tool: 'edit_file',
+            callId: run?.callId,
+            before: before.buffer,
+            beforeExisted: before.existed,
+            beforeBytes: before.bytes,
+            skipped: before.skipped,
+            after: Buffer.from(after),
+            diff: createDiff(beforeText, after, String(args?.path)),
+          })
+        }
+
         return `Edited ${args?.path}`
       },
     },
+    ...searchTools({
+      root,
+      maxBytes,
+      ignored: IGNORED,
+      resolveInside: path => resolveInside(root, path),
+    }),
   ]
 }
 
@@ -175,7 +255,20 @@ export default class FsTools {
   })
 
   constructor(ctx: Context, config: Config) {
-    const definitions = tools(resolve(config.root ?? '.'), config.maxBytes ?? 65_536)
+    const capture: CaptureFn = async (input) => {
+      if (!input.sessionId) return
+      const checkpoints = ctx.get('checkpoints', false) as
+        | { capture?(value: CaptureInput & { sessionId: string }): Promise<void> }
+        | undefined
+      if (!checkpoints?.capture) return
+      try {
+        await checkpoints.capture({ ...input, sessionId: input.sessionId })
+      } catch (error) {
+        ctx.logger('tool-fs').warn(error)
+      }
+    }
+
+    const definitions = tools(resolve(config.root ?? '.'), config.maxBytes ?? 65_536, capture)
     ctx.effect(() => {
       const disposers = definitions.map(definition => ctx.tools.register(definition))
       return () => disposers.forEach(dispose => dispose())

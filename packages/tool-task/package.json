@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/tool-task",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/agent": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/tools": "workspace:*"
+  }
+}

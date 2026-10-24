@@ -9,7 +9,7 @@ const mode: ModeDefinition = {
   name: 'Plan',
   order: 20,
   description: '只读分析并产出实施计划',
-  allowTools: ['read_file', 'list_dir'],
+  allowTools: ['read_file', 'list_dir', 'grep', 'glob'],
   systemPrompt: [
     'You are in Plan mode.',
     'Inspect the codebase as needed, then produce a concrete implementation plan.',

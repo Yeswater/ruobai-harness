@@ -1433,6 +1433,82 @@ button {
   min-height: 0;
 }
 
+/* Checkpoint changes */
+
+.changes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.changes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.changes-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.change-row {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--tool-bg);
+}
+
+.change-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+
+.change-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.change-stats {
+  display: flex;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.change-stats .add {
+  color: var(--ok);
+}
+
+.change-stats .del {
+  color: var(--danger);
+}
+
+.change-meta {
+  color: var(--faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.change-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+}
+
 .files {
   display: flex;
   flex-direction: column;

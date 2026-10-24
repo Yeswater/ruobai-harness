@@ -7,6 +7,21 @@ import type { SessionRecord } from '@ruobai/session'
 
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 
+export interface RunOptions {
+  /** Aborts the turn when this signal fires (e.g. the parent turn ending). */
+  signal?: AbortSignal
+  /** Overrides the mode/config step budget. */
+  maxSteps?: number
+  /** Tools hidden for this run only (prevents recursive sub-agents). */
+  denyTools?: string[]
+}
+
+export interface RunResult {
+  reason: TurnEndReason
+  /** The last non-empty assistant text emitted during the turn. */
+  text: string
+}
+
 export interface UserMessageData {
   id: string
   text: string
@@ -92,13 +107,42 @@ export class AgentService extends Service {
     this.turns.get(sessionId)?.abort()
   }
 
-  private async run(sessionId: string, controller: AbortController) {
+  /**
+   * Append a user message and await the whole turn, returning its final text.
+   * Used by sub-agents; `prompt` keeps its fire-and-forget contract.
+   */
+  async runToCompletion(sessionId: string, input: string, options: RunOptions = {}): Promise<RunResult> {
+    if (this.turns.has(sessionId)) throw new Error('session is already running')
+    const record = this.ctx.sessions.get(sessionId)
+    if (!record) throw new Error(`unknown session: ${sessionId}`)
+
+    const message: UserMessageData = { id: randomUUID(), text: input, at: Date.now() }
+    this.ctx.sessions.append(sessionId, 'message/user', message)
+    if (record.meta.title === 'New session') {
+      this.ctx.sessions.rename(sessionId, input.slice(0, 42) || 'New session')
+    }
+
+    const controller = new AbortController()
+    const onAbort = () => controller.abort()
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+    if (options.signal?.aborted) controller.abort()
+    this.turns.set(sessionId, controller)
+
+    try {
+      return await this.run(sessionId, controller, options)
+    } finally {
+      options.signal?.removeEventListener('abort', onAbort)
+    }
+  }
+
+  private async run(sessionId: string, controller: AbortController, options: RunOptions = {}): Promise<RunResult> {
     let reason: TurnEndReason = 'done'
+    let lastText = ''
     try {
       const record = this.ctx.sessions.get(sessionId)
       if (!record) throw new Error(`session disappeared: ${sessionId}`)
       const mode = this.ctx.modes.get(record.meta.mode) ?? this.ctx.modes.get(this.ctx.modes.defaultId())
-      const maxSteps = mode?.maxSteps ?? this.config.maxSteps ?? 8
+      const maxSteps = options.maxSteps ?? mode?.maxSteps ?? this.config.maxSteps ?? 8
       const provider = this.providerName(record)
       const extra: Message[] = []
       let nudges = 0
@@ -110,7 +154,7 @@ export class AgentService extends Service {
         signal: controller.signal,
         basePrompt: this.config.systemPrompt,
         modePrompt: mode?.systemPrompt,
-        tools: this.toolsFor(mode),
+        tools: this.toolsFor(mode, options.denyTools),
       })
 
       for (let step = 0; step < maxSteps; step += 1) {
@@ -122,7 +166,7 @@ export class AgentService extends Service {
         const messageId = randomUUID()
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
-        const request = await this.request(sessionId, controller.signal, mode, extra)
+        const request = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
         let textContent = ''
         const calls: ToolCallPart[] = []
         let failure: string | undefined
@@ -142,6 +186,7 @@ export class AgentService extends Service {
         }
 
         if (failure) throw new Error(failure)
+        if (textContent) lastText = textContent
 
         const parts: ContentPart[] = []
         if (textContent) parts.push({ type: 'text', text: textContent })
@@ -183,6 +228,7 @@ export class AgentService extends Service {
           const result = await this.ctx.tools.invoke(call.name, args, {
             signal: controller.signal,
             sessionId,
+            callId: call.id,
           })
           this.ctx.sessions.append(sessionId, 'tool/result', {
             callId: call.id,
@@ -212,6 +258,7 @@ export class AgentService extends Service {
       this.turns.delete(sessionId)
       this.ctx.emit('agent/turn-end', sessionId, reason)
     }
+    return { reason, text: lastText }
   }
 
   private async request(
@@ -219,11 +266,12 @@ export class AgentService extends Service {
     signal: AbortSignal,
     mode: ModeDefinition | undefined,
     extra: Message[],
+    denyTools?: string[],
   ): Promise<ModelRequest> {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
-    const tools = this.toolsFor(mode)
+    const tools = this.toolsFor(mode, denyTools)
     const built = await this.ctx.context.build(sessionId, {
       basePrompt: this.config.systemPrompt,
       modePrompt: mode?.systemPrompt,
@@ -244,8 +292,9 @@ export class AgentService extends Service {
     }
   }
 
-  private toolsFor(mode: ModeDefinition | undefined) {
-    return this.ctx.tools.list().filter(tool => this.ctx.modes.allows(mode?.id, tool.name))
+  private toolsFor(mode: ModeDefinition | undefined, denyTools?: string[]) {
+    return this.ctx.tools.list().filter(tool =>
+      this.ctx.modes.allows(mode?.id, tool.name) && !denyTools?.includes(tool.name))
   }
 
   private modelFor(record: SessionRecord) {

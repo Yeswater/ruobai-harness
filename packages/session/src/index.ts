@@ -16,6 +16,8 @@ export interface CreateSessionOptions {
   model?: string
   provider?: string
   mode?: string
+  kind?: string
+  parentId?: string
   createdAt?: number
 }
 
@@ -77,6 +79,8 @@ export class SessionService extends Service {
       model: options.model,
       provider: options.provider,
       mode: options.mode,
+      kind: options.kind,
+      parentId: options.parentId,
       createdAt: now,
       updatedAt: now,
     }
@@ -85,11 +89,13 @@ export class SessionService extends Service {
     this.ctx.emit('session/created', meta)
     // The title must be an event, otherwise a restart would restore the default.
     if (options.title && options.title !== 'New session') this.append(id, 'session/title', { title: options.title })
-    if (options.model || options.provider || options.mode) {
+    if (options.model || options.provider || options.mode || options.kind || options.parentId) {
       this.append(id, 'session/meta', {
         model: options.model,
         provider: options.provider,
         mode: options.mode,
+        kind: options.kind,
+        parentId: options.parentId,
       })
     }
     return this.records.get(id)!.meta
@@ -218,6 +224,8 @@ export class SessionService extends Service {
       meta.model = event.data.model ?? meta.model
       meta.provider = event.data.provider ?? meta.provider
       meta.mode = event.data.mode ?? meta.mode
+      meta.kind = event.data.kind ?? meta.kind
+      meta.parentId = event.data.parentId ?? meta.parentId
     }
   }
 }

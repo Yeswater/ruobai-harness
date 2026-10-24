@@ -4,6 +4,8 @@ import type { ToolSchema } from '@ruobai/llm'
 export interface ToolRunContext {
   signal?: AbortSignal
   sessionId?: string
+  /** The model's tool-call id, for correlating side effects. */
+  callId?: string
 }
 
 export interface ToolDefinition extends ToolSchema {

@@ -118,6 +118,26 @@ export interface DangerRuleInfo {
   sample: string
 }
 
+export interface SessionChange {
+  seq: number
+  path: string
+  tool: string
+  callId?: string
+  beforeHash?: string
+  afterHash?: string
+  beforeBytes?: number
+  afterBytes?: number
+  beforeExisted: boolean
+  skipped?: 'too-large' | 'unreadable'
+  diff?: string
+  at: number
+}
+
+export interface RevertResult {
+  reverted: string[]
+  skipped: Array<{ path: string; reason: string }>
+}
+
 export type McpApproval = 'auto' | 'always' | 'never'
 export type McpStatus = 'connecting' | 'connected' | 'error' | 'disconnected'
 
@@ -267,6 +287,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     })).guard,
+
+  getSessionChanges: async (id: string) =>
+    (await request<{ changes: SessionChange[] }>(`/api/checkpoints/${encodeURIComponent(id)}`)).changes,
+
+  revertSessionChanges: async (id: string, upToSeq?: number) =>
+    request<RevertResult>(`/api/checkpoints/${encodeURIComponent(id)}/revert`, {
+      method: 'POST',
+      body: JSON.stringify(upToSeq === undefined ? {} : { upToSeq }),
+    }),
 
   getContext: async (id: string) =>
     request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),

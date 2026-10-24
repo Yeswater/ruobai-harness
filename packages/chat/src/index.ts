@@ -38,6 +38,7 @@ export class ChatService extends Service {
     super(ctx, 'chat')
 
     ctx.on('session/created', (meta) => {
+      if (meta.kind === 'subagent') return
       const session = this.ensure(meta.id)
       this.ctx.emit('chat/event', { type: 'session-created', session })
     })
@@ -50,7 +51,7 @@ export class ChatService extends Service {
     ctx.on('session/event', (id, event) => this.onSessionEvent(id, event))
 
     ctx.on('agent/step-start', (id, messageId) => {
-      if (!this.ctx.sessions.has(id)) return
+      if (!this.visible(id)) return
       const session = this.ensure(id)
       if (!session.messages.some(message => message.id === messageId)) {
         session.messages.push({
@@ -68,7 +69,7 @@ export class ChatService extends Service {
     })
 
     ctx.on('agent/delta', (id, messageId, delta) => {
-      if (!this.ctx.sessions.has(id)) return
+      if (!this.visible(id)) return
       const session = this.ensure(id)
       const message = session.messages.find(item => item.id === messageId)
       if (!message) return
@@ -79,7 +80,7 @@ export class ChatService extends Service {
     })
 
     ctx.on('agent/turn-end', (id) => {
-      if (!this.ctx.sessions.has(id)) return
+      if (!this.visible(id)) return
       const session = this.ensure(id)
       session.streaming = false
       for (const message of session.messages) {
@@ -91,7 +92,9 @@ export class ChatService extends Service {
   }
 
   list(): SessionSummary[] {
-    return this.ctx.sessions.list().map((meta) => {
+    return this.ctx.sessions.list()
+      .filter(meta => meta.kind !== 'subagent')
+      .map((meta) => {
       const session = this.ensure(meta.id)
       return {
         id: meta.id,
@@ -196,7 +199,13 @@ export class ChatService extends Service {
     return session
   }
 
+  private visible(id: string) {
+    const meta = this.ctx.sessions.get(id)?.meta
+    return Boolean(meta) && meta!.kind !== 'subagent'
+  }
+
   private onSessionEvent(id: string, event: SessionEvent) {
+    if (!this.visible(id)) return
     if (!CONVERSATION_EVENTS.has(event.type)) {
       if (event.type === 'session/title' || event.type === 'session/meta') {
         const session = this.ensure(id)

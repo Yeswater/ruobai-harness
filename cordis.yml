@@ -24,6 +24,16 @@
   config:
     root: .sessions
 
+# Content-addressed snapshots of file writes, plus session rollback.
+- id: checkpoints
+  name: '@ruobai/checkpoints'
+  config:
+    root: !!js "process.cwd()"
+    store: .ruobai/checkpoints
+
+- id: checkpoints-web
+  name: '@ruobai/checkpoints-web'
+
 # Tool registry and the workspace tools (writes and shell require approval).
 - id: tools
   name: '@ruobai/tools'
@@ -38,6 +48,10 @@
   name: '@ruobai/tool-bash'
   config:
     root: !!js "process.cwd()"
+
+# Sub-agent delegation; child sessions stay out of the session list.
+- id: tool-task
+  name: '@ruobai/tool-task'
 
 # Human approval for mutating tools.
 - id: approval

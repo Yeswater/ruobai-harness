@@ -25,7 +25,7 @@ export function App() {
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const pendingApprovals = harness.approvals.filter(item => item.sessionId === harness.activeId)
+  const pendingApprovals = harness.approvals
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme

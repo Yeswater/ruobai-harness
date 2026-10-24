@@ -1,4 +1,5 @@
 import type { ApprovalDecision, ApprovalRequest } from '../api.ts'
+import { DiffView } from './DiffView.tsx'
 
 interface ApprovalCardProps {
   request: ApprovalRequest
@@ -14,18 +15,7 @@ export function ApprovalCard({ request, onResolve }: ApprovalCardProps) {
         <span className="approval-summary">{request.summary}</span>
       </div>
 
-      {request.diff ? (
-        <div className="approval-diff">
-          {request.diff.split('\n').map((line, index) => {
-            const kind = line.startsWith('+++') || line.startsWith('---')
-              ? 'meta'
-              : line.startsWith('+')
-                ? 'add'
-                : line.startsWith('-') ? 'del' : 'context'
-            return <div key={index} className={`diff-line ${kind}`}>{line || ' '}</div>
-          })}
-        </div>
-      ) : null}
+      {request.diff ? <DiffView diff={request.diff} /> : null}
 
       {request.subject && !request.guard ? (
         <div className="approval-remember">
