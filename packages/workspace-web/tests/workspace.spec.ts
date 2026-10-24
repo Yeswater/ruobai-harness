@@ -1,10 +1,15 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createHarness, type Harness } from '../../../tests/harness.ts'
 
 const harnesses: Harness[] = []
+const dirs: string[] = []
 
 afterEach(async () => {
   while (harnesses.length) await harnesses.pop()!.dispose()
+  while (dirs.length) await rm(dirs.pop()!, { recursive: true, force: true })
 })
 
 describe('workspace web', () => {
@@ -26,5 +31,39 @@ describe('workspace web', () => {
 
     const escape = await fetch(`${base}/api/workspace/file?path=../../etc/passwd`)
     expect(escape.status).toBe(403)
+  })
+
+  it('scopes reads to a session workspace and browses directories', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-workspace-web-'))
+    dirs.push(dir)
+    await mkdir(join(dir, 'src'))
+    await writeFile(join(dir, 'notes.txt'), 'workspace file')
+
+    const session = harness.ctx.sessions.create({ title: 'scoped', workspace: dir })
+
+    const tree = await (await fetch(
+      `${base}/api/workspace/tree?path=.&sessionId=${session.id}`,
+    )).json() as { tree: { children: Array<{ name: string }> } }
+    expect(tree.tree.children.map(child => child.name)).toEqual(expect.arrayContaining(['src', 'notes.txt']))
+
+    const file = await (await fetch(
+      `${base}/api/workspace/file?path=notes.txt&sessionId=${session.id}`,
+    )).json() as { content: string }
+    expect(file.content).toBe('workspace file')
+
+    const unscoped = await fetch(`${base}/api/workspace/file?path=notes.txt`)
+    expect(unscoped.status).toBe(404)
+
+    const browse = await (await fetch(
+      `${base}/api/workspace/browse?path=${encodeURIComponent(dir)}`,
+    )).json() as { path: string; entries: Array<{ name: string }> }
+    expect(browse.path).toBe(dir)
+    expect(browse.entries.map(entry => entry.name)).toContain('src')
+
+    const unknown = await fetch(`${base}/api/workspace/tree?sessionId=missing`)
+    expect(unknown.status).toBe(404)
   })
 })

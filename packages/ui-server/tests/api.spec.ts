@@ -1,11 +1,16 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ChatSession } from '@ruobai/chat-protocol'
 import { createHarness, type Harness } from '../../../tests/harness.ts'
 
 const harnesses: Harness[] = []
+const dirs: string[] = []
 
 afterEach(async () => {
   while (harnesses.length) await harnesses.pop()!.dispose()
+  while (dirs.length) await rm(dirs.pop()!, { recursive: true, force: true })
 })
 
 async function setup() {
@@ -116,6 +121,45 @@ describe('ui server', () => {
     expect(missing.status).toBe(404)
   })
 
+  it('archives and restores a session without deleting it', async () => {
+    const { ctx } = await setup()
+    const base = ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+
+    const created = await (await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ title: 'archive me' }),
+    })).json() as { session: ChatSession }
+
+    const archived = await (await fetch(`${base}/api/sessions/${created.session.id}`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ archived: true }),
+    })).json() as { session: ChatSession }
+    expect(archived.session.archived).toBe(true)
+
+    const listed = await (await fetch(`${base}/api/sessions`)).json() as {
+      sessions: Array<{ id: string; archived?: boolean }>
+    }
+    expect(listed.sessions.find(item => item.id === created.session.id)?.archived).toBe(true)
+
+    const restored = await (await fetch(`${base}/api/sessions/${created.session.id}`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ archived: false }),
+    })).json() as { session: ChatSession }
+    expect(restored.session.archived).toBe(false)
+    expect(restored.session.title).toBe('archive me')
+
+    const invalid = await fetch(`${base}/api/sessions/${created.session.id}`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ archived: 'yes' }),
+    })
+    expect(invalid.status).toBe(400)
+  })
+
   it('exposes runtime state and an SSE stream', async () => {
     const { ctx } = await setup()
 
@@ -164,5 +208,34 @@ describe('ui server', () => {
       body: '{}',
     })
     expect(forked.status).toBe(409)
+  })
+
+  it('creates a session bound to a workspace and rejects invalid roots', async () => {
+    const { ctx } = await setup()
+    const workspace = await mkdtemp(join(tmpdir(), 'rbh-api-ws-'))
+    dirs.push(workspace)
+
+    const created = await fetch(`${ctx.web.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'workspace session', workspace }),
+    })
+    expect(created.status).toBe(201)
+    const body = await created.json() as { session: ChatSession }
+    expect(body.session.workspace).toBe(workspace)
+
+    const relative = await fetch(`${ctx.web.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: 'relative/path' }),
+    })
+    expect(relative.status).toBe(400)
+
+    const missing = await fetch(`${ctx.web.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: join(workspace, 'missing') }),
+    })
+    expect(missing.status).toBe(400)
   })
 })

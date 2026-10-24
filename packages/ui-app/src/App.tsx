@@ -4,11 +4,12 @@ import { useClientPlugins } from './useClientPlugins.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { Composer } from './components/Composer.tsx'
 import { DetailsPanel } from './components/DetailsPanel.tsx'
-import { MenuIcon, PanelIcon } from './components/Icons.tsx'
+import { MenuIcon, PanelIcon, FolderIcon } from './components/Icons.tsx'
 import { SettingsDialog } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
 import { Transcript } from './components/Transcript.tsx'
+import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
 
@@ -25,6 +26,7 @@ export function App() {
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
   const pendingApprovals = harness.approvals
 
   useEffect(() => {
@@ -36,7 +38,7 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
         event.preventDefault()
-        harness.createSession()
+        setWorkspacePickerOpen(true)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -56,7 +58,11 @@ export function App() {
           setSidebarOpen(false)
         }}
         onCreate={() => {
-          harness.createSession()
+          setWorkspacePickerOpen(true)
+          setSidebarOpen(false)
+        }}
+        onCreateIn={(workspace) => {
+          harness.createSession(workspace)
           setSidebarOpen(false)
         }}
         onRename={harness.renameSession}
@@ -64,6 +70,7 @@ export function App() {
           harness.forkSession(id)
           setSidebarOpen(false)
         }}
+        onArchive={harness.archiveSession}
         onDelete={harness.deleteSession}
         onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -77,13 +84,21 @@ export function App() {
           <div className="main-title">
             <h1>{harness.session?.title ?? 'New session'}</h1>
             <div className="main-sub">
-              {harness.session
-                ? [
-                    `${harness.session.messages.length} messages`,
-                    harness.session.model,
-                    harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
-                  ].filter(Boolean).join(' · ')
-                : 'loading…'}
+              {harness.session?.workspace ? (
+                <span className="workspace-chip" title={harness.session.workspace}>
+                  <FolderIcon size={11} />
+                  {nameOf(harness.session.workspace)}
+                </span>
+              ) : null}
+              <span>
+                {harness.session
+                  ? [
+                      `${harness.session.messages.length} messages`,
+                      harness.session.model,
+                      harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
+                    ].filter(Boolean).join(' · ')
+                  : 'loading…'}
+              </span>
             </div>
           </div>
           <Slot name="header.actions" />
@@ -133,9 +148,23 @@ export function App() {
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
+      <WorkspacePicker
+        open={workspacePickerOpen}
+        recent={harness.recentWorkspaces}
+        onClose={() => setWorkspacePickerOpen(false)}
+        onPick={(path) => {
+          setWorkspacePickerOpen(false)
+          harness.createSession(path)
+        }}
+      />
+
       {sidebarOpen
         ? <button className="scrim" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar" />
         : null}
     </div>
   )
+}
+
+function nameOf(path: string) {
+  return path.split('/').filter(Boolean).at(-1) ?? path
 }

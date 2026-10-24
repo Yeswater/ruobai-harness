@@ -132,4 +132,26 @@ describe('checkpoints', () => {
     expect(result.skipped[0]!.reason).toContain('too large')
     expect(await readFile(join(root, 'big.txt'), 'utf8')).toBe('after')
   })
+
+  it('reverts against the session workspace', async () => {
+    const { ctx } = await setup()
+    const workspace = await mkdtemp(join(tmpdir(), 'rbh-checkpoints-ws-'))
+    cleanups.push(() => rm(workspace, { recursive: true, force: true }))
+    await writeFile(join(workspace, 'a.txt'), 'before')
+
+    const session = ctx.sessions.create({ title: 'workspace', workspace })
+    await ctx.checkpoints.capture({
+      sessionId: session.id,
+      path: 'a.txt',
+      tool: 'write_file',
+      before: Buffer.from('before'),
+      beforeExisted: true,
+      after: Buffer.from('after'),
+    })
+    await writeFile(join(workspace, 'a.txt'), 'after')
+
+    const result = await ctx.checkpoints.revert(session.id)
+    expect(result.reverted).toEqual(['a.txt'])
+    expect(await readFile(join(workspace, 'a.txt'), 'utf8')).toBe('before')
+  })
 })

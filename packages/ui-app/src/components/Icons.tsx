@@ -68,3 +68,98 @@ export function GearIcon({ size }: IconProps) {
     </svg>
   )
 }
+
+export function FolderIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2h7A1.5 1.5 0 0 1 19 9.5v8A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5Z" />
+    </svg>
+  )
+}
+
+export function ChevronRightIcon({ size }: IconProps) {
+  return <svg {...base(size)}><path d="m9 6 6 6-6 6" /></svg>
+}
+
+export function ChevronDownIcon({ size }: IconProps) {
+  return <svg {...base(size)}><path d="m6 9 6 6 6-6" /></svg>
+}
+
+export function CheckIcon({ size }: IconProps) {
+  return <svg {...base(size)}><path d="m5 12 4 4L19 6" /></svg>
+}
+
+export function SlidersIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
+    </svg>
+  )
+}
+
+export function FolderPlusIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2h7A1.5 1.5 0 0 1 19 9.5v8A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5Z" />
+      <path d="M11 12v4M9 14h4" />
+    </svg>
+  )
+}
+
+export function FolderTreeIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h2.7l1.5 1.6h4.8A1.5 1.5 0 0 1 15 9.1v1.4" />
+      <path d="M9 12.5A1.5 1.5 0 0 1 10.5 11h2.7l1.5 1.6h4.8A1.5 1.5 0 0 1 21 14.1v4.4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 9 18.5Z" />
+    </svg>
+  )
+}
+
+export function ListIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M9 7h11M9 12h11M9 17h11" />
+      <circle cx="4.5" cy="7" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="12" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="17" r=".9" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function GripIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M8 8h.01M8 12h.01M8 16h.01M16 8h.01M16 12h.01M16 16h.01" strokeWidth="2.4" />
+    </svg>
+  )
+}
+
+export function ClockIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 1.8" />
+    </svg>
+  )
+}
+
+export function ArchiveIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 8h16v10.5A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5Z" />
+      <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h15A1.5 1.5 0 0 1 21 4.5v2A1.5 1.5 0 0 1 19.5 8h-15A1.5 1.5 0 0 1 3 6.5Z" />
+      <path d="M10 12h4" />
+    </svg>
+  )
+}
+
+export function ChatIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12Z" />
+    </svg>
+  )
+}
+

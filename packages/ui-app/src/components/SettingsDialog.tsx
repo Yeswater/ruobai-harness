@@ -3,6 +3,7 @@ import { api, type ModeInfo, type ProviderMode, type PublicProvider, type Public
 import { CloseIcon, PlusIcon } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
 import { PermissionsSettings } from './PermissionsSettings.tsx'
+import { Select } from './Select.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -336,17 +337,28 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                   <div className="form-row two">
                     <label className="field">
                       <span>接入方式</span>
-                      <select value={draft.mode} onChange={event => patch({ mode: event.target.value as ProviderMode })}>
-                        <option value="direct">直连</option>
-                        <option value="mapping">模型映射</option>
-                      </select>
+                      <Select
+                        value={draft.mode}
+                        options={[
+                          { value: 'direct', label: '直连' },
+                          { value: 'mapping', label: '模型映射' },
+                        ]}
+                        onChange={value => patch({ mode: value as ProviderMode })}
+                        ariaLabel="Provider mode"
+                        menuWidth={180}
+                      />
                     </label>
                     <label className="field">
                       <span>默认模型</span>
-                      <select value={defaultModel} onChange={event => setDefaultModel(event.target.value)}>
-                        {draft.models.map(model => <option key={model} value={model}>{model}</option>)}
-                        {draft.models.length === 0 ? <option value="">（先添加模型）</option> : null}
-                      </select>
+                      <Select
+                        value={defaultModel}
+                        options={draft.models.length
+                          ? draft.models.map(model => ({ value: model, label: model }))
+                          : [{ value: '', label: '（先添加模型）' }]}
+                        onChange={setDefaultModel}
+                        ariaLabel="Default model"
+                        menuWidth={220}
+                      />
                     </label>
                   </div>
 
@@ -416,13 +428,17 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           <div className="behavior-form">
             <label className="field">
               <span>默认模式（新建会话）</span>
-              <select value={agentMode} onChange={event => setAgentMode(event.target.value)}>
-                {modes.map(mode => (
-                  <option key={mode.id} value={mode.id}>
-                    {mode.name}{mode.description ? ` — ${mode.description}` : ''}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={agentMode}
+                options={modes.map(mode => ({
+                  value: mode.id,
+                  label: mode.name,
+                  description: mode.description,
+                }))}
+                onChange={setAgentMode}
+                ariaLabel="Default agent mode"
+                menuWidth={300}
+              />
             </label>
 
             <label className="field">

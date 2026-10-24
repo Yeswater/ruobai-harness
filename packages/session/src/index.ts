@@ -18,6 +18,7 @@ export interface CreateSessionOptions {
   mode?: string
   kind?: string
   parentId?: string
+  workspace?: string
   createdAt?: number
 }
 
@@ -81,6 +82,7 @@ export class SessionService extends Service {
       mode: options.mode,
       kind: options.kind,
       parentId: options.parentId,
+      workspace: options.workspace,
       createdAt: now,
       updatedAt: now,
     }
@@ -89,13 +91,14 @@ export class SessionService extends Service {
     this.ctx.emit('session/created', meta)
     // The title must be an event, otherwise a restart would restore the default.
     if (options.title && options.title !== 'New session') this.append(id, 'session/title', { title: options.title })
-    if (options.model || options.provider || options.mode || options.kind || options.parentId) {
+    if (options.model || options.provider || options.mode || options.kind || options.parentId || options.workspace) {
       this.append(id, 'session/meta', {
         model: options.model,
         provider: options.provider,
         mode: options.mode,
         kind: options.kind,
         parentId: options.parentId,
+        workspace: options.workspace,
       })
     }
     return this.records.get(id)!.meta
@@ -140,6 +143,13 @@ export class SessionService extends Service {
     this.append(id, 'session/meta', { mode })
   }
 
+  setArchived(id: string, archived: boolean) {
+    const record = this.records.get(id)
+    if (!record) throw new Error(`unknown session: ${id}`)
+    if (Boolean(record.meta.archived) === archived) return
+    this.append(id, 'session/meta', { archived })
+  }
+
   /**
    * Copy a session's log into a new session.
    *
@@ -157,6 +167,7 @@ export class SessionService extends Service {
       model: record.meta.model,
       provider: record.meta.provider,
       mode: record.meta.mode,
+      workspace: record.meta.workspace,
     })
 
     for (const event of record.events) {
@@ -226,6 +237,8 @@ export class SessionService extends Service {
       meta.mode = event.data.mode ?? meta.mode
       meta.kind = event.data.kind ?? meta.kind
       meta.parentId = event.data.parentId ?? meta.parentId
+      meta.workspace = event.data.workspace ?? meta.workspace
+      meta.archived = event.data.archived ?? meta.archived
     }
   }
 }

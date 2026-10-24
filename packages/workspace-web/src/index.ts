@@ -4,7 +4,7 @@ import { HttpError, sendJson } from '@ruobai/web-server'
 import { WorkspaceError } from '@ruobai/workspace'
 
 export const name = 'workspace-web'
-export const inject = ['web', 'workspace']
+export const inject = ['web', 'workspace', 'sessions']
 
 /** Exposes the read-only workspace service to the browser. */
 export function apply(ctx: Context) {
@@ -21,15 +21,24 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
   }
 
   try {
+    const sessionId = url.searchParams.get('sessionId') ?? undefined
+    if (sessionId && !ctx.sessions.has(sessionId)) throw new HttpError(404, 'unknown session')
+
     if (url.pathname === '/api/workspace/tree') {
-      const tree = await ctx.workspace.tree(url.searchParams.get('path') ?? '.')
+      const depthValue = Number(url.searchParams.get('depth'))
+      const depth = Number.isFinite(depthValue) && depthValue > 0 ? Math.floor(depthValue) : undefined
+      const tree = await ctx.workspace.tree(url.searchParams.get('path') ?? '.', depth, sessionId)
       sendJson(res, 200, { tree })
       return true
     }
     if (url.pathname === '/api/workspace/file') {
       const path = url.searchParams.get('path')
       if (!path) throw new HttpError(400, 'path is required')
-      sendJson(res, 200, await ctx.workspace.read(path))
+      sendJson(res, 200, await ctx.workspace.read(path, sessionId))
+      return true
+    }
+    if (url.pathname === '/api/workspace/browse') {
+      sendJson(res, 200, await ctx.workspace.browse(url.searchParams.get('path') ?? undefined))
       return true
     }
     sendJson(res, 404, { error: 'not found' })

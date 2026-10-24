@@ -14,6 +14,13 @@ export interface WorkspaceEntry {
   children?: WorkspaceEntry[]
 }
 
+export interface WorkspaceBrowse {
+  path: string
+  parent: string | null
+  home: string
+  entries: Array<{ name: string; path: string }>
+}
+
 export interface ProviderModel {
   id: string
 }
@@ -207,16 +214,22 @@ export const api = {
   getSession: async (id: string) =>
     (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}`)).session,
 
-  createSession: async (title?: string) =>
+  createSession: async (input: { title?: string; workspace?: string } = {}) =>
     (await request<{ session: ChatSession }>('/api/sessions', {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(input),
     })).session,
 
   renameSession: async (id: string, title: string) =>
     (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ title }),
+    })).session,
+
+  setArchived: async (id: string, archived: boolean) =>
+    (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived }),
     })).session,
 
   deleteSession: async (id: string) =>
@@ -300,13 +313,23 @@ export const api = {
   getContext: async (id: string) =>
     request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),
 
-  getWorkspaceTree: async (path = '.') =>
-    (await request<{ tree: WorkspaceEntry }>(`/api/workspace/tree?path=${encodeURIComponent(path)}`)).tree,
+  getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number) => {
+    const params = new URLSearchParams({ path })
+    if (sessionId) params.set('sessionId', sessionId)
+    if (depth) params.set('depth', String(depth))
+    return (await request<{ tree: WorkspaceEntry }>(`/api/workspace/tree?${params}`)).tree
+  },
 
-  readWorkspaceFile: async (path: string) =>
-    request<{ path: string; size: number; content: string }>(
-      `/api/workspace/file?path=${encodeURIComponent(path)}`,
-    ),
+  readWorkspaceFile: async (path: string, sessionId?: string) => {
+    const params = new URLSearchParams({ path })
+    if (sessionId) params.set('sessionId', sessionId)
+    return request<{ path: string; size: number; content: string }>(`/api/workspace/file?${params}`)
+  },
+
+  browseWorkspace: async (path?: string) => {
+    const suffix = path ? `?path=${encodeURIComponent(path)}` : ''
+    return request<WorkspaceBrowse>(`/api/workspace/browse${suffix}`)
+  },
 
   getSettings: async () =>
     (await request<{ settings: PublicSettings }>('/api/settings')).settings,
@@ -485,6 +508,8 @@ export function summarize(session: ChatSession): SessionSummary {
     title: session.title,
     model: session.model,
     mode: session.mode,
+    workspace: session.workspace,
+    archived: session.archived,
     updatedAt: session.updatedAt,
     messageCount: session.messages.length,
     streaming: session.streaming,

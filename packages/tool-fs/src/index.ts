@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promi
 import { dirname, join, relative, resolve } from 'node:path'
 import type { Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
-import type { ToolDefinition } from '@ruobai/tools'
+import type { ToolDefinition, ToolRunContext } from '@ruobai/tools'
 import { createDiff } from './diff.ts'
 import { searchTools } from './search.ts'
 
@@ -87,8 +87,11 @@ async function snapshot(target: string, maxBytes: number): Promise<Snapshot> {
   }
 }
 
-function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinition[] {
-  const pathSubject = (args: any) => {
+function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): ToolDefinition[] {
+  const rootFor = (run?: ToolRunContext) => run?.workspace ? resolve(run.workspace) : fallbackRoot
+
+  const pathSubject = (args: any, run?: ToolRunContext) => {
+    const root = rootFor(run)
     const target = resolveInside(root, args?.path)
     const path = relative(root, target).split(/[\\/]/).join('/')
     return path ? { kind: 'path' as const, value: path } : undefined
@@ -103,7 +106,8 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
         properties: { path: { type: 'string', description: 'Path relative to the workspace root.' } },
         required: ['path'],
       },
-      async execute(args) {
+      async execute(args, run) {
+        const root = rootFor(run)
         const target = resolveInside(root, args?.path)
         const info = await stat(target)
         if (!info.isFile()) throw new Error(`not a file: ${args?.path}`)
@@ -121,7 +125,8 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
         properties: { path: { type: 'string', description: 'Directory relative to the workspace root.' } },
         required: [],
       },
-      async execute(args) {
+      async execute(args, run) {
+        const root = rootFor(run)
         const target = resolveInside(root, args?.path)
         const entries = await readdir(target, { withFileTypes: true })
         return entries
@@ -145,7 +150,8 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
       },
       requiresApproval: true,
       approvalSubject: pathSubject,
-      async preview(args) {
+      async preview(args, run) {
+        const root = rootFor(run)
         const target = resolveInside(root, args?.path)
         const content = String(args?.content ?? '')
         const before = await readText(target)
@@ -155,6 +161,7 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
         }
       },
       async execute(args, run) {
+        const root = rootFor(run)
         const target = resolveInside(root, args?.path)
         const content = String(args?.content ?? '')
         if (Buffer.byteLength(content) > maxBytes) throw new Error(`content is larger than ${maxBytes} bytes`)
@@ -196,7 +203,8 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
       },
       requiresApproval: true,
       approvalSubject: pathSubject,
-      async preview(args) {
+      async preview(args, run) {
+        const root = rootFor(run)
         const target = resolveInside(root, args?.path)
         const before = await readText(target)
         if (before === undefined) throw new Error(`not a text file: ${args?.path}`)
@@ -208,6 +216,7 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
         }
       },
       async execute(args, run) {
+        const root = rootFor(run)
         const target = resolveInside(root, args?.path)
         const before = await snapshot(target, maxBytes)
         const beforeText = before.buffer && !before.buffer.includes(0)
@@ -237,10 +246,9 @@ function tools(root: string, maxBytes: number, capture?: CaptureFn): ToolDefinit
       },
     },
     ...searchTools({
-      root,
+      fallbackRoot,
       maxBytes,
       ignored: IGNORED,
-      resolveInside: path => resolveInside(root, path),
     }),
   ]
 }

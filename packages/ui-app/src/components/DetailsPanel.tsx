@@ -106,7 +106,7 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
         : tab === 'files'
           ? (
             <div className="details-body files-body">
-              <FileBrowser />
+              <FileBrowser sessionId={session?.id} />
             </div>
           )
           : tab === 'changes'

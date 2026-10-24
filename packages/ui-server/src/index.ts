@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { stat } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 import type {} from '@ruobai/chat'
@@ -72,7 +74,16 @@ export class UiApi extends Service {
         const body = await readJson(req)
         const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : undefined
         const mode = typeof body.mode === 'string' && body.mode ? body.mode : undefined
-        sendJson(res, 201, { session: this.ctx.chat.create(title, mode) })
+        const requested = typeof body.workspace === 'string' ? body.workspace.trim() : ''
+        let workspace: string | undefined
+        if (requested) {
+          if (!isAbsolute(requested)) throw new HttpError(400, 'workspace must be an absolute path')
+          const target = resolve(requested)
+          const info = await stat(target).catch(() => undefined)
+          if (!info?.isDirectory()) throw new HttpError(400, `workspace is not a directory: ${target}`)
+          workspace = target
+        }
+        sendJson(res, 201, { session: this.ctx.chat.create(title, mode, workspace) })
         return true
       }
       throw new HttpError(405, 'method not allowed')
@@ -125,9 +136,19 @@ export class UiApi extends Service {
 
     if (!action && method === 'PATCH') {
       const body = await readJson(req)
-      const title = typeof body.title === 'string' ? body.title : ''
-      if (!title.trim()) throw new HttpError(400, 'title is required')
-      sendJson(res, 200, { session: this.ctx.chat.rename(id, title) })
+      const hasTitle = body.title !== undefined
+      const hasArchived = body.archived !== undefined
+      if (!hasTitle && !hasArchived) throw new HttpError(400, 'title or archived is required')
+      if (hasTitle && (typeof body.title !== 'string' || !body.title.trim())) {
+        throw new HttpError(400, 'title must not be empty')
+      }
+      if (hasArchived && typeof body.archived !== 'boolean') {
+        throw new HttpError(400, 'archived must be a boolean')
+      }
+      let session = hasTitle ? this.ctx.chat.rename(id, body.title) : this.ctx.chat.get(id)
+      if (!session) throw new HttpError(404, 'session not found')
+      if (hasArchived) session = this.ctx.chat.setArchived(id, body.archived)
+      sendJson(res, 200, { session })
       return true
     }
 

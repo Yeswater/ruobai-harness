@@ -48,6 +48,7 @@ function taskTool(ctx: Context): ToolDefinition {
         mode: 'agent',
         model: parent.meta.model,
         provider: parent.meta.provider,
+        workspace: parent.meta.workspace,
         kind: 'subagent',
         parentId,
       })

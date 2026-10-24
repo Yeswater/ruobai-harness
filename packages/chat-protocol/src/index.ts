@@ -38,6 +38,10 @@ export interface ChatSession {
   model: string
   /** Active agent mode id. */
   mode?: string
+  /** Absolute workspace root for this conversation. */
+  workspace?: string
+  /** Hidden from the default session list. */
+  archived?: boolean
   createdAt: number
   updatedAt: number
   messages: ChatMessage[]
@@ -49,6 +53,8 @@ export interface SessionSummary {
   title: string
   model: string
   mode?: string
+  workspace?: string
+  archived?: boolean
   updatedAt: number
   messageCount: number
   streaming: boolean

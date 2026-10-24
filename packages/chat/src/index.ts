@@ -101,6 +101,8 @@ export class ChatService extends Service {
         title: meta.title,
         model: session.model,
         mode: session.mode,
+        workspace: session.workspace,
+        archived: meta.archived ?? false,
         updatedAt: meta.updatedAt,
         messageCount: session.messages.length,
         streaming: session.streaming,
@@ -112,7 +114,7 @@ export class ChatService extends Service {
     return this.ctx.sessions.has(id) ? this.ensure(id) : undefined
   }
 
-  create(title?: string, mode?: string): ChatSession {
+  create(title?: string, mode?: string, workspace?: string): ChatSession {
     const settings = this.ctx.get('settings', false) as
       | { raw(): { llm?: { activeProvider?: string; activeModel?: string }; agent?: { defaultMode?: string } } }
       | undefined
@@ -124,7 +126,7 @@ export class ChatService extends Service {
     const resolvedMode = requested && this.ctx.modes.get(requested)
       ? requested
       : this.ctx.modes.defaultId()
-    const meta = this.ctx.sessions.create({ title, model, provider, mode: resolvedMode })
+    const meta = this.ctx.sessions.create({ title, model, provider, mode: resolvedMode, workspace })
     return this.ensure(meta.id)
   }
 
@@ -133,6 +135,14 @@ export class ChatService extends Service {
     this.ctx.sessions.setMode(id, mode)
     const session = this.ensure(id)
     session.mode = mode
+    this.ctx.emit('chat/event', { type: 'session-updated', session })
+    return session
+  }
+
+  setArchived(id: string, archived: boolean): ChatSession {
+    this.ctx.sessions.setArchived(id, archived)
+    const session = this.ensure(id)
+    this.syncMeta(session)
     this.ctx.emit('chat/event', { type: 'session-updated', session })
     return session
   }
@@ -189,6 +199,8 @@ export class ChatService extends Service {
       title: record.meta.title,
       model: record.meta.model ?? this.ctx.llm.config.model ?? 'unknown',
       mode: record.meta.mode ?? this.ctx.modes.defaultId(),
+      workspace: record.meta.workspace,
+      archived: record.meta.archived ?? false,
       createdAt: record.meta.createdAt,
       updatedAt: record.meta.updatedAt,
       messages: [],
@@ -293,6 +305,8 @@ export class ChatService extends Service {
     session.title = meta.title
     session.model = meta.model ?? session.model
     session.mode = meta.mode ?? session.mode
+    session.workspace = meta.workspace ?? session.workspace
+    session.archived = meta.archived ?? false
     session.updatedAt = meta.updatedAt
   }
 

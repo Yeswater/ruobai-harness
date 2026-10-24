@@ -229,6 +229,7 @@ export class AgentService extends Service {
             signal: controller.signal,
             sessionId,
             callId: call.id,
+            workspace: record.meta.workspace,
           })
           this.ctx.sessions.append(sessionId, 'tool/result', {
             callId: call.id,

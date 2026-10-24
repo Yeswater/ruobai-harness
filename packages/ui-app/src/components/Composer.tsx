@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ModeInfo } from '../api.ts'
 import { SendIcon, StopIcon } from './Icons.tsx'
+import { Select } from './Select.tsx'
 
 interface ComposerProps {
   disabled: boolean
@@ -20,8 +21,10 @@ export function Composer({ disabled, streaming, model, modes, mode, onModeChange
   useEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
-    textarea.style.height = '0px'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+    textarea.style.height = 'auto'
+    const next = Math.min(textarea.scrollHeight, 240)
+    textarea.style.height = `${next}px`
+    textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden'
   }, [text])
 
   const submit = () => {
@@ -57,15 +60,19 @@ export function Composer({ disabled, streaming, model, modes, mode, onModeChange
           <div className="composer-left">
             {modes.length
               ? (
-                <select
+                <Select
                   className="mode-select"
                   value={mode}
-                  onChange={event => onModeChange(event.target.value)}
+                  options={modes.map(item => ({
+                    value: item.id,
+                    label: item.name,
+                    description: item.description,
+                  }))}
+                  onChange={onModeChange}
                   disabled={streaming}
-                  title={modes.find(item => item.id === mode)?.description}
-                >
-                  {modes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
+                  ariaLabel="Agent mode"
+                  menuWidth={260}
+                />
               )
               : null}
             <span className="chip">{model}</span>

@@ -1,12 +1,11 @@
 import { opendir, readFile, stat } from 'node:fs/promises'
-import { join, matchesGlob, relative, sep } from 'node:path'
-import type { ToolDefinition } from '@ruobai/tools'
+import { join, matchesGlob, relative, resolve, sep } from 'node:path'
+import type { ToolDefinition, ToolRunContext } from '@ruobai/tools'
 
 export interface SearchContext {
-  root: string
+  fallbackRoot: string
   maxBytes: number
   ignored: ReadonlySet<string>
-  resolveInside(path: unknown): string
 }
 
 const EXTRA_IGNORED = ['coverage', '.next', '.turbo', '.cache', 'build', 'out']
@@ -22,6 +21,21 @@ interface WalkState {
 
 function toPosix(root: string, target: string) {
   return relative(root, target).split(sep).join('/')
+}
+
+function inside(root: string, target: string) {
+  const rel = relative(root, target)
+  return rel === '' || (!rel.startsWith('..') && !rel.startsWith('/') && !rel.startsWith('\\'))
+}
+
+function resolveInside(root: string, path: unknown) {
+  const target = resolve(root, typeof path === 'string' && path ? path : '.')
+  if (!inside(root, target)) throw new Error(`path escapes the workspace: ${String(path)}`)
+  return target
+}
+
+function rootFor(context: SearchContext, run?: ToolRunContext) {
+  return run?.workspace ? resolve(run.workspace) : context.fallbackRoot
 }
 
 async function walk(
@@ -91,7 +105,8 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         },
         required: ['pattern'],
       },
-      async execute(args) {
+      async execute(args, run) {
+        const root = rootFor(context, run)
         const pattern = String(args?.pattern ?? '')
         if (!pattern) throw new Error('pattern is required')
         if (pattern.length > MAX_PATTERN) throw new Error(`pattern is longer than ${MAX_PATTERN} characters`)
@@ -103,7 +118,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
           throw new Error(`invalid pattern: ${error instanceof Error ? error.message : String(error)}`)
         }
 
-        const start = context.resolveInside(args?.path)
+        const start = resolveInside(root, args?.path)
         const info = await stat(start).catch(() => undefined)
         if (!info) throw new Error(`path not found: ${args?.path}`)
         const maxResults = capped(args?.maxResults, 200, 500)
@@ -116,7 +131,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
             more = true
             return
           }
-          const path = toPosix(context.root, target)
+          const path = toPosix(root, target)
           if (fileGlob && !matchesGlob(path, fileGlob)) return
 
           const details = await stat(target)
@@ -160,13 +175,14 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         },
         required: ['pattern'],
       },
-      async execute(args) {
+      async execute(args, run) {
+        const root = rootFor(context, run)
         const pattern = String(args?.pattern ?? '').trim()
         if (!pattern) throw new Error('pattern is required')
         if (pattern.length > MAX_PATTERN) throw new Error(`pattern is longer than ${MAX_PATTERN} characters`)
         if (pattern.includes('\0')) throw new Error('invalid pattern')
 
-        const start = context.resolveInside(args?.path)
+        const start = resolveInside(root, args?.path)
         const info = await stat(start).catch(() => undefined)
         if (!info) throw new Error(`path not found: ${args?.path}`)
         if (!info.isDirectory()) throw new Error(`not a directory: ${args?.path}`)
@@ -176,7 +192,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         const state: WalkState = { files: 0, done: false }
 
         await walk(start, context, state, 0, async (target) => {
-          const path = toPosix(context.root, target)
+          const path = toPosix(root, target)
           if (!matchesGlob(path, pattern)) return
           files.push(path)
           if (files.length >= maxResults) state.done = true

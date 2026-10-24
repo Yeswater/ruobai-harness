@@ -196,7 +196,9 @@ function previewOf(command: string, cwd: string, root: string) {
   }
 }
 
-function bashTool(root: string, config: RunConfig, children: Set<ChildProcess>): ToolDefinition {
+function bashTool(fallbackRoot: string, config: RunConfig, children: Set<ChildProcess>): ToolDefinition {
+  const rootFor = (run?: ToolRunContext) => run?.workspace ? resolve(run.workspace) : fallbackRoot
+
   return {
     name: 'bash',
     description: [
@@ -218,11 +220,13 @@ function bashTool(root: string, config: RunConfig, children: Set<ChildProcess>):
     approvalSubject(args) {
       return { kind: 'command', value: commandOf(args) }
     },
-    preview(args) {
+    preview(args, run) {
+      const root = rootFor(run)
       const command = commandOf(args)
       return previewOf(command, resolveCwd(root, args?.cwd), root)
     },
     async execute(args, toolRun: ToolRunContext) {
+      const root = rootFor(toolRun)
       const command = commandOf(args)
       const cwd = resolveCwd(root, args?.cwd)
       const requested = typeof args?.timeoutMs === 'number' && Number.isFinite(args.timeoutMs)

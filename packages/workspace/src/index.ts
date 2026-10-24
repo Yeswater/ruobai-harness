@@ -1,7 +1,9 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
-import { relative, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
+import type {} from '@ruobai/session'
 
 export interface WorkspaceEntry {
   name: string
@@ -35,6 +37,8 @@ const IGNORED = new Set(['node_modules', '.git', '.sessions', 'dist', 'lib', 'co
 
 /** Read-only view of one workspace root with traversal guards. */
 export class WorkspaceService extends Service {
+  static inject = ['sessions']
+
   static Config: z<Config> = z.object({
     root: z.string().default('.'),
     maxBytes: z.number().min(1).default(262_144),
@@ -49,9 +53,14 @@ export class WorkspaceService extends Service {
     this.root = resolve(config.root ?? '.')
   }
 
-  resolvePath(path: unknown) {
-    const target = resolve(this.root, typeof path === 'string' && path ? path : '.')
-    const rel = relative(this.root, target)
+  rootFor(sessionId?: string | null) {
+    const workspace = sessionId ? this.ctx.sessions.get(sessionId)?.meta.workspace : undefined
+    return workspace ? resolve(workspace) : this.root
+  }
+
+  resolvePath(path: unknown, root = this.root) {
+    const target = resolve(root, typeof path === 'string' && path ? path : '.')
+    const rel = relative(root, target)
     if (rel !== '' && (rel.startsWith('..') || rel.startsWith(sep))) {
       throw new WorkspaceError(403, `path escapes the workspace: ${String(path)}`)
     }
@@ -59,16 +68,18 @@ export class WorkspaceService extends Service {
     return { target, path: rel.split(sep).join('/') }
   }
 
-  async tree(path = '.', depth?: number): Promise<WorkspaceEntry> {
-    const resolved = this.resolvePath(path)
+  async tree(path = '.', depth?: number, sessionId?: string): Promise<WorkspaceEntry> {
+    const root = this.rootFor(sessionId)
+    const resolved = this.resolvePath(path, root)
     const info = await stat(resolved.target).catch(() => undefined)
     if (!info) throw new WorkspaceError(404, `not found: ${String(path)}`)
     const prefix = resolved.path === '.' ? '' : resolved.path
     return this.entry(resolved.target, prefix, info.isDirectory(), depth ?? this.config.maxDepth ?? 3)
   }
 
-  async read(path: unknown) {
-    const resolved = this.resolvePath(path)
+  async read(path: unknown, sessionId?: string) {
+    const root = this.rootFor(sessionId)
+    const resolved = this.resolvePath(path, root)
     const info = await stat(resolved.target).catch(() => undefined)
     if (!info?.isFile()) throw new WorkspaceError(404, `not a file: ${String(path)}`)
     const maxBytes = this.config.maxBytes ?? 262_144
@@ -76,6 +87,25 @@ export class WorkspaceService extends Service {
     const content = await readFile(resolved.target, 'utf8')
     if (content.includes('\0')) throw new WorkspaceError(415, 'binary files are not supported')
     return { path: resolved.path, size: info.size, content }
+  }
+
+  /** Directory-only listing for the workspace picker. */
+  async browse(path?: string) {
+    const target = path?.trim() ? resolve(path.trim()) : this.root
+    const info = await stat(target).catch(() => undefined)
+    if (!info?.isDirectory()) throw new WorkspaceError(404, `not a directory: ${path ?? target}`)
+    const entries = (await readdir(target, { withFileTypes: true }))
+      .filter(item => item.isDirectory() && !item.isSymbolicLink() && !IGNORED.has(item.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 500)
+      .map(item => ({ name: item.name, path: join(target, item.name) }))
+    const parent = dirname(target)
+    return {
+      path: target,
+      parent: parent === target ? null : parent,
+      home: homedir(),
+      entries,
+    }
   }
 
   private async entry(target: string, path: string, directory: boolean, depth: number): Promise<WorkspaceEntry> {

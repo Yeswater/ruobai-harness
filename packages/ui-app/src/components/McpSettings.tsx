@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type McpApproval, type McpServer } from '../api.ts'
 import { PlusIcon } from './Icons.tsx'
+import { Select } from './Select.tsx'
 
 interface Draft {
   id?: string
@@ -318,14 +319,17 @@ export function McpSettings() {
 
         <label className="field">
           <span>审批策略</span>
-          <select
+          <Select
             value={draft.approval}
-            onChange={event => patch({ approval: event.target.value as McpApproval })}
-          >
-            <option value="auto">自动 — 只读工具免审批</option>
-            <option value="always">每次调用都审批</option>
-            <option value="never">从不审批</option>
-          </select>
+            options={[
+              { value: 'auto', label: '自动', description: '只读工具免审批' },
+              { value: 'always', label: '每次调用都审批' },
+              { value: 'never', label: '从不审批' },
+            ]}
+            onChange={value => patch({ approval: value as McpApproval })}
+            ariaLabel="MCP approval policy"
+            menuWidth={240}
+          />
         </label>
 
         <div className="check-row">

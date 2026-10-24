@@ -7,6 +7,7 @@ import {
   type DangerRuleInfo,
 } from '../api.ts'
 import { PlusIcon } from './Icons.tsx'
+import { Select } from './Select.tsx'
 
 interface Draft {
   id?: string
@@ -180,10 +181,16 @@ export function PermissionsSettings() {
       <section className="permission-policy">
         <label className="field">
           <span>审批模式</span>
-          <select value={bypass ? 'bypass' : 'ask'} onChange={event => setBypass(event.target.value === 'bypass')}>
-            <option value="ask">逐次询问（默认）</option>
-            <option value="bypass">跳过审批</option>
-          </select>
+          <Select
+            value={bypass ? 'bypass' : 'ask'}
+            options={[
+              { value: 'ask', label: '逐次询问（默认）', description: '没有命中规则时逐次确认' },
+              { value: 'bypass', label: '跳过审批', description: '询问/拒绝规则仍然生效' },
+            ]}
+            onChange={value => setBypass(value === 'bypass')}
+            ariaLabel="Approval mode"
+            menuWidth={260}
+          />
         </label>
 
         <label className="policy-toggle">
@@ -268,25 +275,33 @@ export function PermissionsSettings() {
             </label>
             <label className="field">
               <span>动作 *</span>
-              <select
+              <Select
                 value={draft.action}
-                onChange={event => patch({ action: event.target.value as ApprovalAction })}
-              >
-                {(['allow', 'ask', 'deny'] as const).map(action => (
-                  <option key={action} value={action}>{ACTION_LABEL[action]}</option>
-                ))}
-              </select>
+                options={[
+                  { value: 'allow', label: '允许', description: '匹配时自动执行' },
+                  { value: 'ask', label: '询问', description: '匹配时逐次确认' },
+                  { value: 'deny', label: '拒绝', description: '匹配时直接阻止' },
+                ]}
+                onChange={value => patch({ action: value as ApprovalAction })}
+                ariaLabel="Rule action"
+                menuWidth={220}
+              />
             </label>
           </div>
 
           <div className="form-row two">
             <label className="field">
               <span>匹配方式</span>
-              <select value={draft.match} onChange={event => patch({ match: event.target.value as ApprovalMatch })}>
-                {matchesFor(draft.tool).map(match => (
-                  <option key={match} value={match}>{MATCH_LABEL[match]}</option>
-                ))}
-              </select>
+              <Select
+                value={draft.match}
+                options={matchesFor(draft.tool).map(match => ({
+                  value: match,
+                  label: MATCH_LABEL[match],
+                }))}
+                onChange={value => patch({ match: value as ApprovalMatch })}
+                ariaLabel="Match type"
+                menuWidth={200}
+              />
             </label>
             <label className="field">
               <span>备注</span>

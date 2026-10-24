@@ -6,6 +6,8 @@ export interface ToolRunContext {
   sessionId?: string
   /** The model's tool-call id, for correlating side effects. */
   callId?: string
+  /** Absolute workspace root for this run; tools fall back to their config root. */
+  workspace?: string
 }
 
 export interface ToolDefinition extends ToolSchema {

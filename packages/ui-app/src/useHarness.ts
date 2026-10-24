@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
 import {
   api,
@@ -99,8 +99,8 @@ export function useHarness() {
     setSession(null)
   }, [])
 
-  const createFresh = useCallback(() => {
-    void api.createSession()
+  const createFresh = useCallback((workspace?: string) => {
+    void api.createSession({ workspace })
       .then((created) => {
         const summary = summarize(created)
         sessionsRef.current = upsert(sessionsRef.current, summary)
@@ -142,6 +142,19 @@ export function useHarness() {
       .then(() => dropSession(id))
       .catch(fail)
   }, [dropSession, fail])
+
+  const archiveSession = useCallback((id: string, archived: boolean) => {
+    void api.setArchived(id, archived)
+      .then((next) => {
+        sessionsRef.current = sessionsRef.current.map(item =>
+          item.id === id ? { ...item, archived: next.archived, updatedAt: next.updatedAt } : item)
+        setSessions(sessionsRef.current)
+        setSession(previous => previous && previous.id === id
+          ? { ...previous, archived: next.archived, updatedAt: next.updatedAt }
+          : previous)
+      })
+      .catch(fail)
+  }, [fail])
 
   const forkSession = useCallback((id: string) => {
     void api.forkSession(id)
@@ -281,6 +294,18 @@ export function useHarness() {
 
   const createSession = createFresh
 
+  const recentWorkspaces = useMemo(() => {
+    const seen = new Set<string>()
+    const list: string[] = []
+    for (const item of sessions) {
+      const workspace = item.workspace
+      if (!workspace || seen.has(workspace)) continue
+      seen.add(workspace)
+      list.push(workspace)
+    }
+    return list.slice(0, 8)
+  }, [sessions])
+
   const setMode = useCallback((mode: string) => {
     const id = activeRef.current
     if (!id) return
@@ -310,12 +335,14 @@ export function useHarness() {
     modes,
     defaultMode,
     approvals,
+    recentWorkspaces,
     select,
     send,
     stop,
     createSession,
     renameSession,
     deleteSession,
+    archiveSession,
     forkSession,
     setMode,
     resolveApproval,

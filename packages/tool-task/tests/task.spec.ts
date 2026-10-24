@@ -1,11 +1,16 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { LlmProvider } from '@ruobai/llm'
 import { createHarness, type Harness } from '../../../tests/harness.ts'
 
 const harnesses: Harness[] = []
+const dirs: string[] = []
 
 afterEach(async () => {
   while (harnesses.length) await harnesses.pop()!.dispose()
+  while (dirs.length) await rm(dirs.pop()!, { recursive: true, force: true })
 })
 
 function textOf(message: any): string {
@@ -102,5 +107,31 @@ describe('sub-agent', () => {
 
     expect(result.isError).toBe(true)
     expect(result.content).toContain('cannot spawn sub-agents')
+  })
+
+  it('gives the child the parent workspace', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const workspace = await mkdtemp(join(tmpdir(), 'rbh-task-ws-'))
+    dirs.push(workspace)
+
+    await useScripted(harness.ctx, {
+      name: 'scripted',
+      async *stream() {
+        yield { type: 'text-delta', text: 'child answer' }
+        yield { type: 'done', reason: 'stop' }
+      },
+    })
+
+    const parent = harness.ctx.sessions.create({ mode: 'agent', workspace })
+    const result = await harness.ctx.tools.invoke(
+      'task',
+      { prompt: 'child work' },
+      { sessionId: parent.id, workspace },
+    )
+    expect(result.isError).toBe(false)
+
+    const child = harness.ctx.sessions.list().find(meta => meta.kind === 'subagent')
+    expect(child).toMatchObject({ parentId: parent.id, workspace })
   })
 })

@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ToolBlock } from '@ruobai/chat-protocol'
-import { SparkIcon, ToolIcon } from './Icons.tsx'
+import { ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
+import { TurnNav } from './TurnNav.tsx'
 
 interface TranscriptProps {
   session: ChatSession | null
@@ -15,48 +16,107 @@ const SUGGESTIONS = [
   '给 UI 加一个会话搜索',
 ]
 
+const FOLLOW_THRESHOLD = 24
+
 export function Transcript({ session, onSuggestion }: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
-  const pinnedRef = useRef(true)
+  const innerRef = useRef<HTMLDivElement>(null)
+  const atBottomRef = useRef(true)
+  const lastSessionRef = useRef<string | null>(null)
+  const lastMessageRef = useRef<string | null>(null)
+  const [atBottom, setAtBottom] = useState(true)
 
   const last = session?.messages.at(-1)
   const lastBlock = last?.blocks.at(-1)
   const lastText = lastBlock?.type === 'text' ? lastBlock.text.length : 0
 
-  useEffect(() => {
+  const scrollToBottom = () => {
     const box = boxRef.current
-    if (box && pinnedRef.current) box.scrollTop = box.scrollHeight
+    if (!box) return
+    box.scrollTop = box.scrollHeight
+    atBottomRef.current = true
+    setAtBottom(true)
+  }
+
+  useLayoutEffect(() => {
+    const box = boxRef.current
+    if (!box) return
+    const id = session?.id ?? null
+    const lastMessage = session?.messages.at(-1)
+    const lastId = lastMessage?.id ?? null
+
+    if (id !== lastSessionRef.current) {
+      box.scrollTop = box.scrollHeight
+      atBottomRef.current = true
+      setAtBottom(true)
+    } else if (lastMessage?.role === 'user' && lastId !== lastMessageRef.current) {
+      // Own words must be visible: a new user message always jumps to the bottom.
+      box.scrollTop = box.scrollHeight
+      atBottomRef.current = true
+      setAtBottom(true)
+    } else if (atBottomRef.current) {
+      box.scrollTop = box.scrollHeight
+    }
+
+    lastSessionRef.current = id
+    lastMessageRef.current = lastId
   }, [session?.id, session?.messages.length, lastText])
 
-  return (
-    <div
-      className="transcript"
-      ref={boxRef}
-      onScroll={(event) => {
-        const box = event.currentTarget
-        pinnedRef.current = box.scrollHeight - box.scrollTop - box.clientHeight < 120
-      }}
-    >
-      <div className="transcript-inner">
-        {!session ? (
-          <div className="loading">loading session…</div>
-        ) : session.messages.length === 0 ? (
-          <div className="empty">
-            <div className="empty-mark"><SparkIcon size={26} /></div>
-            <h2>从这里开始</h2>
-            <p>由 ruobai-chat 服务驱动的本地会话。发一条消息，查看流式输出、工具卡片和右侧运行时面板。</p>
-            <div className="suggestions">
-              {SUGGESTIONS.map(text => (
-                <button key={text} className="suggestion" onClick={() => onSuggestion(text)}>
-                  {text}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+  useEffect(() => {
+    const box = boxRef.current
+    const inner = innerRef.current
+    if (!box || !inner) return
+    const observer = new ResizeObserver(() => {
+      if (atBottomRef.current) box.scrollTop = box.scrollHeight
+    })
+    observer.observe(inner)
+    return () => observer.disconnect()
+  }, [])
 
-        {session?.messages.map(message => <Message key={message.id} message={message} />)}
+  return (
+    <div className="transcript-wrap">
+      <div
+        className="transcript"
+        ref={boxRef}
+        onScroll={(event) => {
+          const box = event.currentTarget
+          const bottom = box.scrollHeight - box.scrollTop - box.clientHeight <= FOLLOW_THRESHOLD + 1
+          atBottomRef.current = bottom
+          setAtBottom(bottom)
+        }}
+      >
+        <div className="transcript-inner" ref={innerRef}>
+          {!session ? (
+            <div className="loading">loading session…</div>
+          ) : session.messages.length === 0 ? (
+            <div className="empty">
+              <div className="empty-mark"><SparkIcon size={26} /></div>
+              <h2>从这里开始</h2>
+              <p>由 ruobai-chat 服务驱动的本地会话。发一条消息，查看流式输出、工具卡片和右侧运行时面板。</p>
+              <div className="suggestions">
+                {SUGGESTIONS.map(text => (
+                  <button key={text} className="suggestion" onClick={() => onSuggestion(text)}>
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {session?.messages.map(message => <Message key={message.id} message={message} />)}
+        </div>
+
+        {!atBottom && session?.messages.length
+          ? (
+            <div className="to-bottom-slot">
+              <button className="to-bottom" onClick={scrollToBottom} aria-label="回到底部" title="回到底部">
+                <ChevronDownIcon size={16} />
+              </button>
+            </div>
+          )
+          : null}
       </div>
+      <TurnNav containerRef={boxRef} messages={session?.messages ?? []} />
     </div>
   )
 }
@@ -65,7 +125,7 @@ function Message({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     const text = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
     return (
-      <div className="msg user">
+      <div className="msg user" id={`msg-${message.id}`}>
         <div className="bubble">{text}</div>
       </div>
     )

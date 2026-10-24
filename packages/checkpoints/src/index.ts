@@ -145,7 +145,9 @@ export class CheckpointsService extends Service {
    * than overwriting an external edit.
    */
   async revert(sessionId: string, upToSeq = -1): Promise<RevertResult> {
-    if (!this.ctx.sessions.has(sessionId)) throw new Error(`unknown session: ${sessionId}`)
+    const session = this.ctx.sessions.get(sessionId)
+    if (!session) throw new Error(`unknown session: ${sessionId}`)
+    const workspace = session.meta.workspace ? resolve(session.meta.workspace) : this.root
     const active = this.changes(sessionId).filter(change => change.seq > upToSeq)
     if (!active.length) return { reverted: [], skipped: [] }
 
@@ -166,7 +168,7 @@ export class CheckpointsService extends Service {
 
       let target: string
       try {
-        target = resolveInside(this.root, path)
+        target = resolveInside(workspace, path)
       } catch {
         skipped.push({ path, reason: 'path escapes the workspace' })
         continue
