@@ -8,12 +8,10 @@ import {
   ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PlusIcon, SearchIcon,
 } from './Icons.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
-import { Slot } from './Slot.tsx'
 
 interface SidebarProps {
   sessions: SessionSummary[]
   activeId: string | null
-  connected: boolean
   open: boolean
   onSelect: (id: string) => void
   onCreate: () => void
@@ -397,15 +395,15 @@ export function Sidebar(props: SidebarProps) {
           )}
         </div>
 
-        <div className="sidebar-foot">
-          <span className={`status-dot ${props.connected ? 'ok' : 'off'}`} />
-          <span>{props.connected ? 'connected' : 'reconnecting'}</span>
-          <span className="foot-spacer" />
-          <button className="icon-btn subtle" onClick={props.onOpenSettings} aria-label="设置">
-            <GearIcon size={14} />
-          </button>
-          <Slot name="sidebar.footer" />
-        </div>
+        <button
+          type="button"
+          className="sidebar-foot"
+          onClick={props.onOpenSettings}
+          aria-label="打开设置"
+        >
+          <GearIcon size={15} />
+          <span>设置</span>
+        </button>
       </aside>
 
       {pendingDelete ? (

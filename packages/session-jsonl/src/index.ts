@@ -133,3 +133,8 @@ export class SessionJsonl extends Service {
 }
 
 export default SessionJsonl
+
+export const meta = {
+  title: '会话记录',
+  description: '把会话事件持久化为 JSONL 文件。',
+}

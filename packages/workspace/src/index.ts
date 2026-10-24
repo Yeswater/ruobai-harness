@@ -186,3 +186,8 @@ export class WorkspaceService extends Service {
 }
 
 export default WorkspaceService
+
+export const meta = {
+  title: '工作区服务',
+  description: '受控读取工作区文件夹。',
+}

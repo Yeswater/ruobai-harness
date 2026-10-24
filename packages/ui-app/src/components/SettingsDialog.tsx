@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type ProviderModel, type PublicProvider, type PublicSettings, type RuntimeInfo, type ThemePreference } from '../api.ts'
 import {
-  BotIcon, CloseIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
+  BotIcon, CloseIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
 } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
 import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
 import { PermissionsSettings } from './PermissionsSettings.tsx'
 import { Select } from './Select.tsx'
+import { TokenAmountInput } from './TokenAmountInput.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -17,7 +18,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'appearance' | 'runtime'
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime'
 
 const NAV_GROUPS: Array<{
   label: string
@@ -26,9 +27,8 @@ const NAV_GROUPS: Array<{
   {
     label: '设置',
     items: [
-      { id: 'behavior', label: '常规', icon: <SlidersIcon size={15} />, keywords: '模式 权限 前缀 上下文 压缩 命令' },
-      { id: 'appearance', label: '外观', icon: <SunIcon size={15} />, keywords: '主题 深色 浅色 跟随系统' },
-      { id: 'providers', label: '供应商', icon: <BotIcon size={15} />, keywords: '模型 密钥 地址 上下文窗口 输入类型' },
+      { id: 'behavior', label: '通用', icon: <SlidersIcon size={15} />, keywords: '模式 权限 主题 外观 前缀 上下文 压缩 命令' },
+      { id: 'providers', label: '模型', icon: <BotIcon size={15} />, keywords: '供应商 模型 密钥 地址 上下文窗口 输入类型' },
       { id: 'mcp', label: 'MCP 连接器', icon: <PlugIcon size={15} />, keywords: '服务器 工具 连接' },
       { id: 'permissions', label: '权限', icon: <ShieldIcon size={15} />, keywords: '审批 规则 危险命令' },
     ],
@@ -36,7 +36,7 @@ const NAV_GROUPS: Array<{
   {
     label: '这台电脑',
     items: [
-      { id: 'runtime', label: '运行时', icon: <MonitorIcon size={15} />, keywords: '插件 服务 地址' },
+      { id: 'runtime', label: '内置插件', icon: <PuzzleIcon size={15} />, keywords: '插件 服务 地址' },
     ],
   },
 ]
@@ -88,7 +88,8 @@ export function SettingsDialog({
   const [agentMode, setAgentMode] = useState('agent')
   const [defaultPermission, setDefaultPermission] = useState<PermissionMode>('workspace-write')
   const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
-  const [compactAt, setCompactAt] = useState(48_000)
+  const [compactPercent, setCompactPercent] = useState(80)
+  const [pluginQuery, setPluginQuery] = useState('')
 
   const providers = settings?.llm?.providers ?? []
   const activeProvider = settings?.llm?.activeProvider ?? 'mock'
@@ -101,7 +102,7 @@ export function SettingsDialog({
     setAgentMode(next.agent?.defaultMode ?? 'agent')
     setDefaultPermission(next.agent?.defaultPermission ?? 'workspace-write')
     setCommandPrefix(next.agent?.commandPrefix ?? '～')
-    setCompactAt(next.agent?.compactAt ?? 48_000)
+    setCompactPercent(next.agent?.compactPercent ?? 80)
     const list = next.llm?.providers ?? []
     const target = list.find(provider => provider.id === selectId)
       ?? list.find(provider => provider.id === next.llm?.activeProvider)
@@ -332,7 +333,7 @@ export function SettingsDialog({
           defaultMode: agentMode,
           defaultPermission,
           commandPrefix,
-          compactAt: Number(compactAt) || 48_000,
+          compactPercent: Number(compactPercent) || 80,
         },
       })
       setSettings(next)
@@ -358,6 +359,19 @@ export function SettingsDialog({
   const currentLabel = NAV_GROUPS
     .flatMap(group => group.items)
     .find(item => item.id === tab)?.label ?? '设置'
+
+  const pluginTerm = pluginQuery.trim().toLowerCase()
+  const pluginList = (runtime?.plugins ?? [])
+    .filter(plugin => Boolean(plugin.title))
+    .filter((plugin) => {
+      if (!pluginTerm) return true
+      return plugin.id.toLowerCase().includes(pluginTerm)
+        || plugin.name.toLowerCase().includes(pluginTerm)
+        || (plugin.title ?? '').toLowerCase().includes(pluginTerm)
+        || (plugin.description ?? '').toLowerCase().includes(pluginTerm)
+    })
+  const sessionPlugins = pluginList.filter(plugin => plugin.name.startsWith('mode-'))
+  const globalPlugins = pluginList.filter(plugin => !plugin.name.startsWith('mode-'))
 
   const selectTab = (next: SettingsTab) => {
     setTab(next)
@@ -557,28 +571,18 @@ export function SettingsDialog({
                         <div className="model-card-row">
                           <label className="model-mini-field">
                             <span>上下文窗口</span>
-                            <input
-                              type="number"
-                              min={1}
-                              step={1000}
-                              value={model.contextWindow ?? ''}
-                              onChange={event => updateModel(index, {
-                                contextWindow: event.target.value ? Number(event.target.value) : undefined,
-                              })}
-                              placeholder="1048576"
+                            <TokenAmountInput
+                              value={model.contextWindow}
+                              onChange={contextWindow => updateModel(index, { contextWindow })}
+                              ariaLabel="上下文窗口"
                             />
                           </label>
                           <label className="model-mini-field">
                             <span>最大输出 token</span>
-                            <input
-                              type="number"
-                              min={1}
-                              step={1000}
-                              value={model.maxOutputTokens ?? ''}
-                              onChange={event => updateModel(index, {
-                                maxOutputTokens: event.target.value ? Number(event.target.value) : undefined,
-                              })}
-                              placeholder="262144"
+                            <TokenAmountInput
+                              value={model.maxOutputTokens}
+                              onChange={maxOutputTokens => updateModel(index, { maxOutputTokens })}
+                              ariaLabel="最大输出 token"
                             />
                           </label>
                         </div>
@@ -642,6 +646,39 @@ export function SettingsDialog({
         </div>
         ) : tab === 'behavior' ? (
           <div className="behavior-form">
+            <div className="appearance-row">
+              <div className="appearance-label">
+                主题
+                <span className="appearance-hint">跟随系统，或固定浅色 / 深色；仅保存在本机。</span>
+              </div>
+              <div className="theme-switch" role="group" aria-label="主题">
+                <button
+                  className={themePreference === 'system' ? 'active' : ''}
+                  onClick={() => onThemeChange('system')}
+                  aria-label="跟随系统"
+                  title="跟随系统"
+                >
+                  <MonitorIcon size={15} />
+                </button>
+                <button
+                  className={themePreference === 'light' ? 'active' : ''}
+                  onClick={() => onThemeChange('light')}
+                  aria-label="浅色"
+                  title="浅色"
+                >
+                  <SunIcon size={15} />
+                </button>
+                <button
+                  className={themePreference === 'dark' ? 'active' : ''}
+                  onClick={() => onThemeChange('dark')}
+                  aria-label="深色"
+                  title="深色"
+                >
+                  <MoonIcon size={15} />
+                </button>
+              </div>
+            </div>
+
             <label className="field">
               <span>默认模式（新建会话）</span>
               <Select
@@ -692,16 +729,23 @@ export function SettingsDialog({
             <p className="field-help">/ 与 ／ 始终可用；这里选择额外的兼容触发符。</p>
 
             <label className="field">
-              <span>上下文压缩阈值（估算 token）</span>
-              <input
-                type="number"
-                min={1000}
-                step={1000}
-                value={compactAt}
-                onChange={event => setCompactAt(Number(event.target.value))}
-              />
+              <span>上下文压缩阈值</span>
+              <div className="percent-amount">
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  value={compactPercent}
+                  onChange={event => setCompactPercent(Number(event.target.value))}
+                  aria-label="上下文压缩阈值百分比"
+                />
+                <span>%</span>
+              </div>
             </label>
-            <p className="field-help">超过阈值时用当前模型把较早消息总结成摘要事件，保留最近消息。</p>
+            <p className="field-help">
+              按当前模型上下文窗口的百分比计算；模型未配置窗口时回退到内置阈值。
+            </p>
 
             {error ? <div className="detail-note error">{error}</div> : null}
             {notice ? <div className="detail-note">{notice}</div> : null}
@@ -713,75 +757,54 @@ export function SettingsDialog({
               </button>
             </div>
           </div>
-        ) : tab === 'appearance' ? (
-          <div className="settings-page-body scroll">
-            <div className="appearance-row">
-              <div className="appearance-label">
-                主题
-                <span className="appearance-hint">跟随系统，或固定浅色 / 深色；仅保存在本机。</span>
-              </div>
-              <div className="theme-switch" role="group" aria-label="主题">
-                <button
-                  className={themePreference === 'system' ? 'active' : ''}
-                  onClick={() => onThemeChange('system')}
-                  aria-label="跟随系统"
-                  title="跟随系统"
-                >
-                  <MonitorIcon size={15} />
-                </button>
-                <button
-                  className={themePreference === 'light' ? 'active' : ''}
-                  onClick={() => onThemeChange('light')}
-                  aria-label="浅色"
-                  title="浅色"
-                >
-                  <SunIcon size={15} />
-                </button>
-                <button
-                  className={themePreference === 'dark' ? 'active' : ''}
-                  onClick={() => onThemeChange('dark')}
-                  aria-label="深色"
-                  title="深色"
-                >
-                  <MoonIcon size={15} />
-                </button>
-              </div>
-            </div>
-          </div>
         ) : tab === 'mcp' ? (
           <McpSettings />
         ) : tab === 'permissions' ? (
           <PermissionsSettings />
         ) : (
-          <div className="settings-page-body scroll runtime-settings">
-            <h3 className="settings-section-title">服务地址</h3>
+          <div className="settings-page-body scroll plugins-page">
+            <div className="plugin-search">
+              <SearchIcon size={14} />
+              <input
+                value={pluginQuery}
+                onChange={event => setPluginQuery(event.target.value)}
+                placeholder="搜索插件"
+                aria-label="搜索插件"
+              />
+              {pluginQuery
+                ? <button onClick={() => setPluginQuery('')} aria-label="清除插件搜索">×</button>
+                : null}
+            </div>
+
             {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
             {runtime
               ? (
                 <>
-                  <div className="mono small">{runtime.url}</div>
-                  <h3 className="settings-section-title">插件</h3>
-                  <div className="plugin-list">
-                    {runtime.plugins.map(plugin => (
-                      <div className="plugin" key={`${plugin.name}-${plugin.uid}`}>
-                        <span className={`status-dot ${runtimeState(plugin.state)}`} />
-                        <span className="plugin-name">{plugin.name}</span>
-                        <span className={`state state-${runtimeState(plugin.state)}`}>
-                          {plugin.state.toLowerCase()}
-                        </span>
-                        {plugin.services.length
-                          ? <span className="plugin-services">{plugin.services.join(', ')}</span>
-                          : null}
-                      </div>
+                  {sessionPlugins.length
+                    ? (
+                      <>
+                        <h3 className="settings-section-title">会话插件</h3>
+                        <p className="settings-section-note">按会话选择的模式插件。</p>
+                        <div className="plugin-cards">
+                          {sessionPlugins.map(plugin => (
+                            <PluginCard key={`${plugin.name}-${plugin.uid}`} plugin={plugin} />
+                          ))}
+                        </div>
+                      </>
+                    )
+                    : null}
+
+                  <h3 className="settings-section-title">全局插件</h3>
+                  <p className="settings-section-note">系统与所有会话共用。</p>
+                  <div className="plugin-cards">
+                    {globalPlugins.map(plugin => (
+                      <PluginCard key={`${plugin.name}-${plugin.uid}`} plugin={plugin} />
                     ))}
                   </div>
-                  <h3 className="settings-section-title">服务</h3>
-                  <div className="chip-row">
-                    {runtime.services.map(service => <span className="chip" key={service}>{service}</span>)}
-                  </div>
+                  {pluginList.length ? null : <div className="detail-note">没有匹配的插件。</div>}
                 </>
               )
-              : <div className="loading">loading runtime…</div>}
+              : <div className="loading">loading plugins…</div>}
           </div>
         )}
           </section>
@@ -796,4 +819,25 @@ function runtimeState(state: string) {
   if (state === 'PENDING' || state === 'LOADING') return 'warn'
   if (state === 'FAILED') return 'danger'
   return 'off'
+}
+
+function PluginCard({ plugin }: { plugin: RuntimeInfo['plugins'][number] }) {
+  const title = plugin.title || plugin.name
+  const description = plugin.description || ''
+  return (
+    <article className="plugin-card">
+      <header className="plugin-card-head">
+        <span className={`status-dot ${runtimeState(plugin.state)}`} />
+        <span className="plugin-card-name">{title}</span>
+        <span className={`state state-${runtimeState(plugin.state)}`}>{plugin.state.toLowerCase()}</span>
+      </header>
+      {description ? <p className="plugin-card-desc">{description}</p> : null}
+      <div className="plugin-card-meta">
+        <code className="plugin-card-id">{plugin.id}</code>
+        {plugin.services.length
+          ? <span className="plugin-card-services">{plugin.services.join(', ')}</span>
+          : null}
+      </div>
+    </article>
+  )
 }

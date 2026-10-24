@@ -51,6 +51,7 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
               defaultMode: typeof body.agent.defaultMode === 'string' ? body.agent.defaultMode : undefined,
               defaultPermission: normalizeDefaultPermission(body.agent.defaultPermission),
               commandPrefix: normalizeCommandPrefix(body.agent.commandPrefix),
+              compactPercent: normalizeCompactPercent(body.agent.compactPercent),
               bypassApprovals: typeof body.agent.bypassApprovals === 'boolean' ? body.agent.bypassApprovals : undefined,
               compactAt: typeof body.agent.compactAt === 'number' ? body.agent.compactAt : undefined,
             }
@@ -231,4 +232,18 @@ function normalizeCommandPrefix(value: unknown): CommandPrefix | undefined {
   if (value === undefined) return undefined
   if (value === '～' || value === '！' || value === '#') return value
   throw new HttpError(400, 'commandPrefix must be ～, ！ or #')
+}
+
+function normalizeCompactPercent(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  const percent = Number(value)
+  if (!Number.isFinite(percent) || percent < 1 || percent > 100) {
+    throw new HttpError(400, 'compactPercent must be between 1 and 100')
+  }
+  return Math.round(percent)
+}
+
+export const meta = {
+  title: '设置接口',
+  description: '提供设置、供应商与审批规则接口。',
 }

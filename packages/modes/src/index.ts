@@ -96,3 +96,8 @@ export class ModeService extends Service {
 }
 
 export default ModeService
+
+export const meta = {
+  title: '模式注册表',
+  description: '管理 Ask、Plan、Agent、Goal 等模式。',
+}

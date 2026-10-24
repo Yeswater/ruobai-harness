@@ -225,3 +225,8 @@ export class ApprovalService extends Service {
 }
 
 export default ApprovalService
+
+export const meta = {
+  title: '审批服务',
+  description: '危险操作的人工确认与持久规则。',
+}

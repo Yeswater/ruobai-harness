@@ -110,3 +110,8 @@ function loginPage() {
 }
 
 export default { name, inject, Config, apply }
+
+export const meta = {
+  title: '访问认证',
+  description: '可选的访问令牌校验。',
+}

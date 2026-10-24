@@ -12,6 +12,11 @@ const inspectFormatter: Formatter = (value, target) => {
 
 /** Node console exporter with `util.inspect` object formatting. */
 export class ConsoleExporter extends Base {
+  static meta = {
+    title: '控制台日志',
+    description: '把插件运行日志输出到终端。',
+  }
+
   formatters: Record<string, Formatter> = {
     o: inspectFormatter,
     O: inspectFormatter,
@@ -26,3 +31,8 @@ export class ConsoleExporter extends Base {
 }
 
 export default ConsoleExporter
+
+export const meta = {
+  title: '控制台日志',
+  description: '把插件运行日志输出到终端。',
+}

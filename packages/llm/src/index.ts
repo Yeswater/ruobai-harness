@@ -109,3 +109,8 @@ export class LlmService extends Service {
 }
 
 export default LlmService
+
+export const meta = {
+  title: '模型服务',
+  description: '为不同模型提供统一的调用接口。',
+}

@@ -21,3 +21,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: 'Agent 模式',
+  description: '直接使用工具完成任务。',
+}

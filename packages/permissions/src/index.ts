@@ -81,3 +81,8 @@ export class PermissionService extends Service {
 }
 
 export default PermissionService
+
+export const meta = {
+  title: '权限服务',
+  description: '四档权限策略与会话级约束。',
+}

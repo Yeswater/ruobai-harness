@@ -4286,3 +4286,199 @@ body {
     padding-left: 16px;
   }
 }
+
+/* Token amount and percent inputs */
+
+.token-amount {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.token-amount:focus-within,
+.percent-amount:focus-within {
+  border-color: var(--accent);
+}
+
+.token-amount input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.token-amount select {
+  flex: none;
+  padding: 0 5px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: var(--tool-bg);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.percent-amount {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.percent-amount input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.percent-amount span {
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* Built-in plugins page */
+
+.plugin-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--faint);
+}
+
+.plugin-search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+.plugin-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.plugin-search button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.plugin-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.plugin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.plugin-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.plugin-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-card-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.plugin-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-card-id {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--tool-bg);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.plugin-card-services {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.settings-section-note {
+  margin: -2px 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .plugin-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Sidebar footer is the settings entry */
+
+.sidebar-foot {
+  width: 100%;
+  justify-content: center;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-foot:hover {
+  background: rgba(0, 0, 0, .035);
+}
+
+[data-theme="dark"] .sidebar-foot:hover {
+  background: rgba(255, 255, 255, .04);
+}

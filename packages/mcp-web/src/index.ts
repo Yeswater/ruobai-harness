@@ -121,3 +121,8 @@ function fail(ctx: Context, res: ServerResponse, error: unknown) {
   if (status >= 500) ctx.logger('mcp-web').error(error)
   if (!res.headersSent) sendJson(res, status, { error: message })
 }
+
+export const meta = {
+  title: 'MCP 接口',
+  description: '提供 MCP 服务器的管理接口。',
+}

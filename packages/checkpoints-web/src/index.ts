@@ -44,3 +44,8 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
   }
   return true
 }
+
+export const meta = {
+  title: '检查点接口',
+  description: '提供改动列表与回退接口。',
+}

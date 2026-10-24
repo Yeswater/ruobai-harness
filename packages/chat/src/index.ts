@@ -411,3 +411,8 @@ function blocksOf(parts: ContentPart[]): ChatBlock[] {
 }
 
 export default ChatService
+
+export const meta = {
+  title: '会话投影',
+  description: '为浏览器聚合会话消息与流式事件。',
+}

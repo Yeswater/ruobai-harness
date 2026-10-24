@@ -100,3 +100,8 @@ export default class MockProviderPlugin {
     ctx.effect(() => ctx.llm.register(new MockProvider(config)), 'ctx.llm.register(mock)')
   }
 }
+
+export const meta = {
+  title: '离线模型',
+  description: '无需网络的开发与测试模型。',
+}

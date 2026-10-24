@@ -8,3 +8,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, apply }
+
+export const meta = {
+  title: '欢迎示例',
+  description: '演示客户端插件与侧边卡片。',
+}

@@ -47,3 +47,8 @@ export class CounterService extends Service {
 }
 
 export default CounterService
+
+export const meta = {
+  title: '计数器示例',
+  description: '演示客户端插件状态同步。',
+}

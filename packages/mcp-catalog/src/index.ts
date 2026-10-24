@@ -40,3 +40,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: 'MCP 目录',
+  description: '根据设置维护 MCP 服务器连接。',
+}

@@ -41,3 +41,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: 'Goal 模式',
+  description: '多轮自主推进直到目标完成。',
+}

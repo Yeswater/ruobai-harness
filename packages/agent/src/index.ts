@@ -398,3 +398,8 @@ function parseArguments(raw: string) {
 }
 
 export default AgentService
+
+export const meta = {
+  title: '智能体驱动',
+  description: '驱动模型、工具调用与多步回合。',
+}

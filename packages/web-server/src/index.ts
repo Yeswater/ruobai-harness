@@ -233,3 +233,8 @@ function matches(route: WebRoute, pathname: string) {
 }
 
 export default WebServer
+
+export const meta = {
+  title: 'HTTP 服务',
+  description: '提供 Web 服务与路由。',
+}

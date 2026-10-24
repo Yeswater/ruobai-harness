@@ -63,6 +63,11 @@ export namespace Loader {
  * Subclasses provide persistence by implementing `write()` on `EntryTree`.
  */
 export class Loader extends EntryTree {
+  static meta = {
+    title: '插件加载器',
+    description: '读取配置文件并维护插件树。',
+  }
+
   declare [Service.config]: Loader.Intercept
 
   public envData = process.env.CORDIS_SHARED
@@ -191,12 +196,31 @@ export class Loader extends EntryTree {
   /** Normalize ESM/CJS/default export shapes before applying a plugin. */
   unwrapExports(exports: any) {
     if (isNullable(exports)) return exports
+    const module = exports
     exports = exports.default ?? exports
     // https://github.com/evanw/esbuild/issues/2623
     // https://esbuild.github.io/content-types/#default-interop
-    if (!exports.__esModule) return exports
-    return exports.default ?? exports
+    const plugin = !exports.__esModule ? exports : exports.default ?? exports
+    // A plugin may declare display metadata as a named export; hand it to the
+    // plugin value so the runtime API can expose a friendly title and blurb.
+    if (module?.meta) {
+      const targets = [plugin, plugin?.apply]
+      for (const target of targets) {
+        if (!target || (typeof target !== 'function' && typeof target !== 'object')) continue
+        try {
+          target.meta ??= module.meta
+        } catch {
+          // frozen plugin value: metadata stays unavailable
+        }
+      }
+    }
+    return plugin
   }
 }
 
 export default Loader
+
+export const meta = {
+  title: '插件加载器',
+  description: '读取配置文件并维护插件树。',
+}

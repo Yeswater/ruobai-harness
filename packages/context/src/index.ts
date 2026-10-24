@@ -160,24 +160,11 @@ export class ContextService extends Service {
       systemTools: estimateSchema(regular),
       mcpTools: estimateSchema(mcp),
     }
-    const settings = this.ctx.get('settings', false) as
-      | {
-        raw?(): { llm?: { activeProvider?: string; activeModel?: string } }
-        findProvider?(id: string): {
-          models: Array<{ id: string; contextWindow?: number }>
-        } | undefined
-      }
-      | undefined
-    const config = settings?.raw?.()
-    const providerId = record.meta.provider ?? config?.llm?.activeProvider
-    const modelId = record.meta.model ?? config?.llm?.activeModel
-    const model = providerId
-      ? settings?.findProvider?.(providerId)?.models.find(item => item.id === modelId)
-      : undefined
+    const model = this.modelInfo(record)
     return {
       estimatedTokens: breakdown.messages + breakdown.systemPrompt
         + breakdown.systemTools + breakdown.mcpTools,
-      compactAt: this.threshold(),
+      compactAt: this.threshold(sessionId),
       ...(model?.contextWindow ? { contextWindow: model.contextWindow } : {}),
       summaries: record.events.filter(event => event.type === SUMMARY_TYPE).length,
       breakdown,
@@ -190,7 +177,7 @@ export class ContextService extends Service {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) return
     const built = await this.build(sessionId, options)
-    const threshold = this.threshold()
+    const threshold = this.threshold(sessionId)
     if (built.estimatedTokens < threshold) return
 
     const summary = latestSummary(record)
@@ -241,11 +228,38 @@ export class ContextService extends Service {
     return info
   }
 
-  private threshold() {
+  private threshold(sessionId?: string) {
     const settings = this.ctx.get('settings', false) as
-      | { raw(): { agent?: { compactAt?: number } } }
+      | { raw(): { agent?: { compactAt?: number; compactPercent?: number } } }
       | undefined
-    return settings?.raw().agent?.compactAt ?? this.config.compactAt ?? 48_000
+    const agent = settings?.raw().agent
+    if (sessionId) {
+      const record = this.ctx.sessions.get(sessionId)
+      const window = record ? this.modelInfo(record)?.contextWindow : undefined
+      if (window) {
+        const percent = agent?.compactPercent ?? 80
+        return Math.max(1_000, Math.floor((window * percent) / 100))
+      }
+    }
+    return agent?.compactAt ?? this.config.compactAt ?? 48_000
+  }
+
+  /** Context window and capabilities configured for this session's model. */
+  private modelInfo(record: SessionRecord) {
+    const settings = this.ctx.get('settings', false) as
+      | {
+        raw?(): { llm?: { activeProvider?: string; activeModel?: string } }
+        findProvider?(id: string): {
+          models: Array<{ id: string; contextWindow?: number }>
+        } | undefined
+      }
+      | undefined
+    const config = settings?.raw?.()
+    const providerId = record.meta.provider ?? config?.llm?.activeProvider
+    const modelId = record.meta.model ?? config?.llm?.activeModel
+    return providerId
+      ? settings?.findProvider?.(providerId)?.models.find(item => item.id === modelId)
+      : undefined
   }
 
   private async workspaceInstructions() {
@@ -382,4 +396,9 @@ function estimateMessages(messages: Message[]) {
 
 function estimateSchema(tools: ToolSchema[]) {
   return tools.length ? Math.ceil(JSON.stringify(tools).length / 3) : 0
+}
+
+export const meta = {
+  title: '上下文服务',
+  description: '组装系统提示、消息历史与压缩摘要。',
 }

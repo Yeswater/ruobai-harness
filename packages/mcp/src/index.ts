@@ -428,3 +428,8 @@ function renderContent(item: McpContent) {
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
+
+export const meta = {
+  title: 'MCP 服务',
+  description: '连接 MCP 服务器并把工具暴露给模型。',
+}

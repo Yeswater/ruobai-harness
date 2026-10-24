@@ -71,10 +71,12 @@ export interface AgentSettings {
   defaultPermission?: PermissionMode
   /** IME-friendly alternate trigger for slash commands. */
   commandPrefix?: CommandPrefix
+  /** Compact when estimated tokens reach this percentage of the model window. */
+  compactPercent?: number
+  /** Absolute fallback when the model has no configured context window. */
+  compactAt?: number
   /** Skip write approvals entirely. Dangerous; surfaced in settings as bypass. */
   bypassApprovals?: boolean
-  /** Estimated-token threshold that triggers LLM summarization. */
-  compactAt?: number
 }
 
 export type ApprovalAction = 'allow' | 'ask' | 'deny'
@@ -304,6 +306,12 @@ export class SettingsService extends Service {
       }
       if (patch.agent.commandPrefix !== undefined) {
         agent.commandPrefix = patch.agent.commandPrefix || undefined
+      }
+      if (patch.agent.compactPercent !== undefined) {
+        const percent = Number(patch.agent.compactPercent)
+        agent.compactPercent = Number.isFinite(percent)
+          ? Math.min(100, Math.max(1, Math.round(percent)))
+          : undefined
       }
       if (patch.agent.bypassApprovals !== undefined) agent.bypassApprovals = Boolean(patch.agent.bypassApprovals)
       if (patch.agent.compactAt !== undefined) agent.compactAt = Math.max(1000, Number(patch.agent.compactAt) || 0) || undefined
@@ -792,3 +800,8 @@ function normalizeApproval(value: McpApproval | undefined): McpApproval {
 }
 
 export default SettingsService
+
+export const meta = {
+  title: '设置服务',
+  description: '读写本地设置与供应商配置。',
+}

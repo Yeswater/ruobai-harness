@@ -63,3 +63,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: '模型目录',
+  description: '把设置中的供应商注册为模型适配器。',
+}

@@ -154,3 +154,8 @@ async function bundle(entry: string): Promise<string> {
   bundles.set(entry, { mtime: info.mtimeMs, code })
   return code
 }
+
+export const meta = {
+  title: '客户端模块',
+  description: '打包并加载客户端插件。',
+}

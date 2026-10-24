@@ -281,3 +281,8 @@ export default class BashTools {
 }
 
 export { inside, resolveCwd }
+
+export const meta = {
+  title: 'Shell 工具',
+  description: '在工作区内执行终端命令。',
+}

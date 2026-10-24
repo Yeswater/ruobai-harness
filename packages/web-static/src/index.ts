@@ -134,3 +134,8 @@ export async function apply(ctx: Context, config: Config) {
 }
 
 export default { name, inject, Config, apply }
+
+export const meta = {
+  title: '静态资源',
+  description: '提供浏览器 UI 的静态文件。',
+}

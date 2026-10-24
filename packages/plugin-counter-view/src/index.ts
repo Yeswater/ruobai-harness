@@ -16,3 +16,8 @@ export function apply(ctx: Context) {
   // `ctx.interval` is already an effect: unloading this plugin clears it.
   ctx.interval(() => ctx.counter.increment(), 2_000)
 }
+
+export const meta = {
+  title: '计数器视图',
+  description: '演示客户端视图插件。',
+}

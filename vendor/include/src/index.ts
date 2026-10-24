@@ -392,3 +392,8 @@ export class Include extends EntryTree {
 }
 
 export default Include
+
+export const meta = {
+  title: '配置文件包含',
+  description: '从 cordis.yml 装载插件列表。',
+}

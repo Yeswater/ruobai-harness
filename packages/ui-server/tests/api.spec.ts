@@ -245,8 +245,19 @@ describe('ui server', () => {
 
     const context = await (await fetch(`${base}/api/sessions/${created.session.id}/context`)).json() as {
       contextWindow?: number
+      compactAt?: number
     }
     expect(context.contextWindow).toBe(128_000)
+
+    await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ agent: { compactPercent: 50 } }),
+    })
+    const compacted = await (await fetch(`${base}/api/sessions/${created.session.id}/context`)).json() as {
+      compactAt?: number
+    }
+    expect(compacted.compactAt).toBe(64_000)
 
     const image = await fetch(`${base}/api/sessions/${created.session.id}/messages`, {
       method: 'POST',

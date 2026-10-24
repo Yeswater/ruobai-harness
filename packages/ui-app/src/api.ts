@@ -24,7 +24,15 @@ export interface WorkspaceMatch {
 }
 
 export interface RuntimeInfo {
-  plugins: Array<{ uid: number | null; name: string; state: string; services: string[] }>
+  plugins: Array<{
+    uid: number | null
+    id: string
+    name: string
+    title?: string
+    description?: string
+    state: string
+    services: string[]
+  }>
   services: string[]
   url: string
 }
@@ -80,6 +88,7 @@ export interface PublicSettings {
     defaultMode?: string
     defaultPermission?: PermissionMode
     commandPrefix?: CommandPrefix
+    compactPercent?: number
     bypassApprovals?: boolean
     compactAt?: number
   }
@@ -111,6 +120,7 @@ export interface SettingsPatch {
     defaultMode?: string
     defaultPermission?: PermissionMode
     commandPrefix?: CommandPrefix
+    compactPercent?: number
     bypassApprovals?: boolean
     compactAt?: number
   }

@@ -286,9 +286,21 @@ export class UiApi extends Service {
     const plugins: unknown[] = []
     for (const runtime of this.ctx.registry.values()) {
       for (const fiber of runtime.fibers) {
+        const meta = (fiber.runtime?.callback as {
+          meta?: { title?: string; description?: string }
+        } | undefined)?.meta
+        const entryId = (fiber as unknown as {
+          entry?: { options?: { id?: string } }
+        }).entry?.options?.id
+        const stableId = entryId && !/^[0-9a-f]{8,}$/i.test(entryId)
+          ? entryId
+          : pluginSlug(fiber.name)
         plugins.push({
           uid: fiber.uid,
+          id: `ruobai-${stableId}`,
           name: fiber.name,
+          ...(meta?.title ? { title: meta.title } : {}),
+          ...(meta?.description ? { description: meta.description } : {}),
           state: STATES[fiber.state] ?? 'UNKNOWN',
           services: Object.keys(fiber.store ?? {}),
         })
@@ -302,3 +314,16 @@ export class UiApi extends Service {
 }
 
 export default UiApi
+
+export const meta = {
+  title: 'Web API',
+  description: '提供会话、审批、上下文与事件流接口。',
+}
+
+function pluginSlug(name: string) {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .toLowerCase()
+    .replace(/^-+|-+$/g, '') || 'plugin'
+}

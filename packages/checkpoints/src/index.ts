@@ -233,3 +233,8 @@ export class CheckpointsService extends Service {
 }
 
 export default CheckpointsService
+
+export const meta = {
+  title: '检查点',
+  description: '记录文件写入快照并支持回退。',
+}

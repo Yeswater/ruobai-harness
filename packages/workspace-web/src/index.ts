@@ -163,3 +163,8 @@ async function commit(ctx: Context, req: IncomingMessage, res: ServerResponse) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: '工作区接口',
+  description: '提供文件树、文件读取与 Git 状态接口。',
+}

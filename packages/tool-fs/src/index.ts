@@ -287,3 +287,8 @@ export default class FsTools {
 }
 
 export { createDiff, inside, resolveInside }
+
+export const meta = {
+  title: '文件工具',
+  description: '读取、写入与搜索工作区文件。',
+}

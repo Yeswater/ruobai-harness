@@ -116,9 +116,10 @@ describe('provider API', () => {
     const saved = await (await fetch(`${base}/api/settings`, {
       method: 'PATCH',
       headers: json,
-      body: JSON.stringify({ agent: { commandPrefix: '#' } }),
-    })).json() as { settings: { agent?: { commandPrefix?: string } } }
+      body: JSON.stringify({ agent: { commandPrefix: '#', compactPercent: 80 } }),
+    })).json() as { settings: { agent?: { commandPrefix?: string; compactPercent?: number } } }
     expect(saved.settings.agent?.commandPrefix).toBe('#')
+    expect(saved.settings.agent?.compactPercent).toBe(80)
 
     const invalid = await fetch(`${base}/api/settings`, {
       method: 'PATCH',
@@ -126,5 +127,12 @@ describe('provider API', () => {
       body: JSON.stringify({ agent: { commandPrefix: '~' } }),
     })
     expect(invalid.status).toBe(400)
+
+    const invalidPercent = await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ agent: { compactPercent: 0 } }),
+    })
+    expect(invalidPercent.status).toBe(400)
   })
 })

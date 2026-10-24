@@ -18,3 +18,8 @@ export function apply(ctx: Context, config: Config) {
   logger.info('hello, %s', config.target)
   ctx.effect(() => () => logger.info('goodbye, %s', config.target))
 }
+
+export const meta = {
+  title: 'Hello 示例',
+  description: '服务端插件示例。',
+}

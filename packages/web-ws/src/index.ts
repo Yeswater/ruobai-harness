@@ -59,3 +59,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: 'WebSocket 通道',
+  description: '向浏览器实时推送会话事件。',
+}

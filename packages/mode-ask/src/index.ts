@@ -22,3 +22,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: 'Ask 模式',
+  description: '只读问答，不修改工作区。',
+}

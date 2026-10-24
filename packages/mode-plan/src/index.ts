@@ -23,3 +23,8 @@ export function apply(ctx: Context) {
 }
 
 export default { name, inject, apply }
+
+export const meta = {
+  title: 'Plan 模式',
+  description: '先制定计划，再决定是否执行。',
+}

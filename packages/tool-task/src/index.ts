@@ -79,3 +79,8 @@ function taskTool(ctx: Context): ToolDefinition {
     },
   }
 }
+
+export const meta = {
+  title: '子任务工具',
+  description: '把任务委派给独立的子代理。',
+}

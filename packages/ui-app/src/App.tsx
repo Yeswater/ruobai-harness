@@ -65,7 +65,6 @@ export function App() {
       <Sidebar
         sessions={harness.sessions}
         activeId={harness.activeId}
-        connected={harness.connected}
         open={sidebarOpen}
         onSelect={(id) => {
           harness.select(id)

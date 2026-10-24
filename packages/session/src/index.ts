@@ -263,3 +263,8 @@ export class SessionService extends Service {
 }
 
 export default SessionService
+
+export const meta = {
+  title: '会话服务',
+  description: '以事件日志保存会话状态。',
+}

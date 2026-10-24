@@ -246,3 +246,8 @@ export default class OpenAiProviderPlugin {
     ctx.effect(() => ctx.llm.register(new OpenAiProvider(config)), 'ctx.llm.register(openai)')
   }
 }
+
+export const meta = {
+  title: 'OpenAI 兼容适配器',
+  description: '接入 OpenAI 协议的模型服务。',
+}

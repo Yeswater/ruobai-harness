@@ -182,3 +182,8 @@ export class ToolRegistry extends Service {
 }
 
 export default ToolRegistry
+
+export const meta = {
+  title: '工具注册表',
+  description: '注册并执行模型可调用的工具。',
+}
