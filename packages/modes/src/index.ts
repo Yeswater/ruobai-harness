@@ -14,7 +14,6 @@ export interface ModeDefinition {
   extraTools?: string[]
   /** Keep running after a text-only step until a tool marks completion. */
   autonomous?: boolean
-  maxSteps?: number
 }
 
 export interface ModeInfo {

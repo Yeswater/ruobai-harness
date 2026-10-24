@@ -13,7 +13,6 @@ const mode: ModeDefinition = {
   order: 40,
   description: '多轮自主推进，完成后调用 goal_complete',
   autonomous: true,
-  maxSteps: 32,
   extraTools: [GOAL_COMPLETE],
   systemPrompt: [
     'You are in Goal mode.',

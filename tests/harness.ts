@@ -83,7 +83,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(ContextService, { compactAt: 1_000_000 }))
   await mount(ctx.plugin(ApprovalService))
   await mount(ctx.plugin(PermissionService))
-  await mount(ctx.plugin(AgentService, { maxSteps: 4 }))
+  await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))

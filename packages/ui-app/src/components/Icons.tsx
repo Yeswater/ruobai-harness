@@ -13,6 +13,9 @@ function base(size = 16) {
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
     'aria-hidden': true,
+    // Icons inside text rows must keep their size; flex would otherwise
+    // squeeze them to make room for long labels.
+    style: { flexShrink: 0 },
   }
 }
 

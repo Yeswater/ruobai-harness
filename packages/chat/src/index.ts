@@ -23,6 +23,7 @@ const CONVERSATION_EVENTS = new Set([
   'message/assistant',
   'tool/result',
   'turn/error',
+  'turn/notice',
 ])
 
 /**
@@ -300,6 +301,9 @@ export class ChatService extends Service {
     } else if (event.type === 'turn/error') {
       const message = session.messages.find(item => item.id === `error-${event.seq}`)
       if (message) this.ctx.emit('chat/event', { type: 'message-added', sessionId: id, message })
+    } else if (event.type === 'turn/notice') {
+      const message = session.messages.find(item => item.id === `notice-${event.seq}`)
+      if (message) this.ctx.emit('chat/event', { type: 'message-added', sessionId: id, message })
     } else if (event.type === 'message/assistant') {
       const message = session.messages.find(item => item.id === event.data.id)
       if (message) this.ctx.emit('chat/event', { type: 'message-updated', sessionId: id, message })
@@ -364,6 +368,17 @@ export class ChatService extends Service {
           createdAt: event.ts,
         })
       }
+    } else if (event.type === 'turn/notice') {
+      const id = `notice-${event.seq}`
+      if (!session.messages.some(message => message.id === id)) {
+        session.messages.push({
+          id,
+          role: 'assistant',
+          blocks: [{ type: 'text', text: noticeText(event.data) }],
+          status: 'done',
+          createdAt: event.ts,
+        })
+      }
     }
     session.updatedAt = Math.max(session.updatedAt, event.ts)
   }
@@ -408,6 +423,13 @@ function blocksOf(parts: ContentPart[]): ChatBlock[] {
     }
   }
   return blocks
+}
+
+function noticeText(data: { kind?: string; steps?: number }) {
+  if (data.kind === 'max-steps') {
+    return `⚠ 本轮已达到 ${data.steps ?? 0} 步上限，任务可能还没完成。发送「继续」可以接着执行。`
+  }
+  return '⚠ 本轮已结束'
 }
 
 export default ChatService

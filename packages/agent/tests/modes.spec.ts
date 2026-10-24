@@ -152,6 +152,43 @@ describe('agent modes', () => {
     expect(harness.ctx.chat.get(session.id)?.stats).toMatchObject({ outputTokens: 2 })
   })
 
+  it('keeps looping until the model stops calling tools', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+
+    let step = 0
+    await useScripted(harness.ctx, {
+      name: 'scripted',
+      async *stream() {
+        step += 1
+        if (step <= 12) {
+          yield {
+            type: 'tool-call',
+            id: `call_${step}`,
+            name: 'list_dir',
+            arguments: JSON.stringify({ path: '.' }),
+          }
+          yield { type: 'done', reason: 'tool-calls' }
+        } else {
+          yield { type: 'text-delta', text: 'done' }
+          yield { type: 'done', reason: 'stop' }
+        }
+      },
+    })
+
+    const session = harness.ctx.chat.create(undefined, 'agent')
+    const done = nextDone(harness.ctx)
+    harness.ctx.chat.send(session.id, 'keep working')
+    const final = await done
+
+    expect(step).toBe(13)
+    const texts = final.messages.flatMap(message => message.blocks)
+      .filter(block => block.type === 'text')
+      .map(block => (block as { text: string }).text)
+    expect(texts.join('\n')).not.toContain('步上限')
+    expect(texts.join('\n')).toContain('done')
+  })
+
   it('Goal mode nudges once and stops on goal_complete', async () => {
     const harness = await createHarness()
     harnesses.push(harness)

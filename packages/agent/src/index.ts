@@ -12,7 +12,10 @@ export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 export interface RunOptions {
   /** Aborts the turn when this signal fires (e.g. the parent turn ending). */
   signal?: AbortSignal
-  /** Overrides the mode/config step budget. */
+  /**
+   * Step budget for delegated runs. Interactive turns are unbounded: they end
+   * when the model stops calling tools, the user stops them, or an error hits.
+   */
   maxSteps?: number
   /** Tools hidden for this run only (prevents recursive sub-agents). */
   denyTools?: string[]
@@ -33,7 +36,6 @@ export interface UserMessageData {
 
 export interface Config {
   systemPrompt?: string
-  maxSteps?: number
   maxTokens?: number
   temperature?: number
   provider?: string
@@ -69,7 +71,6 @@ export class AgentService extends Service {
     systemPrompt: z.string().default(
       'You are ruobai, a concise assistant running inside the ruobai harness. Use tools when they help, and answer in the user\'s language.',
     ),
-    maxSteps: z.number().min(1).default(8),
     maxTokens: z.number().min(1),
     temperature: z.number(),
     provider: z.string(),
@@ -161,7 +162,7 @@ export class AgentService extends Service {
       const record = this.ctx.sessions.get(sessionId)
       if (!record) throw new Error(`session disappeared: ${sessionId}`)
       const mode = this.ctx.modes.get(record.meta.mode) ?? this.ctx.modes.get(this.ctx.modes.defaultId())
-      const maxSteps = options.maxSteps ?? mode?.maxSteps ?? this.config.maxSteps ?? 8
+      const maxSteps = options.maxSteps
       const provider = this.providerName(record)
       const extra: Message[] = []
       let nudges = 0
@@ -176,7 +177,7 @@ export class AgentService extends Service {
         tools: this.toolsFor(sessionId, mode, options.denyTools),
       })
 
-      for (let step = 0; step < maxSteps; step += 1) {
+      while (true) {
         if (controller.signal.aborted) {
           reason = 'stopped'
           break
@@ -274,7 +275,12 @@ export class AgentService extends Service {
           reason = 'done'
           break
         }
-        if (step === maxSteps - 1) reason = 'max-steps'
+        if (maxSteps !== undefined && steps >= maxSteps) {
+          reason = 'max-steps'
+          // Delegated runs stop silently otherwise; record why the turn ended.
+          this.ctx.sessions.append(sessionId, 'turn/notice', { kind: 'max-steps', steps: maxSteps })
+          break
+        }
       }
     } catch (error) {
       reason = 'error'

@@ -380,7 +380,7 @@ export function Composer({
             {streaming
               ? (
                 <button type="button" className="send stop" onClick={onStop} aria-label="Stop">
-                  <StopIcon size={14} />
+                  <StopIcon size={13} />
                 </button>
               )
               : (
@@ -390,7 +390,7 @@ export function Composer({
                   disabled={disabled || (!text.trim() && !attachments.attachments.length)}
                   aria-label="Send"
                 >
-                  <SendIcon size={16} />
+                  <SendIcon size={14} />
                 </button>
               )}
           </div>

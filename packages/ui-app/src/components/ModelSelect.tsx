@@ -65,9 +65,9 @@ export function ModelSelect({
         onClick={() => onOpenChange(!open)}
         title={currentProviderLabel ? `${currentProviderLabel} / ${chipLabel}` : chipLabel}
       >
-        <BotIcon size={13} />
+        <BotIcon size={14} />
         <span>{chipLabel}</span>
-        <ChevronDownIcon size={11} />
+        <ChevronDownIcon size={12} />
       </button>
 
       {open && position

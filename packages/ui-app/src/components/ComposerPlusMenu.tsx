@@ -40,7 +40,7 @@ export function ComposerPlusMenu({
         disabled={disabled}
         onClick={() => onOpenChange(!open)}
       >
-        <PlusIcon size={15} />
+        <PlusIcon size={14} />
       </button>
 
       {open && position

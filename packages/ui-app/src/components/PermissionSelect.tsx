@@ -90,9 +90,9 @@ export function PermissionSelect({
         disabled={disabled}
         onClick={() => onOpenChange(!open)}
       >
-        {value === 'read-only' ? <EyeIcon size={13} /> : <ShieldIcon size={13} />}
+        {value === 'read-only' ? <EyeIcon size={14} /> : <ShieldIcon size={14} />}
         <span>{current.label}</span>
-        <ChevronDownIcon size={11} />
+        <ChevronDownIcon size={12} />
       </button>
 
       {open && position

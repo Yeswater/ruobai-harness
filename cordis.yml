@@ -83,11 +83,10 @@
 - id: mode-goal
   name: '@ruobai/mode-goal'
 
-# Turn driver: llm + tools + session log.
+# Turn driver: llm + tools + session log. Turns end when the model stops
+# calling tools, the user stops them, or an error occurs.
 - id: agent
   name: '@ruobai/agent'
-  config:
-    maxSteps: 8
 
 # Browser-facing projection consumed by ui-server.
 - id: chat
