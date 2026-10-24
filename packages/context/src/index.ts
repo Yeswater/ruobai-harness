@@ -30,6 +30,15 @@ export interface ContextInfo {
   estimatedTokens: number
   compactAt: number
   summaries: number
+  /** Estimated token size of each prompt region; they sum to `estimatedTokens`. */
+  breakdown: {
+    messages: number
+    systemPrompt: number
+    systemTools: number
+    mcpTools: number
+  }
+  /** Names of the MCP tools currently exposed to the model. */
+  mcpTools: string[]
 }
 
 export interface CompactOptions extends BuildOptions {
@@ -73,6 +82,8 @@ export class ContextService extends Service {
   })
 
   private instructions?: { at: number; text: string }
+  /** Inputs of the last agent build, reused to explain the context size. */
+  private lastOptions = new Map<string, BuildOptions>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'context')
@@ -98,6 +109,14 @@ export class ContextService extends Service {
     }
     if (options.extraMessages?.length) messages.push(...options.extraMessages)
 
+    if (options.tools !== undefined) {
+      this.lastOptions.set(sessionId, {
+        basePrompt: options.basePrompt,
+        modePrompt: options.modePrompt,
+        tools: options.tools,
+      })
+    }
+
     return {
       system,
       messages,
@@ -108,11 +127,36 @@ export class ContextService extends Service {
   async info(sessionId: string): Promise<ContextInfo> {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
-    const built = await this.build(sessionId)
+    const cached = this.lastOptions.get(sessionId)
+    const agent = this.ctx.get('agents', false) as { config?: { systemPrompt?: string } } | undefined
+    const modes = this.ctx.get('modes', false) as {
+      get(id?: string): { systemPrompt?: string } | undefined
+      allows(id: string | undefined, tool: string): boolean
+    } | undefined
+    const modeId = record.meta.mode
+    const tools = cached?.tools
+      ?? (this.ctx.get('tools', false) as { list(): ToolSchema[] } | undefined)?.list()
+        ?.filter(tool => modes?.allows(modeId, tool.name) ?? true)
+      ?? []
+    const built = await this.build(sessionId, {
+      basePrompt: cached?.basePrompt ?? agent?.config?.systemPrompt,
+      modePrompt: cached?.modePrompt ?? modes?.get(modeId)?.systemPrompt,
+    })
+    const mcp = tools.filter(tool => tool.name.startsWith('mcp__'))
+    const regular = tools.filter(tool => !tool.name.startsWith('mcp__'))
+    const breakdown = {
+      messages: estimateMessages(built.messages),
+      systemPrompt: estimateText(built.system),
+      systemTools: estimateSchema(regular),
+      mcpTools: estimateSchema(mcp),
+    }
     return {
-      estimatedTokens: built.estimatedTokens,
+      estimatedTokens: breakdown.messages + breakdown.systemPrompt
+        + breakdown.systemTools + breakdown.mcpTools,
       compactAt: this.threshold(),
       summaries: record.events.filter(event => event.type === SUMMARY_TYPE).length,
+      breakdown,
+      mcpTools: mcp.map(tool => tool.name),
     }
   }
 
@@ -254,7 +298,14 @@ function renderEvents(events: SessionEvent[]) {
 }
 
 function estimate(system: string, messages: Message[], tools?: ToolSchema[]) {
-  let chars = system.length
+  let chars = system.length + messageChars(messages)
+  if (tools?.length) chars += JSON.stringify(tools).length
+  // Mixed CJK/Latin heuristic; surfaced in the UI as an approximation.
+  return Math.ceil(chars / 3)
+}
+
+function messageChars(messages: Message[]) {
+  let chars = 0
   for (const message of messages) {
     for (const part of message.content) {
       if (part.type === 'text') chars += part.text.length
@@ -262,7 +313,17 @@ function estimate(system: string, messages: Message[], tools?: ToolSchema[]) {
       else if (part.type === 'tool-result') chars += part.content.length
     }
   }
-  if (tools?.length) chars += JSON.stringify(tools).length
-  // Mixed CJK/Latin heuristic; surfaced in the UI as an approximation.
-  return Math.ceil(chars / 3)
+  return chars
+}
+
+function estimateText(text: string) {
+  return Math.ceil(text.length / 3)
+}
+
+function estimateMessages(messages: Message[]) {
+  return Math.ceil(messageChars(messages) / 3)
+}
+
+function estimateSchema(tools: ToolSchema[]) {
+  return tools.length ? Math.ceil(JSON.stringify(tools).length / 3) : 0
 }

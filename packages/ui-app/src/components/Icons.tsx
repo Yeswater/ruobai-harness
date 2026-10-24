@@ -163,3 +163,24 @@ export function ChatIcon({ size }: IconProps) {
   )
 }
 
+export function MonitorIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="3" y="4.5" width="18" height="12" rx="2" />
+      <path d="M9 20h6M12 16.5V20" />
+    </svg>
+  )
+}
+
+export function BranchIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="6" cy="5.5" r="2" />
+      <circle cx="6" cy="18.5" r="2" />
+      <circle cx="18" cy="8.5" r="2" />
+      <path d="M6 7.5v9M18 10.5c0 3-3 4-6.5 5.5" />
+    </svg>
+  )
+}
+
+

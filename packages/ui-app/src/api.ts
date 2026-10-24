@@ -194,6 +194,23 @@ export interface ContextInfo {
   estimatedTokens: number
   compactAt: number
   summaries: number
+  breakdown: {
+    messages: number
+    systemPrompt: number
+    systemTools: number
+    mcpTools: number
+  }
+  mcpTools: string[]
+}
+
+export interface GitInfo {
+  available: boolean
+  branch: string | null
+  workspace: string
+  home: string
+  files: number
+  added: number
+  removed: number
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -312,6 +329,15 @@ export const api = {
 
   getContext: async (id: string) =>
     request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),
+
+  getGitInfo: async (id: string) =>
+    request<GitInfo>(`/api/workspace/git?sessionId=${encodeURIComponent(id)}`),
+
+  commitWorkspace: async (id: string, message: string) =>
+    request<{ ok: true; commit: string }>('/api/workspace/commit', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id, message }),
+    }),
 
   getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number) => {
     const params = new URLSearchParams({ path })

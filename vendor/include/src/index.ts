@@ -190,6 +190,8 @@ export class Include extends EntryTree {
   private pendingWrite?: EntryOptions[]
   private writeQueue: Promise<void> = Promise.resolve()
   private applyQueue: Promise<unknown> = Promise.resolve()
+  private applying = false
+  private failed = false
 
   constructor(ctx: Context, public config: Include.Config) {
     super(ctx)
@@ -314,9 +316,21 @@ export class Include extends EntryTree {
 
   private async _apply(candidate: ReadCandidate) {
     const data = this.applyPatches(candidate.data, this.config.patches)
-    await this.root.update(data)
-    this.content = candidate.content
-    this.data = candidate.data
+    this.applying = true
+    try {
+      await this.root.update(data)
+      this.content = candidate.content
+      this.data = candidate.data
+      this.failed = false
+    } catch (error) {
+      // A failed apply leaves the child tree partially built; persisting it
+      // would overwrite the config file with that fragment (seen as `[]` when
+      // a startup bind fails). Keep the last good file untouched instead.
+      this.failed = true
+      throw error
+    } finally {
+      this.applying = false
+    }
     await this.checkAccess()
   }
 
@@ -354,7 +368,9 @@ export class Include extends EntryTree {
     this.writeTask = undefined
     const config = this.pendingWrite
     this.pendingWrite = undefined
-    if (config === undefined) return this.writeQueue
+    // Mutations raised while an apply is in flight (or after it failed)
+    // describe a partial tree, not the user's file.
+    if (config === undefined || this.applying || this.failed) return this.writeQueue
     const run = this.writeQueue.then(
       () => this._writeFile(config),
       () => this._writeFile(config),
@@ -369,6 +385,7 @@ export class Include extends EntryTree {
 
   /** Schedule a write of the current root entry data. */
   write() {
+    if (this.applying || this.failed) return this.writeQueue
     this.context.emit('loader/config-update')
     return this.writeFile(this.root.data)
   }
