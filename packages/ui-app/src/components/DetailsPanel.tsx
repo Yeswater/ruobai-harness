@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
-import { api, type RuntimeInfo } from '../api.ts'
+import { api, type ContextInfo, type RuntimeInfo } from '../api.ts'
 import { FileBrowser } from './FileBrowser.tsx'
 import { CloseIcon } from './Icons.tsx'
 import { Slot } from './Slot.tsx'
@@ -16,6 +16,7 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
   const [tab, setTab] = useState<Tab>('session')
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
+  const [context, setContext] = useState<ContextInfo | null>(null)
 
   useEffect(() => {
     if (tab !== 'runtime') return
@@ -39,6 +40,25 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
     }
   }, [tab])
 
+  useEffect(() => {
+    const id = session?.id
+    if (!id) {
+      setContext(null)
+      return
+    }
+    let cancelled = false
+    void api.getContext(id)
+      .then((info) => {
+        if (!cancelled) setContext(info)
+      })
+      .catch(() => {
+        if (!cancelled) setContext(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.id, session?.updatedAt])
+
   return (
     <aside className="details">
       <div className="details-head">
@@ -59,8 +79,15 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
                   <div className="detail-title">{session.title}</div>
                   <dl className="kv">
                     <dt>status</dt><dd>{session.streaming ? 'streaming' : 'idle'}</dd>
+                    <dt>mode</dt><dd>{session.mode ?? 'agent'}</dd>
                     <dt>model</dt><dd>{session.model}</dd>
                     <dt>messages</dt><dd>{session.messages.length}</dd>
+                    <dt>context</dt>
+                    <dd>
+                      {context
+                        ? `~${context.estimatedTokens.toLocaleString()} / ${context.compactAt.toLocaleString()} tokens${context.summaries ? ` · ${context.summaries} summaries` : ''}`
+                        : '…'}
+                    </dd>
                     <dt>created</dt><dd>{new Date(session.createdAt).toLocaleString()}</dd>
                     <dt>updated</dt><dd>{new Date(session.updatedAt).toLocaleString()}</dd>
                     <dt>id</dt><dd className="mono ellipsis">{session.id}</dd>

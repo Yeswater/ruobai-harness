@@ -7,7 +7,16 @@ export interface ToolRunContext {
 }
 
 export interface ToolDefinition extends ToolSchema {
+  /** Ask for human approval before executing (mutating tools). */
+  requiresApproval?: boolean
+  /** Human-readable summary and optional diff shown in the approval card. */
+  preview?(args: any, run: ToolRunContext): Promise<ToolPreview> | ToolPreview
   execute(args: any, run: ToolRunContext): Promise<string> | string
+}
+
+export interface ToolPreview {
+  summary: string
+  diff?: string
 }
 
 export interface ToolResult {
@@ -82,6 +91,39 @@ export class ToolRegistry extends Service {
     if (!tool) return { content: `unknown tool: ${name}`, isError: true }
 
     const call: ToolCallInfo = { name, args, sessionId: run.sessionId }
+
+    if (tool.requiresApproval) {
+      const approval = this.ctx.get('approval', false) as
+        | { request(input: any, run?: { signal?: AbortSignal }): Promise<string> }
+        | undefined
+      if (!approval) {
+        const result: ToolResult = {
+          content: 'This operation requires an approval service, which is not loaded.',
+          isError: true,
+        }
+        this.ctx.emit('tool/after', call, result)
+        return result
+      }
+
+      let preview: ToolPreview
+      try {
+        preview = tool.preview ? await tool.preview(args, run) : { summary: name }
+      } catch (error) {
+        preview = { summary: `${name}: ${error instanceof Error ? error.message : String(error)}` }
+      }
+      const decision = await approval.request({
+        sessionId: run.sessionId ?? '',
+        tool: name,
+        args,
+        ...preview,
+      }, { signal: run.signal })
+      if (decision === 'deny') {
+        const result: ToolResult = { content: 'The user denied this operation.', isError: true }
+        this.ctx.emit('tool/after', call, result)
+        return result
+      }
+    }
+
     this.ctx.emit('tool/before', call)
     try {
       const value = await tool.execute(args, run)

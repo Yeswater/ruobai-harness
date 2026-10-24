@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
+import { api, type ModeInfo, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
 import { CloseIcon, PlusIcon } from './Icons.tsx'
 
 interface SettingsDialogProps {
@@ -40,6 +40,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [tab, setTab] = useState<'providers' | 'behavior'>('providers')
+  const [modes, setModes] = useState<ModeInfo[]>([])
+  const [agentMode, setAgentMode] = useState('agent')
+  const [bypass, setBypass] = useState(false)
+  const [compactAt, setCompactAt] = useState(48_000)
 
   const providers = settings?.llm?.providers ?? []
   const activeProvider = settings?.llm?.activeProvider ?? 'mock'
@@ -49,6 +54,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const load = async (selectId?: string) => {
     const next = await api.getSettings()
     setSettings(next)
+    setAgentMode(next.agent?.defaultMode ?? 'agent')
+    setBypass(Boolean(next.agent?.bypassApprovals))
+    setCompactAt(next.agent?.compactAt ?? 48_000)
     const list = next.llm?.providers ?? []
     const target = list.find(provider => provider.id === selectId)
       ?? list.find(provider => provider.id === next.llm?.activeProvider)
@@ -69,9 +77,15 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setNotice(null)
     setBusy(null)
     setModelInput('')
+    setTab('providers')
     void load().catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught))
     })
+    void api.getModes()
+      .then(({ modes: list }) => {
+        if (!cancelled) setModes(list)
+      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -211,12 +225,33 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
   }
 
+  const saveBehavior = async () => {
+    setBusy('behavior')
+    setError(null)
+    setNotice(null)
+    try {
+      const next = await api.updateSettings({
+        agent: {
+          defaultMode: agentMode,
+          bypassApprovals: bypass,
+          compactAt: Number(compactAt) || 48_000,
+        },
+      })
+      setSettings(next)
+      setNotice('已保存。默认模式对新建会话生效。')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal settings-modal" onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Model providers">
         <div className="modal-head">
           <div>
-            <h2>模型供应商</h2>
+            <h2>设置</h2>
             <div className="modal-sub">
               当前默认：{activeProvider === 'mock' ? 'Mock（离线）' : activeProvider}
               {activeModel ? ` · ${activeModel}` : ''}
@@ -225,6 +260,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           <button className="icon-btn" onClick={onClose} aria-label="Close settings"><CloseIcon /></button>
         </div>
 
+        <div className="settings-tabs">
+          <button className={`tab ${tab === 'providers' ? 'active' : ''}`} onClick={() => setTab('providers')}>供应商</button>
+          <button className={`tab ${tab === 'behavior' ? 'active' : ''}`} onClick={() => setTab('behavior')}>行为与权限</button>
+        </div>
+
+        {tab === 'providers' ? (
         <div className="settings-grid">
           <aside className="provider-list">
             <button className="new-session provider-add" onClick={addProvider}>
@@ -370,6 +411,50 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               : <div className="loading">loading…</div>}
           </section>
         </div>
+        ) : (
+          <div className="behavior-form">
+            <label className="field">
+              <span>默认模式（新建会话）</span>
+              <select value={agentMode} onChange={event => setAgentMode(event.target.value)}>
+                {modes.map(mode => (
+                  <option key={mode.id} value={mode.id}>
+                    {mode.name}{mode.description ? ` — ${mode.description}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="check-field">
+              <input type="checkbox" checked={bypass} onChange={event => setBypass(event.target.checked)} />
+              <span>
+                跳过写操作审批
+                <small>开启后写文件/改文件不再询问，风险自负。</small>
+              </span>
+            </label>
+
+            <label className="field">
+              <span>上下文压缩阈值（估算 token）</span>
+              <input
+                type="number"
+                min={1000}
+                step={1000}
+                value={compactAt}
+                onChange={event => setCompactAt(Number(event.target.value))}
+              />
+            </label>
+            <p className="field-help">超过阈值时用当前模型把较早消息总结成摘要事件，保留最近消息。</p>
+
+            {error ? <div className="detail-note error">{error}</div> : null}
+            {notice ? <div className="detail-note">{notice}</div> : null}
+
+            <div className="provider-actions">
+              <span className="spacer" />
+              <button className="btn" onClick={saveBehavior} disabled={busy !== null}>
+                {busy === 'behavior' ? '保存中…' : '保存'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

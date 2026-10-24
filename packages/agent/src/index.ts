@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
 import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart } from '@ruobai/llm'
-import type { SessionEvent } from '@ruobai/session'
+import type { ModeDefinition } from '@ruobai/modes'
+import type { SessionRecord } from '@ruobai/session'
 
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 
@@ -43,7 +44,7 @@ declare module '@ruobai/cordis' {
  * message and tool results enter the session log.
  */
 export class AgentService extends Service {
-  static inject = ['llm', 'sessions', 'tools']
+  static inject = ['llm', 'sessions', 'tools', 'modes', 'context']
 
   static Config: z<Config> = z.object({
     systemPrompt: z.string().default(
@@ -94,21 +95,34 @@ export class AgentService extends Service {
   private async run(sessionId: string, controller: AbortController) {
     let reason: TurnEndReason = 'done'
     try {
-      const maxSteps = this.config.maxSteps ?? 8
+      const record = this.ctx.sessions.get(sessionId)
+      if (!record) throw new Error(`session disappeared: ${sessionId}`)
+      const mode = this.ctx.modes.get(record.meta.mode) ?? this.ctx.modes.get(this.ctx.modes.defaultId())
+      const maxSteps = mode?.maxSteps ?? this.config.maxSteps ?? 8
+      const provider = this.providerName(record)
+      const extra: Message[] = []
+      let nudges = 0
+
+      // Summarize older history before the request is assembled.
+      await this.ctx.context.maybeCompact(sessionId, {
+        provider,
+        model: this.modelFor(record),
+        signal: controller.signal,
+        basePrompt: this.config.systemPrompt,
+        modePrompt: mode?.systemPrompt,
+        tools: this.toolsFor(mode),
+      })
+
       for (let step = 0; step < maxSteps; step += 1) {
         if (controller.signal.aborted) {
           reason = 'stopped'
           break
         }
 
-        const record = this.ctx.sessions.get(sessionId)
-        if (!record) throw new Error(`session disappeared: ${sessionId}`)
-
         const messageId = randomUUID()
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
-        const request = this.request(sessionId, controller.signal)
-        const provider = this.providerName(record)
+        const request = await this.request(sessionId, controller.signal, mode, extra)
         let textContent = ''
         const calls: ToolCallPart[] = []
         let failure: string | undefined
@@ -137,12 +151,34 @@ export class AgentService extends Service {
         }
 
         if (!calls.length) {
-          reason = stop === 'aborted' ? 'stopped' : 'done'
+          // Autonomous modes keep pushing until a completion tool fires.
+          if (mode?.autonomous && nudges < 2 && !controller.signal.aborted) {
+            nudges += 1
+            extra.push({
+              role: 'user',
+              content: [{
+                type: 'text',
+                text: 'Continue toward the objective. Call goal_complete with a summary when it is achieved.',
+              }],
+            })
+            continue
+          }
+          reason = stop === 'aborted' || controller.signal.aborted ? 'stopped' : 'done'
           break
         }
 
+        let goalComplete = false
         for (const call of calls) {
           if (controller.signal.aborted) break
+          if (!this.ctx.modes.allows(mode?.id, call.name)) {
+            this.ctx.sessions.append(sessionId, 'tool/result', {
+              callId: call.id,
+              name: call.name,
+              content: `tool "${call.name}" is not available in ${mode?.name ?? 'this'} mode`,
+              isError: true,
+            })
+            continue
+          }
           const args = parseArguments(call.arguments)
           const result = await this.ctx.tools.invoke(call.name, args, {
             signal: controller.signal,
@@ -154,8 +190,13 @@ export class AgentService extends Service {
             content: result.content,
             isError: result.isError,
           })
+          if (call.name === 'goal_complete') goalComplete = true
         }
 
+        if (goalComplete) {
+          reason = 'done'
+          break
+        }
         if (step === maxSteps - 1) reason = 'max-steps'
       }
     } catch (error) {
@@ -173,26 +214,45 @@ export class AgentService extends Service {
     }
   }
 
-  private request(sessionId: string, signal: AbortSignal): ModelRequest {
-    const record = this.ctx.sessions.get(sessionId)!
-    const messages: Message[] = []
-    if (this.config.systemPrompt) {
-      messages.push({ role: 'system', content: [{ type: 'text', text: this.config.systemPrompt }] })
-    }
-    for (const event of record.events) {
-      messages.push(...toMessages(event))
-    }
-    const settings = this.ctx.get('settings', false) as
-      | { raw(): { llm?: { activeModel?: string } } }
-      | undefined
+  private async request(
+    sessionId: string,
+    signal: AbortSignal,
+    mode: ModeDefinition | undefined,
+    extra: Message[],
+  ): Promise<ModelRequest> {
+    const record = this.ctx.sessions.get(sessionId)
+    if (!record) throw new Error(`unknown session: ${sessionId}`)
+
+    const tools = this.toolsFor(mode)
+    const built = await this.ctx.context.build(sessionId, {
+      basePrompt: this.config.systemPrompt,
+      modePrompt: mode?.systemPrompt,
+      extraMessages: extra,
+      tools,
+    })
+    const messages: Message[] = built.system
+      ? [{ role: 'system', content: [{ type: 'text', text: built.system }] }, ...built.messages]
+      : built.messages
+
     return {
       messages,
-      tools: this.ctx.tools.list(),
+      tools,
       signal,
-      model: record.meta.model ?? settings?.raw().llm?.activeModel ?? this.config.model,
+      model: this.modelFor(record),
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
     }
+  }
+
+  private toolsFor(mode: ModeDefinition | undefined) {
+    return this.ctx.tools.list().filter(tool => this.ctx.modes.allows(mode?.id, tool.name))
+  }
+
+  private modelFor(record: SessionRecord) {
+    const settings = this.ctx.get('settings', false) as
+      | { raw(): { llm?: { activeModel?: string } } }
+      | undefined
+    return record.meta.model ?? settings?.raw().llm?.activeModel ?? this.config.model
   }
 
   /** Prefer the session's provider, then the active one, then the config; never return an unregistered name. */
@@ -214,28 +274,6 @@ function parseArguments(raw: string) {
   } catch {
     return {}
   }
-}
-
-function toMessages(event: SessionEvent): Message[] {
-  if (event.type === 'message/user') {
-    return [{ role: 'user', content: [{ type: 'text', text: event.data.text }] }]
-  }
-  if (event.type === 'message/assistant') {
-    return [{ role: 'assistant', content: event.data.parts }]
-  }
-  if (event.type === 'tool/result') {
-    return [{
-      role: 'tool',
-      content: [{
-        type: 'tool-result',
-        callId: event.data.callId,
-        name: event.data.name,
-        content: event.data.content,
-        isError: event.data.isError,
-      }],
-    }]
-  }
-  return []
 }
 
 export default AgentService

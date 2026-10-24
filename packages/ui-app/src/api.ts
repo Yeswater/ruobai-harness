@@ -40,6 +40,11 @@ export interface PublicSettings {
   ui?: {
     theme?: 'light' | 'dark'
   }
+  agent?: {
+    defaultMode?: string
+    bypassApprovals?: boolean
+    compactAt?: number
+  }
 }
 
 export interface ProviderInput {
@@ -60,6 +65,37 @@ export interface SettingsPatch {
   ui?: {
     theme?: 'light' | 'dark'
   }
+  agent?: {
+    defaultMode?: string
+    bypassApprovals?: boolean
+    compactAt?: number
+  }
+}
+
+export interface ModeInfo {
+  id: string
+  name: string
+  description?: string
+  order?: number
+  autonomous?: boolean
+}
+
+export type ApprovalDecision = 'allow' | 'always' | 'deny'
+
+export interface ApprovalRequest {
+  id: string
+  sessionId: string
+  tool: string
+  args: unknown
+  summary: string
+  diff?: string
+  createdAt: number
+}
+
+export interface ContextInfo {
+  estimatedTokens: number
+  compactAt: number
+  summaries: number
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -96,6 +132,29 @@ export const api = {
     request<{ ok: true }>(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
 
   getRuntime: async () => request<RuntimeInfo>('/api/runtime'),
+
+  getModes: async () =>
+    request<{ modes: ModeInfo[]; default: string }>('/api/modes'),
+
+  setSessionMode: async (id: string, mode: string) =>
+    (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}/mode`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    })).session,
+
+  getApprovals: async (sessionId?: string) =>
+    (await request<{ approvals: ApprovalRequest[] }>(
+      `/api/approvals${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`,
+    )).approvals,
+
+  resolveApproval: async (id: string, decision: ApprovalDecision) =>
+    request<{ ok: true }>(`/api/approvals/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify({ decision }),
+    }),
+
+  getContext: async (id: string) =>
+    request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),
 
   getWorkspaceTree: async (path = '.') =>
     (await request<{ tree: WorkspaceEntry }>(`/api/workspace/tree?path=${encodeURIComponent(path)}`)).tree,
@@ -148,7 +207,12 @@ export interface EventHandlers {
   onOpen?: () => void
   onError?: () => void
   onChat?: (event: ChatEvent) => void
+  onApproval?: (payload: ApprovalEvent) => void
 }
+
+export type ApprovalEvent =
+  | { kind: 'requested'; request: ApprovalRequest }
+  | { kind: 'resolved'; resolution: { id: string; decision: ApprovalDecision } }
 
 /**
  * Browsers may resolve `localhost` to ::1 while the harness binds 127.0.0.1;
@@ -187,6 +251,13 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('approval', (event) => {
+      try {
+        handlers.onApproval?.(JSON.parse((event as MessageEvent<string>).data) as ApprovalEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
   }
 
   try {
@@ -194,11 +265,22 @@ export function connectEvents(handlers: EventHandlers) {
     socket.onmessage = (message) => {
       if (closed) return
       try {
-        const payload = JSON.parse(message.data) as { type: string; event?: ChatEvent }
+        const payload = JSON.parse(message.data) as {
+          type: string
+          event?: ChatEvent
+          kind?: 'requested' | 'resolved'
+          request?: ApprovalRequest
+          resolution?: { id: string; decision: ApprovalDecision }
+        }
         if (payload.type === 'hello') {
           document.documentElement.dataset.live = 'ws'
           handlers.onOpen?.()
         } else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)
+        else if (payload.type === 'approval') {
+          handlers.onApproval?.(payload.kind === 'requested'
+            ? { kind: 'requested', request: payload.request! }
+            : { kind: 'resolved', resolution: payload.resolution! })
+        }
       } catch {
         // ignore malformed frames
       }
@@ -233,6 +315,7 @@ export function summarize(session: ChatSession): SessionSummary {
     id: session.id,
     title: session.title,
     model: session.model,
+    mode: session.mode,
     updatedAt: session.updatedAt,
     messageCount: session.messages.length,
     streaming: session.streaming,

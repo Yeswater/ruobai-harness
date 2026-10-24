@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ModeInfo } from '../api.ts'
 import { SendIcon, StopIcon } from './Icons.tsx'
 
 interface ComposerProps {
   disabled: boolean
   streaming: boolean
   model: string
+  modes: ModeInfo[]
+  mode: string
+  onModeChange: (mode: string) => void
   onSend: (text: string) => void
   onStop: () => void
 }
 
-export function Composer({ disabled, streaming, model, onSend, onStop }: ComposerProps) {
+export function Composer({ disabled, streaming, model, modes, mode, onModeChange, onSend, onStop }: ComposerProps) {
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -50,7 +54,22 @@ export function Composer({ disabled, streaming, model, onSend, onStop }: Compose
           }}
         />
         <div className="composer-bar">
-          <span className="chip">{model}</span>
+          <div className="composer-left">
+            {modes.length
+              ? (
+                <select
+                  className="mode-select"
+                  value={mode}
+                  onChange={event => onModeChange(event.target.value)}
+                  disabled={streaming}
+                  title={modes.find(item => item.id === mode)?.description}
+                >
+                  {modes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              )
+              : null}
+            <span className="chip">{model}</span>
+          </div>
           <div className="composer-actions">
             <span className="hint">Enter 发送 · Shift+Enter 换行</span>
             {streaming

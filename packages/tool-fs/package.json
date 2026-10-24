@@ -10,5 +10,8 @@
     "@ruobai/cordis": "workspace:*",
     "@ruobai/schemastery": "workspace:*",
     "@ruobai/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@ruobai/approval": "workspace:*"
   }
 }

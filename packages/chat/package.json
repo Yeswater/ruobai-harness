@@ -11,6 +11,7 @@
     "@ruobai/chat-protocol": "workspace:*",
     "@ruobai/cordis": "workspace:*",
     "@ruobai/llm": "workspace:*",
+    "@ruobai/modes": "workspace:*",
     "@ruobai/session": "workspace:*"
   }
 }

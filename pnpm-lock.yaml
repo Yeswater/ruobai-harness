@@ -11,12 +11,18 @@ importers:
       '@ruobai/agent':
         specifier: workspace:*
         version: link:packages/agent
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:packages/approval
       '@ruobai/chat':
         specifier: workspace:*
         version: link:packages/chat
       '@ruobai/client-modules':
         specifier: workspace:*
         version: link:packages/client-modules
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:packages/context
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:vendor/cordis
@@ -47,6 +53,21 @@ importers:
       '@ruobai/llm-openai':
         specifier: workspace:*
         version: link:packages/llm-openai
+      '@ruobai/mode-agent':
+        specifier: workspace:*
+        version: link:packages/mode-agent
+      '@ruobai/mode-ask':
+        specifier: workspace:*
+        version: link:packages/mode-ask
+      '@ruobai/mode-goal':
+        specifier: workspace:*
+        version: link:packages/mode-goal
+      '@ruobai/mode-plan':
+        specifier: workspace:*
+        version: link:packages/mode-plan
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:packages/modes
       '@ruobai/plugin-counter':
         specifier: workspace:*
         version: link:packages/plugin-counter
@@ -137,12 +158,18 @@ importers:
 
   packages/agent:
     dependencies:
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
       '@ruobai/llm':
         specifier: workspace:*
         version: link:../llm
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -152,6 +179,20 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@ruobai/chat-protocol':
+        specifier: workspace:*
+        version: link:../chat-protocol
+
+  packages/approval:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+    devDependencies:
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
 
   packages/chat:
     dependencies:
@@ -167,6 +208,9 @@ importers:
       '@ruobai/llm':
         specifier: workspace:*
         version: link:../llm
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
@@ -193,6 +237,21 @@ importers:
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
+
+  packages/context:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/llm:
     dependencies:
@@ -241,6 +300,51 @@ importers:
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
+
+  packages/mode-agent:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
+
+  packages/mode-ask:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
+
+  packages/mode-goal:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/mode-plan:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
+
+  packages/modes:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
 
   packages/plugin-counter:
     dependencies:
@@ -336,6 +440,10 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
 
   packages/tools:
     dependencies:
@@ -376,12 +484,21 @@ importers:
 
   packages/ui-server:
     dependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
       '@ruobai/chat':
         specifier: workspace:*
         version: link:../chat
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
@@ -426,6 +543,9 @@ importers:
 
   packages/web-ws:
     dependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
       '@ruobai/chat':
         specifier: workspace:*
         version: link:../chat

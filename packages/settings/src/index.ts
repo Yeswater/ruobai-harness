@@ -48,9 +48,19 @@ export interface UiSettings {
   theme?: 'light' | 'dark'
 }
 
+export interface AgentSettings {
+  /** Mode used for new sessions. */
+  defaultMode?: string
+  /** Skip write approvals entirely. Dangerous; surfaced in settings as bypass. */
+  bypassApprovals?: boolean
+  /** Estimated-token threshold that triggers LLM summarization. */
+  compactAt?: number
+}
+
 export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
+  agent?: AgentSettings
 }
 
 export interface PublicProvider {
@@ -71,6 +81,7 @@ export interface PublicSettings {
     providers: PublicProvider[]
   }
   ui?: UiSettings
+  agent?: AgentSettings
 }
 
 export interface Config {
@@ -155,6 +166,7 @@ export class SettingsService extends Service {
       }
     }
     if (this.data.ui) result.ui = { ...this.data.ui }
+    if (this.data.agent) result.agent = { ...this.data.agent }
     return result
   }
 
@@ -163,11 +175,17 @@ export class SettingsService extends Service {
     return { ...rest, hasApiKey: Boolean(this.apiKeyFor(entry.id)) }
   }
 
-  async update(patch: { llm?: { activeProvider?: string; activeModel?: string }; ui?: UiSettings }): Promise<PublicSettings> {
+  async update(patch: { llm?: { activeProvider?: string; activeModel?: string }; ui?: UiSettings; agent?: AgentSettings }): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
     if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || 'mock'
     if (patch.llm?.activeModel !== undefined) llm.activeModel = patch.llm.activeModel || undefined
     if (patch.ui) this.data.ui = { ...this.data.ui, ...patch.ui }
+    if (patch.agent) {
+      const agent = this.data.agent ??= {}
+      if (patch.agent.defaultMode !== undefined) agent.defaultMode = patch.agent.defaultMode || undefined
+      if (patch.agent.bypassApprovals !== undefined) agent.bypassApprovals = Boolean(patch.agent.bypassApprovals)
+      if (patch.agent.compactAt !== undefined) agent.compactAt = Math.max(1000, Number(patch.agent.compactAt) || 0) || undefined
+    }
     return this.commit()
   }
 
@@ -306,6 +324,11 @@ export class SettingsService extends Service {
     }
     if (!llm.activeProvider) {
       llm.activeProvider = 'mock'
+      changed = true
+    }
+
+    if (!this.data.agent) {
+      this.data.agent = { defaultMode: 'agent', bypassApprovals: false, compactAt: 48_000 }
       changed = true
     }
     return changed

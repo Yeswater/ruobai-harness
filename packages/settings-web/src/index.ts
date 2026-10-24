@@ -40,6 +40,13 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
         ui: body?.ui && typeof body.ui === 'object' && (body.ui.theme === 'light' || body.ui.theme === 'dark')
           ? { theme: body.ui.theme }
           : undefined,
+        agent: body?.agent && typeof body.agent === 'object'
+          ? {
+              defaultMode: typeof body.agent.defaultMode === 'string' ? body.agent.defaultMode : undefined,
+              bypassApprovals: typeof body.agent.bypassApprovals === 'boolean' ? body.agent.bypassApprovals : undefined,
+              compactAt: typeof body.agent.compactAt === 'number' ? body.agent.compactAt : undefined,
+            }
+          : undefined,
       })
       sendJson(res, 200, { settings })
       return true

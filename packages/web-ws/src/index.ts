@@ -2,7 +2,7 @@ import type { Context } from '@ruobai/cordis'
 import { WebSocketServer, WebSocket } from 'ws'
 
 export const name = 'web-ws'
-export const inject = ['web', 'chat']
+export const inject = ['web', 'chat', 'approval']
 
 /**
  * WebSocket downlink for live UI events.
@@ -35,6 +35,14 @@ export function apply(ctx: Context) {
   }), 'web-ws.upgrade')
 
   ctx.effect(() => ctx.on('chat/event', event => broadcast({ type: 'chat', event })), 'web-ws.broadcast')
+
+  ctx.effect(() => ctx.on('approval/requested', request => {
+    broadcast({ type: 'approval', kind: 'requested', request })
+  }), 'web-ws.approval-requested')
+
+  ctx.effect(() => ctx.on('approval/resolved', resolution => {
+    broadcast({ type: 'approval', kind: 'resolved', resolution })
+  }), 'web-ws.approval-resolved')
 
   const heartbeat = setInterval(() => {
     for (const client of wss.clients) {

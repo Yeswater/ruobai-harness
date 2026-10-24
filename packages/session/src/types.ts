@@ -12,6 +12,8 @@ export interface SessionMeta {
   title: string
   model?: string
   provider?: string
+  /** Agent mode id active for this session. */
+  mode?: string
   createdAt: number
   updatedAt: number
 }
@@ -31,5 +33,5 @@ export type SessionView = Record<string, unknown>
 /** Events understood by the session service itself; plugins may append anything. */
 export interface SessionEventMap {
   'session/title': { title: string }
-  'session/meta': { model?: string; provider?: string }
+  'session/meta': { model?: string; provider?: string; mode?: string }
 }

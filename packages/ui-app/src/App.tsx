@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
+import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { Composer } from './components/Composer.tsx'
 import { DetailsPanel } from './components/DetailsPanel.tsx'
 import { MenuIcon, PanelIcon } from './components/Icons.tsx'
@@ -24,6 +25,7 @@ export function App() {
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const pendingApprovals = harness.approvals.filter(item => item.sessionId === harness.activeId)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -70,7 +72,11 @@ export function App() {
             <h1>{harness.session?.title ?? 'New session'}</h1>
             <div className="main-sub">
               {harness.session
-                ? `${harness.session.messages.length} messages · ${harness.session.model}`
+                ? [
+                    `${harness.session.messages.length} messages`,
+                    harness.session.model,
+                    harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
+                  ].filter(Boolean).join(' · ')
                 : 'loading…'}
             </div>
           </div>
@@ -90,10 +96,28 @@ export function App() {
           : null}
 
         <Transcript session={harness.session} onSuggestion={harness.send} />
+
+        {pendingApprovals.length
+          ? (
+            <div className="approval-stack">
+              {pendingApprovals.map(request => (
+                <ApprovalCard
+                  key={request.id}
+                  request={request}
+                  onResolve={decision => harness.resolveApproval(request.id, decision)}
+                />
+              ))}
+            </div>
+          )
+          : null}
+
         <Composer
           disabled={!harness.session}
           streaming={harness.session?.streaming ?? false}
           model={harness.session?.model ?? 'ruobai-chat'}
+          modes={harness.modes}
+          mode={harness.session?.mode ?? harness.defaultMode}
+          onModeChange={harness.setMode}
           onSend={harness.send}
           onStop={harness.stop}
         />

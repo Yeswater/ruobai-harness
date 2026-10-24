@@ -7,8 +7,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ruobai/approval": "workspace:*",
     "@ruobai/chat": "workspace:*",
+    "@ruobai/context": "workspace:*",
     "@ruobai/cordis": "workspace:*",
+    "@ruobai/modes": "workspace:*",
     "@ruobai/web-server": "workspace:*"
   }
 }

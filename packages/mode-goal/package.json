@@ -1,0 +1,14 @@
+{
+  "name": "@ruobai/mode-goal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/modes": "workspace:*",
+    "@ruobai/tools": "workspace:*"
+  }
+}

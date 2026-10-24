@@ -36,6 +36,8 @@ export interface ChatSession {
   id: string
   title: string
   model: string
+  /** Active agent mode id. */
+  mode?: string
   createdAt: number
   updatedAt: number
   messages: ChatMessage[]
@@ -46,6 +48,7 @@ export interface SessionSummary {
   id: string
   title: string
   model: string
+  mode?: string
   updatedAt: number
   messageCount: number
   streaming: boolean

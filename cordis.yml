@@ -24,7 +24,7 @@
   config:
     root: .sessions
 
-# Tool registry and the read-only workspace tools.
+# Tool registry and the workspace tools (writes require approval).
 - id: tools
   name: '@ruobai/tools'
 
@@ -32,6 +32,32 @@
   name: '@ruobai/tool-fs'
   config:
     root: !!js "process.cwd()"
+
+# Human approval for mutating tools.
+- id: approval
+  name: '@ruobai/approval'
+
+# System prompt assembly, token estimate, and LLM compaction.
+- id: context
+  name: '@ruobai/context'
+  config:
+    compactAt: !!js "Number(process.env.RBU_COMPACT_AT ?? 48000)"
+
+# Agent modes: each is a separate plugin and can be removed independently.
+- id: modes
+  name: '@ruobai/modes'
+
+- id: mode-ask
+  name: '@ruobai/mode-ask'
+
+- id: mode-plan
+  name: '@ruobai/mode-plan'
+
+- id: mode-agent
+  name: '@ruobai/mode-agent'
+
+- id: mode-goal
+  name: '@ruobai/mode-goal'
 
 # Turn driver: llm + tools + session log.
 - id: agent

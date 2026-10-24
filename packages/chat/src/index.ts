@@ -30,7 +30,7 @@ const CONVERSATION_EVENTS = new Set([
  * persistence, model calls, tools) is replaceable without touching the UI.
  */
 export class ChatService extends Service {
-  static inject = ['sessions', 'agents', 'llm']
+  static inject = ['sessions', 'agents', 'llm', 'modes']
 
   private readonly sessions = new Map<string, ChatSession>()
 
@@ -93,6 +93,7 @@ export class ChatService extends Service {
         id: meta.id,
         title: meta.title,
         model: session.model,
+        mode: session.mode,
         updatedAt: meta.updatedAt,
         messageCount: session.messages.length,
         streaming: session.streaming,
@@ -104,16 +105,29 @@ export class ChatService extends Service {
     return this.ctx.sessions.has(id) ? this.ensure(id) : undefined
   }
 
-  create(title?: string): ChatSession {
+  create(title?: string, mode?: string): ChatSession {
     const settings = this.ctx.get('settings', false) as
-      | { raw(): { llm?: { activeProvider?: string; activeModel?: string } } }
+      | { raw(): { llm?: { activeProvider?: string; activeModel?: string }; agent?: { defaultMode?: string } } }
       | undefined
-    const llm = settings?.raw().llm
-    const provider = llm?.activeProvider ?? this.ctx.llm.config.provider
-    const model = llm?.activeModel
+    const config = settings?.raw()
+    const provider = config?.llm?.activeProvider ?? this.ctx.llm.config.provider
+    const model = config?.llm?.activeModel
       ?? (provider === 'mock' || !provider ? this.ctx.llm.config.model : undefined)
-    const meta = this.ctx.sessions.create({ title, model, provider })
+    const requested = mode ?? config?.agent?.defaultMode
+    const resolvedMode = requested && this.ctx.modes.get(requested)
+      ? requested
+      : this.ctx.modes.defaultId()
+    const meta = this.ctx.sessions.create({ title, model, provider, mode: resolvedMode })
     return this.ensure(meta.id)
+  }
+
+  setMode(id: string, mode: string): ChatSession {
+    if (!this.ctx.modes.get(mode)) throw new Error(`unknown mode: ${mode}`)
+    this.ctx.sessions.setMode(id, mode)
+    const session = this.ensure(id)
+    session.mode = mode
+    this.ctx.emit('chat/event', { type: 'session-updated', session })
+    return session
   }
 
   send(id: string, text: string): ChatMessage {
@@ -142,6 +156,7 @@ export class ChatService extends Service {
       id,
       title: record.meta.title,
       model: record.meta.model ?? this.ctx.llm.config.model ?? 'unknown',
+      mode: record.meta.mode ?? this.ctx.modes.defaultId(),
       createdAt: record.meta.createdAt,
       updatedAt: record.meta.updatedAt,
       messages: [],
@@ -239,6 +254,7 @@ export class ChatService extends Service {
     if (!meta) return
     session.title = meta.title
     session.model = meta.model ?? session.model
+    session.mode = meta.mode ?? session.mode
     session.updatedAt = meta.updatedAt
   }
 

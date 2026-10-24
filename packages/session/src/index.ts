@@ -15,6 +15,7 @@ export interface CreateSessionOptions {
   title?: string
   model?: string
   provider?: string
+  mode?: string
   createdAt?: number
 }
 
@@ -69,14 +70,19 @@ export class SessionService extends Service {
       title: options.title ?? 'New session',
       model: options.model,
       provider: options.provider,
+      mode: options.mode,
       createdAt: now,
       updatedAt: now,
     }
     this.records.set(id, { meta, events: [] })
     this.views.set(id, this.buildView(id))
     this.ctx.emit('session/created', meta)
-    if (options.model || options.provider) {
-      this.append(id, 'session/meta', { model: options.model, provider: options.provider })
+    if (options.model || options.provider || options.mode) {
+      this.append(id, 'session/meta', {
+        model: options.model,
+        provider: options.provider,
+        mode: options.mode,
+      })
     }
     return this.records.get(id)!.meta
   }
@@ -111,6 +117,13 @@ export class SessionService extends Service {
     if (!record) throw new Error(`unknown session: ${id}`)
     if (record.meta.title === title) return
     this.append(id, 'session/title', { title })
+  }
+
+  setMode(id: string, mode: string) {
+    const record = this.records.get(id)
+    if (!record) throw new Error(`unknown session: ${id}`)
+    if (record.meta.mode === mode) return
+    this.append(id, 'session/meta', { mode })
   }
 
   remove(id: string) {
@@ -169,6 +182,7 @@ export class SessionService extends Service {
     if (event.type === 'session/meta') {
       meta.model = event.data.model ?? meta.model
       meta.provider = event.data.provider ?? meta.provider
+      meta.mode = event.data.mode ?? meta.mode
     }
   }
 }

@@ -6,9 +6,14 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "devDependencies": {
+    "@ruobai/chat-protocol": "workspace:*"
+  },
   "dependencies": {
+    "@ruobai/context": "workspace:*",
     "@ruobai/cordis": "workspace:*",
     "@ruobai/llm": "workspace:*",
+    "@ruobai/modes": "workspace:*",
     "@ruobai/schemastery": "workspace:*",
     "@ruobai/session": "workspace:*",
     "@ruobai/tools": "workspace:*"

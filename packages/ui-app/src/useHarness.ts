@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
-import { api, connectEvents, summarize } from './api.ts'
+import {
+  api,
+  connectEvents,
+  summarize,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type ModeInfo,
+} from './api.ts'
 
 function upsert(list: SessionSummary[], next: SessionSummary) {
   return [next, ...list.filter(item => item.id !== next.id)].sort((a, b) => b.updatedAt - a.updatedAt)
@@ -65,6 +72,9 @@ export function useHarness() {
   const [session, setSession] = useState<ChatSession | null>(null)
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [modes, setModes] = useState<ModeInfo[]>([])
+  const [defaultMode, setDefaultMode] = useState('agent')
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
   const activeRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -117,6 +127,35 @@ export function useHarness() {
   }, [activeId, fail])
 
   useEffect(() => {
+    let cancelled = false
+    void api.getModes()
+      .then(({ modes: list, default: fallback }) => {
+        if (cancelled) return
+        setModes(list)
+        setDefaultMode(fallback)
+      })
+      .catch((caught) => {
+        if (!cancelled) fail(caught)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fail])
+
+  useEffect(() => {
+    if (!activeId) return
+    let cancelled = false
+    void api.getApprovals(activeId)
+      .then((list) => {
+        if (!cancelled) setApprovals(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [activeId])
+
+  useEffect(() => {
     const events = connectEvents({
       onOpen: () => {
         setConnected(true)
@@ -138,6 +177,14 @@ export function useHarness() {
           setSession(event.session)
         } else {
           setSession(previous => previous ? applyEvent(previous, event) : previous)
+        }
+      },
+      onApproval: (payload) => {
+        if (payload.kind === 'requested') {
+          const request = payload.request
+          setApprovals(previous => previous.some(item => item.id === request.id) ? previous : [...previous, request])
+        } else {
+          setApprovals(previous => previous.filter(item => item.id !== payload.resolution.id))
         }
       },
     })
@@ -172,16 +219,41 @@ export function useHarness() {
       .catch(fail)
   }, [fail])
 
+  const setMode = useCallback((mode: string) => {
+    const id = activeRef.current
+    if (!id) return
+    void api.setSessionMode(id, mode)
+      .then((next) => {
+        setSession(previous => previous && previous.id === id ? { ...previous, mode: next.mode } : previous)
+        setSessions(previous => previous.map(item => item.id === id ? { ...item, mode: next.mode } : item))
+      })
+      .catch(fail)
+  }, [fail])
+
+  const resolveApproval = useCallback((id: string, decision: ApprovalDecision) => {
+    setApprovals(previous => previous.filter(item => item.id !== id))
+    void api.resolveApproval(id, decision).catch((caught) => {
+      fail(caught)
+      const sessionId = activeRef.current
+      if (sessionId) void api.getApprovals(sessionId).then(setApprovals).catch(() => undefined)
+    })
+  }, [fail])
+
   return {
     sessions,
     activeId,
     session,
     connected,
     error,
+    modes,
+    defaultMode,
+    approvals,
     select,
     send,
     stop,
     createSession,
+    setMode,
+    resolveApproval,
     dismissError: () => setError(null),
   }
 }
