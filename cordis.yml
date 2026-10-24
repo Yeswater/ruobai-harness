@@ -24,12 +24,18 @@
   config:
     root: .sessions
 
-# Tool registry and the workspace tools (writes require approval).
+# Tool registry and the workspace tools (writes and shell require approval).
 - id: tools
   name: '@ruobai/tools'
 
 - id: tool-fs
   name: '@ruobai/tool-fs'
+  config:
+    root: !!js "process.cwd()"
+
+# Shell execution: confined cwd, timeout, output cap, approval.
+- id: tool-bash
+  name: '@ruobai/tool-bash'
   config:
     root: !!js "process.cwd()"
 
@@ -112,6 +118,17 @@
 
 - id: settings-web
   name: '@ruobai/settings-web'
+
+# MCP servers are configured in Settings → MCP and hot-reloaded. Each tool is
+# exposed as mcp__<server>__<tool>.
+- id: mcp
+  name: '@ruobai/mcp'
+
+- id: mcp-catalog
+  name: '@ruobai/mcp-catalog'
+
+- id: mcp-web
+  name: '@ruobai/mcp-web'
 
 # Client-half plugins: discovered from loader entries whose package.json
 # declares `rbu.client`, bundled with esbuild and loaded by the UI at runtime.

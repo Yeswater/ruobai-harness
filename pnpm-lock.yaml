@@ -53,6 +53,15 @@ importers:
       '@ruobai/llm-openai':
         specifier: workspace:*
         version: link:packages/llm-openai
+      '@ruobai/mcp':
+        specifier: workspace:*
+        version: link:packages/mcp
+      '@ruobai/mcp-catalog':
+        specifier: workspace:*
+        version: link:packages/mcp-catalog
+      '@ruobai/mcp-web':
+        specifier: workspace:*
+        version: link:packages/mcp-web
       '@ruobai/mode-agent':
         specifier: workspace:*
         version: link:packages/mode-agent
@@ -92,6 +101,9 @@ importers:
       '@ruobai/settings-web':
         specifier: workspace:*
         version: link:packages/settings-web
+      '@ruobai/tool-bash':
+        specifier: workspace:*
+        version: link:packages/tool-bash
       '@ruobai/tool-fs':
         specifier: workspace:*
         version: link:packages/tool-fs
@@ -301,6 +313,46 @@ importers:
         specifier: workspace:*
         version: link:../../vendor/schemastery
 
+  packages/mcp:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
+
+  packages/mcp-catalog:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+
+  packages/mcp-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
   packages/mode-agent:
     dependencies:
       '@ruobai/cordis':
@@ -428,6 +480,22 @@ importers:
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
+
+  packages/tool-bash:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
 
   packages/tool-fs:
     dependencies:

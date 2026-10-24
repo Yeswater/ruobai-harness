@@ -82,6 +82,39 @@ export interface ModeInfo {
 
 export type ApprovalDecision = 'allow' | 'always' | 'deny'
 
+export type McpApproval = 'auto' | 'always' | 'never'
+export type McpStatus = 'connecting' | 'connected' | 'error' | 'disconnected'
+
+export interface McpServer {
+  id: string
+  label?: string
+  command: string
+  args: string[]
+  cwd?: string
+  timeoutMs?: number
+  approval: McpApproval
+  disabled?: boolean
+  restart?: boolean
+  envKeys: string[]
+  hasEnv: boolean
+  status: McpStatus
+  error?: string
+  tools: string[]
+  pid?: number
+}
+
+export interface McpServerInput {
+  label?: string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  timeoutMs?: number
+  approval?: McpApproval
+  disabled?: boolean
+  restart?: boolean
+}
+
 export interface ApprovalRequest {
   id: string
   sessionId: string
@@ -120,6 +153,21 @@ export const api = {
     (await request<{ session: ChatSession }>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify({ title }),
+    })).session,
+
+  renameSession: async (id: string, title: string) =>
+    (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    })).session,
+
+  deleteSession: async (id: string) =>
+    request<{ ok: true }>(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  forkSession: async (id: string, upToSeq?: number) =>
+    (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ upToSeq }),
     })).session,
 
   sendMessage: async (id: string, text: string) =>
@@ -201,6 +249,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     })).models,
+
+  getMcpServers: async () =>
+    (await request<{ servers: McpServer[] }>('/api/mcp')).servers,
+
+  createMcpServer: async (input: McpServerInput) =>
+    (await request<{ servers: McpServer[] }>('/api/mcp/servers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })).servers,
+
+  updateMcpServer: async (id: string, input: McpServerInput) =>
+    (await request<{ servers: McpServer[] }>(`/api/mcp/servers/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })).servers,
+
+  deleteMcpServer: async (id: string) =>
+    (await request<{ servers: McpServer[] }>(`/api/mcp/servers/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })).servers,
+
+  reconnectMcpServer: async (id: string) =>
+    (await request<{ server: McpServer }>(`/api/mcp/servers/${encodeURIComponent(id)}/reconnect`, {
+      method: 'POST',
+    })).server,
 }
 
 export interface EventHandlers {

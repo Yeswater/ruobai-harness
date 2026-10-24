@@ -59,6 +59,12 @@ export function App() {
           harness.createSession()
           setSidebarOpen(false)
         }}
+        onRename={harness.renameSession}
+        onFork={(id) => {
+          harness.forkSession(id)
+          setSidebarOpen(false)
+        }}
+        onDelete={harness.deleteSession}
         onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
         onOpenSettings={() => setSettingsOpen(true)}
       />

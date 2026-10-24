@@ -46,8 +46,8 @@ export class UiApi extends Service {
         ? error.status
         : message.startsWith('unknown session')
           ? 404
-          : message.includes('already running') ? 409
-            : message.startsWith('unknown mode') ? 400 : 500
+          : message.includes('running') ? 409
+            : message.startsWith('unknown mode') || message.startsWith('title') ? 400 : 500
       if (status === 500) this.ctx.logger('ui').error(error)
       if (!res.headersSent) sendJson(res, status, { error: message })
       return true
@@ -111,7 +111,7 @@ export class UiApi extends Service {
       return true
     }
 
-    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|context))?$/.exec(pathname)
+    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|context|fork))?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
     const action = match[2]
@@ -120,6 +120,29 @@ export class UiApi extends Service {
       const session = this.ctx.chat.get(id)
       if (!session) throw new HttpError(404, 'session not found')
       sendJson(res, 200, { session })
+      return true
+    }
+
+    if (!action && method === 'PATCH') {
+      const body = await readJson(req)
+      const title = typeof body.title === 'string' ? body.title : ''
+      if (!title.trim()) throw new HttpError(400, 'title is required')
+      sendJson(res, 200, { session: this.ctx.chat.rename(id, title) })
+      return true
+    }
+
+    if (!action && method === 'DELETE') {
+      this.ctx.chat.remove(id)
+      sendJson(res, 200, { ok: true })
+      return true
+    }
+
+    if (action === 'fork' && method === 'POST') {
+      const body = await readJson(req)
+      const upToSeq = typeof body.upToSeq === 'number' && Number.isFinite(body.upToSeq)
+        ? body.upToSeq
+        : undefined
+      sendJson(res, 201, { session: this.ctx.chat.fork(id, upToSeq) })
       return true
     }
 

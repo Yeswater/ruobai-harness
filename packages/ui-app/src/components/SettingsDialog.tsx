@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type ModeInfo, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
 import { CloseIcon, PlusIcon } from './Icons.tsx'
+import { McpSettings } from './McpSettings.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -40,7 +41,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [tab, setTab] = useState<'providers' | 'behavior'>('providers')
+  const [tab, setTab] = useState<'providers' | 'mcp' | 'behavior'>('providers')
   const [modes, setModes] = useState<ModeInfo[]>([])
   const [agentMode, setAgentMode] = useState('agent')
   const [bypass, setBypass] = useState(false)
@@ -262,6 +263,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
         <div className="settings-tabs">
           <button className={`tab ${tab === 'providers' ? 'active' : ''}`} onClick={() => setTab('providers')}>供应商</button>
+          <button className={`tab ${tab === 'mcp' ? 'active' : ''}`} onClick={() => setTab('mcp')}>MCP</button>
           <button className={`tab ${tab === 'behavior' ? 'active' : ''}`} onClick={() => setTab('behavior')}>行为与权限</button>
         </div>
 
@@ -411,7 +413,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               : <div className="loading">loading…</div>}
           </section>
         </div>
-        ) : (
+        ) : tab === 'behavior' ? (
           <div className="behavior-form">
             <label className="field">
               <span>默认模式（新建会话）</span>
@@ -454,6 +456,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               </button>
             </div>
           </div>
+        ) : (
+          <McpSettings />
         )}
       </div>
     </div>

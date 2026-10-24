@@ -55,4 +55,48 @@ describe('settings migration', () => {
     const provider = ctx.settings.get().llm?.providers[0]
     expect(provider).toMatchObject({ id: 'deepseek', name: 'DeepSeek' })
   })
+
+  it('stores MCP servers, redacts env and preserves it on updates', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-settings-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    const path = join(dir, 'settings.json')
+
+    const ctx = new Context()
+    const fiber = ctx.plugin(SettingsService, { path })
+    await fiber
+    cleanups.push(() => fiber.dispose())
+
+    await ctx.settings.upsertMcpServer({
+      label: 'Files',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
+      env: { TOKEN: 'secret' },
+    })
+
+    const publicSettings = ctx.settings.get()
+    expect(publicSettings.mcp?.servers[0]).toMatchObject({
+      id: 'files',
+      label: 'Files',
+      command: 'npx',
+      envKeys: ['TOKEN'],
+      hasEnv: true,
+    })
+    expect(JSON.stringify(publicSettings)).not.toContain('secret')
+
+    const stored = JSON.parse(await readFile(path, 'utf8'))
+    expect(stored.mcp.servers[0].env).toEqual({ TOKEN: 'secret' })
+
+    await ctx.settings.upsertMcpServer({ label: 'Renamed', disabled: true }, 'files')
+    expect(ctx.settings.mcpServers()[0]).toMatchObject({
+      label: 'Renamed',
+      disabled: true,
+      env: { TOKEN: 'secret' },
+    })
+
+    await ctx.settings.upsertMcpServer({ env: {} }, 'files')
+    expect(ctx.settings.mcpServers()[0].env).toBeUndefined()
+
+    await ctx.settings.removeMcpServer('files')
+    expect(ctx.settings.mcpServers()).toEqual([])
+  })
 })

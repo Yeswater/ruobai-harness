@@ -57,6 +57,7 @@ export interface SessionSummary {
 export type ChatEvent =
   | { type: 'session-created'; session: ChatSession }
   | { type: 'session-updated'; session: ChatSession }
+  | { type: 'session-deleted'; sessionId: string }
   | { type: 'message-added'; sessionId: string; message: ChatMessage }
   | { type: 'message-updated'; sessionId: string; message: ChatMessage }
   | { type: 'message-delta'; sessionId: string; messageId: string; delta: string }

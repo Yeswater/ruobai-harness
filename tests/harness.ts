@@ -9,6 +9,9 @@ import { Context } from '@ruobai/cordis'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
 import MockProvider from '@ruobai/llm-mock'
+import McpService from '@ruobai/mcp'
+import McpCatalog from '@ruobai/mcp-catalog'
+import McpWeb from '@ruobai/mcp-web'
 import ModeAgent from '@ruobai/mode-agent'
 import ModeAsk from '@ruobai/mode-ask'
 import ModeGoal from '@ruobai/mode-goal'
@@ -18,6 +21,7 @@ import SessionService from '@ruobai/session'
 import SettingsService from '@ruobai/settings'
 import SettingsWeb from '@ruobai/settings-web'
 import ToolRegistry from '@ruobai/tools'
+import BashTools from '@ruobai/tool-bash'
 import FsTools from '@ruobai/tool-fs'
 import UiApi from '@ruobai/ui-server'
 import WebServer, { type Config as WebConfig } from '@ruobai/web-server'
@@ -55,9 +59,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(SessionService))
   await mount(ctx.plugin(ToolRegistry))
   await mount(ctx.plugin(FsTools, { root: process.cwd() }))
+  await mount(ctx.plugin(BashTools, { root: process.cwd() }))
   await mount(ctx.plugin(SettingsService, { path: join(dir, 'settings.json') }))
   // Deterministic tests: ignore ambient keys and the seeded provider.
   await ctx.settings.update({ llm: { activeProvider: 'mock', activeModel: 'mock-1' } })
+  await mount(ctx.plugin(McpService))
+  await mount(ctx.plugin(McpCatalog))
   await mount(ctx.plugin(WorkspaceService, { root: process.cwd() }))
 
   await mount(ctx.plugin(ModeService))
@@ -76,6 +83,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(WorkspaceWeb))
   await mount(ctx.plugin(SettingsWeb))
   await mount(ctx.plugin(WebWs))
+  await mount(ctx.plugin(McpWeb))
 
   return {
     ctx,

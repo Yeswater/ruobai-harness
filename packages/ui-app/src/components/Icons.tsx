@@ -48,6 +48,10 @@ export function CloseIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M6 6l12 12M18 6L6 18" /></svg>
 }
 
+export function SearchIcon({ size }: IconProps) {
+  return <svg {...base(size)}><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+}
+
 export function ToolIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M14.5 6.5a3.5 3.5 0 0 0-4.9 4.4L4 16.5V20h3.5l5.6-5.6a3.5 3.5 0 0 0 4.4-4.9l-2.4 2.4-2.3-.4-.4-2.3 2.1-2.7Z" /></svg>
 }

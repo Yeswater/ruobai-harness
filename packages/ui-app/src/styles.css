@@ -185,6 +185,9 @@ button {
 }
 
 .list-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 6px 10px 8px;
   font-size: 10.5px;
   letter-spacing: .12em;
@@ -192,18 +195,87 @@ button {
   color: var(--faint);
 }
 
+.list-count {
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.list-empty {
+  padding: 8px 10px 14px;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.session-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 10px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--faint);
+  transition: border-color .15s, color .15s;
+}
+
+.session-search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+.session-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.session-search input::placeholder {
+  color: var(--faint);
+}
+
+.session-search button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+}
+
 .session {
   position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: 9px;
+  transition: background .12s;
+}
+
+.session-open {
   display: flex;
   flex-direction: column;
   gap: 3px;
   width: 100%;
-  padding: 9px 10px;
+  min-width: 0;
+  padding: 9px 26px 9px 10px;
   border: 0;
   border-radius: 9px;
   background: transparent;
   text-align: left;
-  transition: background .12s;
+}
+
+.session-open:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: -2px;
 }
 
 .session:hover {
@@ -245,6 +317,99 @@ button {
   padding-left: 2px;
   font-size: 11px;
   color: var(--faint);
+}
+
+.session-running {
+  color: var(--accent);
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.session-more {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+
+.session:hover .session-more,
+.session-more:focus-visible {
+  opacity: 1;
+}
+
+.session-more:hover {
+  background: var(--tool-bg);
+  color: var(--text);
+}
+
+@media (hover: none) {
+  .session-more {
+    opacity: 1;
+  }
+}
+
+.session-menu {
+  position: absolute;
+  top: 28px;
+  right: 4px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.session-menu button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.session-menu button:hover {
+  background: var(--tool-bg);
+}
+
+.session-menu button:disabled {
+  opacity: .4;
+  background: none;
+  cursor: default;
+}
+
+.session-menu button.danger {
+  color: var(--danger);
+}
+
+.session-rename {
+  flex: 1;
+  min-width: 0;
+  margin: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
 }
 
 .sidebar-foot {
@@ -1416,6 +1581,93 @@ button {
   border-color: var(--accent);
 }
 
+.field textarea {
+  min-height: 68px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.field textarea:focus {
+  border-color: var(--accent);
+}
+
+.check-row {
+  display: flex;
+  gap: 10px;
+}
+
+.check-row .check-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-env-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.mcp-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--tool-bg);
+}
+
+.mcp-status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mcp-error {
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.hint code,
+.provider-list-note code {
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.status-dot.off {
+  background: var(--faint);
+}
+
 .modal-note {
   margin: 2px 0 0;
   color: var(--faint);
@@ -1682,6 +1934,27 @@ button {
   border-color: var(--danger);
 }
 
+.btn.danger-solid {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn.danger-solid:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 82%, #000);
+}
+
+.confirm-modal .modal-body {
+  padding-bottom: 6px;
+}
+
+.confirm-modal .modal-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
 @media (max-width: 760px) {
   .settings-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -1694,6 +1967,10 @@ button {
   }
 
   .form-row.two {
+    flex-direction: column;
+  }
+
+  .check-row {
     flex-direction: column;
   }
 }

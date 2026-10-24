@@ -19,6 +19,12 @@ export interface CreateSessionOptions {
   createdAt?: number
 }
 
+export interface ForkOptions {
+  /** Copy events only up to and including this seq. Defaults to the whole log. */
+  upToSeq?: number
+  title?: string
+}
+
 declare module '@ruobai/cordis' {
   interface Context {
     sessions: SessionService
@@ -77,6 +83,8 @@ export class SessionService extends Service {
     this.records.set(id, { meta, events: [] })
     this.views.set(id, this.buildView(id))
     this.ctx.emit('session/created', meta)
+    // The title must be an event, otherwise a restart would restore the default.
+    if (options.title && options.title !== 'New session') this.append(id, 'session/title', { title: options.title })
     if (options.model || options.provider || options.mode) {
       this.append(id, 'session/meta', {
         model: options.model,
@@ -124,6 +132,33 @@ export class SessionService extends Service {
     if (!record) throw new Error(`unknown session: ${id}`)
     if (record.meta.mode === mode) return
     this.append(id, 'session/meta', { mode })
+  }
+
+  /**
+   * Copy a session's log into a new session.
+   *
+   * Title/meta events are skipped because the fork itself owns them, and
+   * compaction summaries are dropped because their `upToSeq` points into the
+   * source log; the fork keeps the full history instead.
+   */
+  fork(id: string, options: ForkOptions = {}): SessionMeta {
+    const record = this.records.get(id)
+    if (!record) throw new Error(`unknown session: ${id}`)
+    const upToSeq = options.upToSeq ?? Number.POSITIVE_INFINITY
+    const title = options.title?.trim() || `${record.meta.title} (fork)`
+    const meta = this.create({
+      title,
+      model: record.meta.model,
+      provider: record.meta.provider,
+      mode: record.meta.mode,
+    })
+
+    for (const event of record.events) {
+      if (event.seq > upToSeq) break
+      if (event.type === 'session/title' || event.type === 'session/meta' || event.type === 'context/summary') continue
+      this.append(meta.id, event.type, structuredClone(event.data))
+    }
+    return this.records.get(meta.id)!.meta
   }
 
   remove(id: string) {

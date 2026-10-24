@@ -76,10 +76,15 @@ export function useHarness() {
   const [defaultMode, setDefaultMode] = useState('agent')
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
   const activeRef = useRef<string | null>(null)
+  const sessionsRef = useRef<SessionSummary[]>([])
 
   useEffect(() => {
     activeRef.current = activeId
   }, [activeId])
+
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
 
   const fail = useCallback((caught: unknown) => {
     setError(caught instanceof Error ? caught.message : String(caught))
@@ -93,6 +98,64 @@ export function useHarness() {
     setActiveId(id)
     setSession(null)
   }, [])
+
+  const createFresh = useCallback(() => {
+    void api.createSession()
+      .then((created) => {
+        const summary = summarize(created)
+        sessionsRef.current = upsert(sessionsRef.current, summary)
+        setSessions(previous => upsert(previous, summary))
+        activeRef.current = created.id
+        setActiveId(created.id)
+        setSession(created)
+        setApprovals([])
+      })
+      .catch(fail)
+  }, [fail])
+
+  /** Remove a session locally; select the next one or start a fresh session. */
+  const dropSession = useCallback((id: string) => {
+    sessionsRef.current = sessionsRef.current.filter(item => item.id !== id)
+    setSessions(sessionsRef.current)
+    setApprovals(previous => previous.filter(item => item.sessionId !== id))
+    if (activeRef.current !== id) return
+    const next = sessionsRef.current[0]?.id ?? null
+    activeRef.current = next
+    setActiveId(next)
+    setSession(null)
+    if (!next) createFresh()
+  }, [createFresh])
+
+  const renameSession = useCallback((id: string, title: string) => {
+    void api.renameSession(id, title)
+      .then((next) => {
+        sessionsRef.current = sessionsRef.current.map(item =>
+          item.id === id ? { ...item, title: next.title, updatedAt: next.updatedAt } : item)
+        setSessions(sessionsRef.current)
+        setSession(previous => previous && previous.id === id ? { ...previous, title: next.title } : previous)
+      })
+      .catch(fail)
+  }, [fail])
+
+  const deleteSession = useCallback((id: string) => {
+    void api.deleteSession(id)
+      .then(() => dropSession(id))
+      .catch(fail)
+  }, [dropSession, fail])
+
+  const forkSession = useCallback((id: string) => {
+    void api.forkSession(id)
+      .then((created) => {
+        const summary = summarize(created)
+        sessionsRef.current = upsert(sessionsRef.current, summary)
+        setSessions(previous => upsert(previous, summary))
+        activeRef.current = created.id
+        setActiveId(created.id)
+        setSession(created)
+        setApprovals([])
+      })
+      .catch(fail)
+  }, [fail])
 
   useEffect(() => {
     let cancelled = false
@@ -163,8 +226,14 @@ export function useHarness() {
       },
       onError: () => setConnected(false),
       onChat: (event) => {
+        if (event.type === 'session-deleted') {
+          dropSession(event.sessionId)
+          return
+        }
         if (event.type === 'session-created' || event.type === 'session-updated' || event.type === 'message-done') {
-          setSessions(previous => upsert(previous, summarize(event.session)))
+          const summary = summarize(event.session)
+          sessionsRef.current = upsert(sessionsRef.current, summary)
+          setSessions(previous => upsert(previous, summary))
         }
         if (!('sessionId' in event)) {
           if (event.type === 'session-updated' && event.session.id === activeRef.current) {
@@ -189,7 +258,7 @@ export function useHarness() {
       },
     })
     return () => events.close()
-  }, [])
+  }, [dropSession])
 
   const send = useCallback((text: string) => {
     const id = activeRef.current
@@ -210,14 +279,7 @@ export function useHarness() {
     if (id) void api.stopSession(id).catch(fail)
   }, [fail])
 
-  const createSession = useCallback(() => {
-    void api.createSession()
-      .then((created) => {
-        setSessions(previous => upsert(previous, summarize(created)))
-        setActiveId(created.id)
-      })
-      .catch(fail)
-  }, [fail])
+  const createSession = createFresh
 
   const setMode = useCallback((mode: string) => {
     const id = activeRef.current
@@ -252,6 +314,9 @@ export function useHarness() {
     send,
     stop,
     createSession,
+    renameSession,
+    deleteSession,
+    forkSession,
     setMode,
     resolveApproval,
     dismissError: () => setError(null),

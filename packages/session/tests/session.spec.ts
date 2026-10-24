@@ -44,4 +44,60 @@ describe('session service', () => {
 
     await fiber.dispose()
   })
+
+  it('persists a creation title as an event', async () => {
+    const ctx = new Context()
+    const fiber = ctx.plugin(SessionService)
+    await fiber
+
+    const meta = ctx.sessions.create({ title: 'Named at creation' })
+    expect(meta.title).toBe('Named at creation')
+    expect(ctx.sessions.get(meta.id)?.events.some(event =>
+      event.type === 'session/title' && event.data.title === 'Named at creation')).toBe(true)
+
+    await fiber.dispose()
+  })
+
+  it('forks a log into a new session without carrying source metadata or summaries', async () => {
+    const ctx = new Context()
+    const fiber = ctx.plugin(SessionService)
+    await fiber
+
+    const source = ctx.sessions.create({ title: 'Source', model: 'mock-1', mode: 'agent' })
+    ctx.sessions.append(source.id, 'message/user', { id: 'm1', text: 'first', at: 1 })
+    ctx.sessions.append(source.id, 'context/summary', { upToSeq: 2, text: 'older' })
+    ctx.sessions.append(source.id, 'message/user', { id: 'm2', text: 'second', at: 2 })
+
+    const fork = ctx.sessions.fork(source.id)
+    const record = ctx.sessions.get(fork.id)!
+
+    expect(fork.id).not.toBe(source.id)
+    expect(fork.title).toBe('Source (fork)')
+    expect(fork.model).toBe('mock-1')
+    expect(fork.mode).toBe('agent')
+    expect(record.events.filter(event => event.type === 'message/user').map(event => event.data.id))
+      .toEqual(['m1', 'm2'])
+    expect(record.events.some(event => event.type === 'context/summary')).toBe(false)
+    expect(ctx.sessions.get(source.id)?.events).toHaveLength(5)
+
+    const partial = ctx.sessions.fork(source.id, { upToSeq: 3, title: 'Half' })
+    expect(ctx.sessions.get(partial.id)?.events.filter(event => event.type === 'message/user')).toHaveLength(1)
+
+    await fiber.dispose()
+  })
+
+  it('removes a session and emits a removal event', async () => {
+    const ctx = new Context()
+    const fiber = ctx.plugin(SessionService)
+    await fiber
+
+    const meta = ctx.sessions.create()
+    const removed = new Promise<string>(resolve => ctx.once('session/removed', resolve))
+    ctx.sessions.remove(meta.id)
+
+    await expect(removed).resolves.toBe(meta.id)
+    expect(ctx.sessions.has(meta.id)).toBe(false)
+
+    await fiber.dispose()
+  })
 })

@@ -41,6 +41,7 @@ describe('session jsonl', () => {
     expect(restored?.meta.title).toBe('Persisted chat')
     expect(restored?.meta.model).toBe('mock-1')
     expect(restored?.events.map(event => event.type)).toEqual([
+      'session/title',
       'session/meta',
       'message/user',
       'session/title',

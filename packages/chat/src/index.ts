@@ -44,11 +44,13 @@ export class ChatService extends Service {
 
     ctx.on('session/removed', (id) => {
       this.sessions.delete(id)
+      this.ctx.emit('chat/event', { type: 'session-deleted', sessionId: id })
     })
 
     ctx.on('session/event', (id, event) => this.onSessionEvent(id, event))
 
     ctx.on('agent/step-start', (id, messageId) => {
+      if (!this.ctx.sessions.has(id)) return
       const session = this.ensure(id)
       if (!session.messages.some(message => message.id === messageId)) {
         session.messages.push({
@@ -66,6 +68,7 @@ export class ChatService extends Service {
     })
 
     ctx.on('agent/delta', (id, messageId, delta) => {
+      if (!this.ctx.sessions.has(id)) return
       const session = this.ensure(id)
       const message = session.messages.find(item => item.id === messageId)
       if (!message) return
@@ -76,6 +79,7 @@ export class ChatService extends Service {
     })
 
     ctx.on('agent/turn-end', (id) => {
+      if (!this.ctx.sessions.has(id)) return
       const session = this.ensure(id)
       session.streaming = false
       for (const message of session.messages) {
@@ -128,6 +132,31 @@ export class ChatService extends Service {
     session.mode = mode
     this.ctx.emit('chat/event', { type: 'session-updated', session })
     return session
+  }
+
+  rename(id: string, title: string): ChatSession {
+    const next = title.trim()
+    if (!next) throw new Error('title is required')
+    if (next.length > 120) throw new Error('title is too long')
+    this.ctx.sessions.rename(id, next)
+    const session = this.ensure(id)
+    this.syncMeta(session)
+    return session
+  }
+
+  /** Abort a running turn before dropping the session and its log. */
+  remove(id: string) {
+    if (!this.ctx.sessions.has(id)) throw new Error(`unknown session: ${id}`)
+    this.ctx.agents.stop(id)
+    this.ctx.sessions.remove(id)
+  }
+
+  fork(id: string, upToSeq?: number): ChatSession {
+    // A live turn may have a tool call without its result yet; copying that
+    // slice would leave the fork with an unanswerable call.
+    if (this.ctx.agents.isRunning(id)) throw new Error('session is running')
+    const meta = this.ctx.sessions.fork(id, { upToSeq })
+    return this.ensure(meta.id)
   }
 
   send(id: string, text: string): ChatMessage {

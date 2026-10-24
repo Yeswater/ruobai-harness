@@ -57,10 +57,55 @@ export interface AgentSettings {
   compactAt?: number
 }
 
+export type McpApproval = 'auto' | 'always' | 'never'
+
+export interface McpServerEntry {
+  /** Stable id, also used in the `mcp__<id>__<tool>` tool name. */
+  id: string
+  label?: string
+  command: string
+  args?: string[]
+  /** Write-only: values reach the child process but never the browser. */
+  env?: Record<string, string>
+  cwd?: string
+  timeoutMs?: number
+  approval?: McpApproval
+  disabled?: boolean
+  restart?: boolean
+}
+
+export interface McpServerInput {
+  id?: string
+  label?: string
+  command?: string
+  args?: string[]
+  /** Undefined keeps the stored env; an object replaces it. */
+  env?: Record<string, string>
+  cwd?: string
+  timeoutMs?: number
+  approval?: McpApproval
+  disabled?: boolean
+  restart?: boolean
+}
+
+export interface PublicMcpServer extends Omit<McpServerEntry, 'env'> {
+  envKeys: string[]
+  hasEnv: boolean
+}
+
+export interface McpSettings {
+  servers?: McpServerEntry[]
+}
+
+export interface PublicMcpSettings {
+  servers: PublicMcpServer[]
+}
+
 export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
   agent?: AgentSettings
+  mcp?: McpSettings
 }
 
 export interface PublicProvider {
@@ -82,6 +127,7 @@ export interface PublicSettings {
   }
   ui?: UiSettings
   agent?: AgentSettings
+  mcp?: PublicMcpSettings
 }
 
 export interface Config {
@@ -167,6 +213,11 @@ export class SettingsService extends Service {
     }
     if (this.data.ui) result.ui = { ...this.data.ui }
     if (this.data.agent) result.agent = { ...this.data.agent }
+    if (this.data.mcp) {
+      result.mcp = {
+        servers: (this.data.mcp.servers ?? []).map(entry => this.publicMcpServer(entry)),
+      }
+    }
     return result
   }
 
@@ -264,6 +315,75 @@ export class SettingsService extends Service {
     return this.queue
   }
 
+  mcpServers(): McpServerEntry[] {
+    return structuredClone(this.data.mcp?.servers ?? [])
+  }
+
+  findMcpServer(id: string): McpServerEntry | undefined {
+    return this.data.mcp?.servers?.find(entry => entry.id === id)
+  }
+
+  publicMcpServer(entry: McpServerEntry): PublicMcpServer {
+    const { env, ...rest } = entry
+    const envKeys = Object.keys(env ?? {})
+    return { ...rest, envKeys, hasEnv: envKeys.length > 0 }
+  }
+
+  async upsertMcpServer(input: McpServerInput, id?: string): Promise<PublicSettings> {
+    const mcp = this.data.mcp ??= {}
+    const servers = mcp.servers ??= []
+
+    const requested = (id ?? input.id ?? '').trim()
+    const existing = requested ? servers.find(entry => entry.id === requested) : undefined
+    if (id && !existing) throw new SettingsError(404, `unknown MCP server: ${id}`)
+
+    const base = input.label?.trim() || input.command?.trim().split(/[\\/]/).pop() || 'mcp'
+    const targetId = existing?.id ?? (requested || this.uniqueMcpId(slug(base)))
+    if (!/^[A-Za-z0-9_-]{1,48}$/.test(targetId)) {
+      throw new SettingsError(400, 'MCP server id may only contain letters, digits, _ and -')
+    }
+
+    const command = (input.command ?? existing?.command ?? '').trim()
+    if (!command) throw new SettingsError(400, 'MCP command is required')
+    if (command.length > 500) throw new SettingsError(400, 'MCP command is too long')
+
+    const args = normalizeArgs(input.args ?? existing?.args)
+    const env = input.env === undefined ? existing?.env : normalizeEnv(input.env)
+    const cwd = input.cwd !== undefined ? input.cwd.trim() || undefined : existing?.cwd
+    const timeoutMs = input.timeoutMs !== undefined
+      ? normalizeTimeout(input.timeoutMs)
+      : existing?.timeoutMs ?? 60_000
+    const approval = normalizeApproval(input.approval ?? existing?.approval)
+    const disabled = input.disabled !== undefined ? Boolean(input.disabled) : Boolean(existing?.disabled)
+    const restart = input.restart !== undefined ? Boolean(input.restart) : existing?.restart !== false
+    const label = (input.label ?? existing?.label ?? targetId).trim() || targetId
+
+    const entry: McpServerEntry = {
+      id: targetId,
+      label,
+      command,
+      args,
+      timeoutMs,
+      approval,
+      disabled,
+      restart,
+      ...(cwd ? { cwd } : {}),
+      ...(env && Object.keys(env).length ? { env } : {}),
+    }
+
+    const index = servers.findIndex(item => item.id === targetId)
+    if (index >= 0) servers[index] = entry
+    else servers.push(entry)
+
+    return this.commit()
+  }
+
+  async removeMcpServer(id: string): Promise<PublicSettings> {
+    const mcp = this.data.mcp ??= {}
+    mcp.servers = (mcp.servers ?? []).filter(entry => entry.id !== id)
+    return this.commit()
+  }
+
   private async commit() {
     const snapshot = this.get()
     this.queue = this.queue
@@ -331,6 +451,11 @@ export class SettingsService extends Service {
       this.data.agent = { defaultMode: 'agent', bypassApprovals: false, compactAt: 48_000 }
       changed = true
     }
+
+    if (!this.data.mcp) {
+      this.data.mcp = { servers: [] }
+      changed = true
+    }
     return changed
   }
 
@@ -339,6 +464,14 @@ export class SettingsService extends Service {
     let id = base || 'provider'
     let index = 2
     while (providers.some(entry => entry.id === id)) id = `${base}-${index++}`
+    return id
+  }
+
+  private uniqueMcpId(base: string) {
+    const servers = this.data.mcp?.servers ?? []
+    let id = base || 'mcp'
+    let index = 2
+    while (servers.some(entry => entry.id === id)) id = `${base}-${index++}`
     return id
   }
 }
@@ -375,6 +508,45 @@ function normalizeModels(models: Array<ProviderModel | string> | undefined): Pro
     result.push({ id: value })
   }
   return result
+}
+
+function normalizeArgs(args: string[] | undefined): string[] {
+  if (!Array.isArray(args)) return []
+  const result = args
+    .filter((item): item is string => typeof item === 'string')
+    .map(item => item.trim())
+    .filter(Boolean)
+  if (result.length > 64) throw new SettingsError(400, 'too many MCP arguments')
+  if (result.some(item => item.length > 2_000)) throw new SettingsError(400, 'MCP argument is too long')
+  return result
+}
+
+function normalizeEnv(env: Record<string, string>): Record<string, string> {
+  if (!env || typeof env !== 'object' || Array.isArray(env)) {
+    throw new SettingsError(400, 'MCP env must be an object')
+  }
+  const entries = Object.entries(env)
+  if (entries.length > 32) throw new SettingsError(400, 'too many MCP environment variables')
+  const result: Record<string, string> = {}
+  for (const [key, value] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new SettingsError(400, `invalid MCP env name: ${key}`)
+    }
+    const text = String(value ?? '')
+    if (text.length > 4_000) throw new SettingsError(400, `MCP env ${key} is too long`)
+    result[key] = text
+  }
+  return result
+}
+
+function normalizeTimeout(value: number) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return 60_000
+  return Math.min(Math.max(1_000, number), 600_000)
+}
+
+function normalizeApproval(value: McpApproval | undefined): McpApproval {
+  return value === 'always' || value === 'never' ? value : 'auto'
 }
 
 export default SettingsService
