@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import {
-  api, type ContextInfo, type ModeInfo, type ModelProvider, type PermissionMode, type WorkspaceMatch,
+  api, type CommandPrefix, type ContextInfo, type ModeInfo, type ModelProvider, type PermissionMode, type WorkspaceMatch,
 } from '../api.ts'
 import { applyCompletion, detectTrigger } from '../composer-triggers.ts'
 import { useComposerAttachments } from '../useComposerAttachments.ts'
@@ -25,6 +25,7 @@ interface ComposerProps {
   modes: ModeInfo[]
   mode: string
   permission: PermissionMode
+  commandPrefix: CommandPrefix
   contextInfo: ContextInfo | null
   stats?: TurnStats | null
   onModeChange: (mode: string) => void
@@ -48,8 +49,8 @@ const DIRECTORY_PROPS = { webkitdirectory: '', directory: '' } as Record<string,
 
 export function Composer({
   disabled, streaming, sessionId, provider, model, models, modes, mode, permission,
-  contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend, onStop,
-  onNewSession, onOpenConnectors,
+  commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
+  onStop, onNewSession, onOpenConnectors,
 }: ComposerProps) {
   const [text, setText] = useState('')
   const [caret, setCaret] = useState(0)
@@ -65,7 +66,10 @@ export function Composer({
   const pendingCaret = useRef<number | null>(null)
   const attachments = useComposerAttachments(sessionId)
 
-  const trigger = useMemo(() => detectTrigger(text, caret), [text, caret])
+  const trigger = useMemo(
+    () => detectTrigger(text, caret, commandPrefix),
+    [text, caret, commandPrefix],
+  )
   const slashOpen = !dismissed && trigger?.kind === 'slash'
   const mentionOpen = !dismissed && trigger?.kind === 'mention'
   const slashItems = slashOpen ? filterSlashCommands(trigger!.query) : []
@@ -279,7 +283,7 @@ export function Composer({
           ref={textareaRef}
           value={text}
           rows={2}
-          placeholder={disabled ? '正在加载会话…' : '发送消息…  输入 / 命令或 @ 引用文件'}
+          placeholder={disabled ? '正在加载会话…' : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`}
           onChange={(event) => {
             setText(event.target.value)
             setCaret(event.target.selectionStart ?? 0)

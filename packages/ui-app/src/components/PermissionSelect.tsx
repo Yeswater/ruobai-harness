@@ -44,7 +44,7 @@ export const PERMISSION_OPTIONS: PermissionOption[] = [
   },
   {
     value: 'auto-review',
-    label: '自动审查 EXP',
+    label: '自动审查',
     description: '自动放行安全操作，危险命令仍需确认',
     icon: <BotIcon size={16} />,
   },
@@ -91,7 +91,7 @@ export function PermissionSelect({
         onClick={() => onOpenChange(!open)}
       >
         {value === 'read-only' ? <EyeIcon size={13} /> : <ShieldIcon size={13} />}
-        <span>{current.label.replace(' EXP', '')}</span>
+        <span>{current.label}</span>
         <ChevronDownIcon size={11} />
       </button>
 

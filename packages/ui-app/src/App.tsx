@@ -148,6 +148,7 @@ export function App() {
           modes={harness.modes}
           mode={harness.session?.mode ?? harness.defaultMode}
           permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
+          commandPrefix={harness.commandPrefix}
           contextInfo={harness.contextInfo}
           stats={harness.session?.stats ?? null}
           onModeChange={harness.setMode}
@@ -167,6 +168,7 @@ export function App() {
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
+        onSaved={() => { void harness.refreshSettings() }}
         onClose={() => setSettingsOpen(false)}
       />
 

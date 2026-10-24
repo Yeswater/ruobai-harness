@@ -3906,3 +3906,10 @@ body {
     display: none;
   }
 }
+
+.model-provider-note {
+  margin-left: 7px;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 400;
+}

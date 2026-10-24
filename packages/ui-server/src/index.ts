@@ -107,7 +107,36 @@ export class UiApi extends Service {
 
     if (pathname === '/api/models') {
       if (method !== 'GET') throw new HttpError(405, 'method not allowed')
-      sendJson(res, 200, { providers: this.ctx.llm.list() })
+      const settings = this.ctx.get('settings', false) as
+        | {
+          get(): {
+            llm?: {
+              providers?: Array<{
+                id: string
+                name: string
+                note?: string
+                models: Array<{ id: string }>
+              }>
+            }
+          }
+        }
+        | undefined
+      const configured = new Map(
+        (settings?.get().llm?.providers ?? []).map(entry => [entry.id, entry]),
+      )
+      // Prefer the provider's display name and its full configured model list
+      // over the adapter's single default model.
+      const providers = this.ctx.llm.list().map((provider) => {
+        const entry = configured.get(provider.name)
+        if (!entry) return { id: provider.name, name: provider.name, models: provider.models }
+        return {
+          id: entry.id,
+          name: entry.name,
+          ...(entry.note ? { note: entry.note } : {}),
+          models: entry.models.map(model => model.id),
+        }
+      })
+      sendJson(res, 200, { providers })
       return true
     }
 

@@ -4,9 +4,15 @@ import type {
 
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
+/** Extra slash-command trigger configured in settings. */
+export type CommandPrefix = '～' | '！' | '#'
+
 export interface ModelProvider {
+  id: string
   name: string
+  /** Configured models; may be empty when the provider has none yet. */
   models: string[]
+  note?: string
 }
 
 export interface WorkspaceMatch {
@@ -65,6 +71,7 @@ export interface PublicSettings {
   agent?: {
     defaultMode?: string
     defaultPermission?: PermissionMode
+    commandPrefix?: CommandPrefix
     bypassApprovals?: boolean
     compactAt?: number
   }
@@ -95,6 +102,7 @@ export interface SettingsPatch {
   agent?: {
     defaultMode?: string
     defaultPermission?: PermissionMode
+    commandPrefix?: CommandPrefix
     bypassApprovals?: boolean
     compactAt?: number
   }

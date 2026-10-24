@@ -51,11 +51,16 @@ export interface UiSettings {
 
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
+/** Extra character accepted as a slash-command trigger, next to `/` and `／`. */
+export type CommandPrefix = '～' | '！' | '#'
+
 export interface AgentSettings {
   /** Mode used for new sessions. */
   defaultMode?: string
   /** Permission preset applied to sessions without their own mode. */
   defaultPermission?: PermissionMode
+  /** IME-friendly alternate trigger for slash commands. */
+  commandPrefix?: CommandPrefix
   /** Skip write approvals entirely. Dangerous; surfaced in settings as bypass. */
   bypassApprovals?: boolean
   /** Estimated-token threshold that triggers LLM summarization. */
@@ -286,6 +291,9 @@ export class SettingsService extends Service {
       if (patch.agent.defaultMode !== undefined) agent.defaultMode = patch.agent.defaultMode || undefined
       if (patch.agent.defaultPermission !== undefined) {
         agent.defaultPermission = patch.agent.defaultPermission || undefined
+      }
+      if (patch.agent.commandPrefix !== undefined) {
+        agent.commandPrefix = patch.agent.commandPrefix || undefined
       }
       if (patch.agent.bypassApprovals !== undefined) agent.bypassApprovals = Boolean(patch.agent.bypassApprovals)
       if (patch.agent.compactAt !== undefined) agent.compactAt = Math.max(1000, Number(patch.agent.compactAt) || 0) || undefined

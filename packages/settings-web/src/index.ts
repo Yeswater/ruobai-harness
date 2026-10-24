@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
 import { builtinDangerRules } from '@ruobai/approval'
-import type { PermissionMode, ProviderInput } from '@ruobai/settings'
+import type { CommandPrefix, PermissionMode, ProviderInput } from '@ruobai/settings'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'settings-web'
@@ -50,6 +50,7 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
           ? {
               defaultMode: typeof body.agent.defaultMode === 'string' ? body.agent.defaultMode : undefined,
               defaultPermission: normalizeDefaultPermission(body.agent.defaultPermission),
+              commandPrefix: normalizeCommandPrefix(body.agent.commandPrefix),
               bypassApprovals: typeof body.agent.bypassApprovals === 'boolean' ? body.agent.bypassApprovals : undefined,
               compactAt: typeof body.agent.compactAt === 'number' ? body.agent.compactAt : undefined,
             }
@@ -224,4 +225,10 @@ function normalizeDefaultPermission(value: unknown): PermissionMode | undefined 
   if (value === undefined) return undefined
   if (value === 'read-only' || value === 'workspace-write' || value === 'auto-review') return value
   throw new HttpError(400, 'defaultPermission must be read-only, workspace-write or auto-review')
+}
+
+function normalizeCommandPrefix(value: unknown): CommandPrefix | undefined {
+  if (value === undefined) return undefined
+  if (value === '～' || value === '！' || value === '#') return value
+  throw new HttpError(400, 'commandPrefix must be ～, ！ or #')
 }

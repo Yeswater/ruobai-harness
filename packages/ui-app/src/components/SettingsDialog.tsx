@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, type ModeInfo, type PermissionMode, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
+import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
 import { CloseIcon, PlusIcon } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
 import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
@@ -10,6 +10,7 @@ interface SettingsDialogProps {
   open: boolean
   initialTab?: SettingsTab
   onClose: () => void
+  onSaved?: () => void
 }
 
 export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior'
@@ -38,7 +39,7 @@ function draftOf(provider?: PublicProvider | null): Draft {
   }
 }
 
-export function SettingsDialog({ open, initialTab, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsDialogProps) {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -51,6 +52,7 @@ export function SettingsDialog({ open, initialTab, onClose }: SettingsDialogProp
   const [modes, setModes] = useState<ModeInfo[]>([])
   const [agentMode, setAgentMode] = useState('agent')
   const [defaultPermission, setDefaultPermission] = useState<PermissionMode>('workspace-write')
+  const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
   const [compactAt, setCompactAt] = useState(48_000)
 
   const providers = settings?.llm?.providers ?? []
@@ -63,6 +65,7 @@ export function SettingsDialog({ open, initialTab, onClose }: SettingsDialogProp
     setSettings(next)
     setAgentMode(next.agent?.defaultMode ?? 'agent')
     setDefaultPermission(next.agent?.defaultPermission ?? 'workspace-write')
+    setCommandPrefix(next.agent?.commandPrefix ?? '～')
     setCompactAt(next.agent?.compactAt ?? 48_000)
     const list = next.llm?.providers ?? []
     const target = list.find(provider => provider.id === selectId)
@@ -241,11 +244,13 @@ export function SettingsDialog({ open, initialTab, onClose }: SettingsDialogProp
         agent: {
           defaultMode: agentMode,
           defaultPermission,
+          commandPrefix,
           compactAt: Number(compactAt) || 48_000,
         },
       })
       setSettings(next)
-      setNotice('已保存。默认模式与默认权限对新建会话生效。')
+      setNotice('已保存。默认模式、默认权限与命令前缀已更新。')
+      onSaved?.()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -465,6 +470,22 @@ export function SettingsDialog({ open, initialTab, onClose }: SettingsDialogProp
               />
             </label>
             <p className="field-help">完全权限只能在单个会话里临时启用，不能作为全局默认。</p>
+
+            <label className="field">
+              <span>命令兼容前缀</span>
+              <Select
+                value={commandPrefix}
+                options={[
+                  { value: '～', label: '～（波浪号）', description: '默认，中文输入法下更容易输入' },
+                  { value: '！', label: '！（感叹号）', description: '用感叹号触发斜杠命令' },
+                  { value: '#', label: '#（井号）', description: '用井号触发斜杠命令' },
+                ]}
+                onChange={value => setCommandPrefix(value as CommandPrefix)}
+                ariaLabel="Command prefix"
+                menuWidth={320}
+              />
+            </label>
+            <p className="field-help">/ 与 ／ 始终可用；这里选择额外的兼容触发符。</p>
 
             <label className="field">
               <span>上下文压缩阈值（估算 token）</span>

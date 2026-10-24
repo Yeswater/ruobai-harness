@@ -217,6 +217,20 @@ describe('ui server', () => {
     })
     expect(model.status).toBe(200)
 
+    const listed = await (await fetch(`${base}/api/models`)).json() as {
+      providers: Array<{ id: string; name: string; models: string[] }>
+    }
+    const deepseek = listed.providers.find(provider => provider.id === 'deepseek')
+    expect(deepseek?.name).toBe('DeepSeek')
+    expect(deepseek?.models).toEqual(expect.arrayContaining(['deepseek-chat', 'deepseek-reasoner']))
+
+    const configuredModel = await fetch(`${base}/api/sessions/${created.session.id}/model`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ provider: 'deepseek', model: 'deepseek-reasoner' }),
+    })
+    expect(configuredModel.status).toBe(200)
+
     const unknownModel = await fetch(`${base}/api/sessions/${created.session.id}/model`, {
       method: 'POST',
       headers: json,

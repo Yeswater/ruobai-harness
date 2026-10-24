@@ -84,4 +84,25 @@ describe('provider API', () => {
     })).json() as { settings: { llm: { providers: Array<{ id: string }> } } }
     expect(removed.settings.llm.providers.some(item => item.id === provider.id)).toBe(false)
   })
+
+  it('stores the command prefix and rejects an unknown one', async () => {
+    const harness = await createHarness()
+    cleanups.push(() => harness.dispose())
+    const base = harness.ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+
+    const saved = await (await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ agent: { commandPrefix: '#' } }),
+    })).json() as { settings: { agent?: { commandPrefix?: string } } }
+    expect(saved.settings.agent?.commandPrefix).toBe('#')
+
+    const invalid = await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ agent: { commandPrefix: '~' } }),
+    })
+    expect(invalid.status).toBe(400)
+  })
 })

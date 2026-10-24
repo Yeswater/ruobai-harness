@@ -22,9 +22,10 @@ export function ModelSelect({
     width: 280,
   })
 
-  const currentProvider = provider && providers.some(item => item.name === provider)
+  const currentProvider = provider && providers.some(item => item.id === provider)
     ? provider
-    : providers.find(item => item.models.includes(model))?.name
+    : providers.find(item => item.models.includes(model))?.id
+  const currentProviderLabel = providers.find(item => item.id === currentProvider)?.name
 
   const pick = (nextProvider: string, nextModel: string) => {
     onOpenChange(false)
@@ -42,7 +43,7 @@ export function ModelSelect({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => onOpenChange(!open)}
-        title={currentProvider ? `${currentProvider} / ${model}` : model}
+        title={currentProviderLabel ? `${currentProviderLabel} / ${model}` : model}
       >
         <BotIcon size={13} />
         <span>{model}</span>
@@ -64,22 +65,25 @@ export function ModelSelect({
             >
               {providers.some(item => item.models.length)
                 ? providers.filter(item => item.models.length).map(item => (
-                  <div key={item.name}>
-                    <div className="view-menu-label">{item.name}</div>
+                  <div key={item.id}>
+                    <div className="view-menu-label">
+                      {item.name}
+                      {item.note ? <span className="model-provider-note">{item.note}</span> : null}
+                    </div>
                     {item.models.map(name => (
                       <button
-                        key={`${item.name}:${name}`}
+                        key={`${item.id}:${name}`}
                         type="button"
                         role="menuitemradio"
-                        aria-checked={item.name === currentProvider && name === model}
-                        className={`view-menu-row ${item.name === currentProvider && name === model ? 'selected' : ''}`}
-                        onClick={() => pick(item.name, name)}
+                        aria-checked={item.id === currentProvider && name === model}
+                        className={`view-menu-row ${item.id === currentProvider && name === model ? 'selected' : ''}`}
+                        onClick={() => pick(item.id, name)}
                       >
                         <span className="view-menu-icon"><BotIcon size={15} /></span>
                         <span className="view-menu-text">
                           <span className="view-menu-title">{name}</span>
                         </span>
-                        {item.name === currentProvider && name === model ? <CheckIcon size={14} /> : null}
+                        {item.id === currentProvider && name === model ? <CheckIcon size={14} /> : null}
                       </button>
                     ))}
                   </div>

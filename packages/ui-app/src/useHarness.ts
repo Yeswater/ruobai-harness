@@ -6,6 +6,7 @@ import {
   summarize,
   type ApprovalDecision,
   type ApprovalRequest,
+  type CommandPrefix,
   type ContextInfo,
   type ModeInfo,
   type ModelProvider,
@@ -83,6 +84,7 @@ export function useHarness() {
   const [defaultMode, setDefaultMode] = useState('agent')
   const [models, setModels] = useState<ModelProvider[]>([])
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null)
+  const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
@@ -238,6 +240,19 @@ export function useHarness() {
       cancelled = true
     }
   }, [])
+
+  const refreshSettings = useCallback(async () => {
+    try {
+      const settings = await api.getSettings()
+      setCommandPrefix(settings.agent?.commandPrefix ?? '～')
+    } catch {
+      // keep the previous prefix when settings are unavailable
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshSettings()
+  }, [refreshSettings])
 
   useEffect(() => {
     if (!activeId) {
@@ -409,6 +424,8 @@ export function useHarness() {
     defaultMode,
     models,
     contextInfo,
+    commandPrefix,
+    refreshSettings,
     approvals,
     recentWorkspaces,
     select,

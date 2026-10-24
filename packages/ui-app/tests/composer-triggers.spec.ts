@@ -8,6 +8,22 @@ describe('composer triggers', () => {
     expect(detectTrigger('line\n/plan', 10)).toEqual({ kind: 'slash', start: 5, query: 'plan' })
   })
 
+  it('accepts tilde and fullwidth variants for slash commands', () => {
+    expect(detectTrigger('~pla', 4)).toEqual({ kind: 'slash', start: 0, query: 'pla' })
+    expect(detectTrigger('～pla', 4)).toEqual({ kind: 'slash', start: 0, query: 'pla' })
+    expect(detectTrigger('／plan', 5)).toEqual({ kind: 'slash', start: 0, query: 'plan' })
+    // Home-directory paths are not commands.
+    expect(detectTrigger('~/code', 6)).toBeNull()
+    expect(detectTrigger('/usr/bin', 8)).toBeNull()
+  })
+
+  it('honours the configured command prefix', () => {
+    expect(detectTrigger('！pla', 4, '！')).toEqual({ kind: 'slash', start: 0, query: 'pla' })
+    expect(detectTrigger('#plan', 5, '#')).toEqual({ kind: 'slash', start: 0, query: 'plan' })
+    expect(detectTrigger('～pla', 4, '#')).toBeNull()
+    expect(detectTrigger('!plan', 5, '！')).toBeNull()
+  })
+
   it('detects mentions after whitespace', () => {
     expect(detectTrigger('hi @src', 7)).toEqual({ kind: 'mention', start: 3, query: 'src' })
     expect(detectTrigger('@', 1)).toEqual({ kind: 'mention', start: 0, query: '' })

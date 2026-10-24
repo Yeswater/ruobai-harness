@@ -191,7 +191,12 @@ export class ChatService extends Service {
     if (!nextProvider || !nextModel) throw new Error('provider and model are required')
     const registered = this.ctx.llm.get(nextProvider)
     if (!registered) throw new Error(`unknown provider: ${nextProvider}`)
-    if (registered.models?.length && !registered.models.includes(nextModel)) {
+    const settings = this.ctx.get('settings', false) as
+      | { findProvider?(id: string): { models: Array<{ id: string }> } | undefined }
+      | undefined
+    const configured = settings?.findProvider?.(nextProvider)?.models.map(model => model.id) ?? []
+    const allowed = configured.length ? configured : registered.models ?? []
+    if (allowed.length && !allowed.includes(nextModel)) {
       throw new Error(`model "${nextModel}" is not available for provider "${nextProvider}"`)
     }
     this.ctx.sessions.setModel(id, nextProvider, nextModel)
