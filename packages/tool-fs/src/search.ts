@@ -93,6 +93,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         'Search file contents inside the workspace and return path:line:text matches.',
         'Skips ignored directories and binary files, caps results, and is read-only.',
       ].join(' '),
+      readOnly: true,
       parameters: {
         type: 'object',
         properties: {
@@ -166,6 +167,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         'List files inside the workspace whose path matches a glob.',
         'Read-only; use ** to cross directories and * within one segment.',
       ].join(' '),
+      readOnly: true,
       parameters: {
         type: 'object',
         properties: {

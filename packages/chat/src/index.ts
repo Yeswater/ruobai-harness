@@ -1,7 +1,9 @@
 import { Service, type Context } from '@ruobai/cordis'
+import type {} from '@ruobai/agent'
 import type { ContentPart } from '@ruobai/llm'
+import { DEFAULT_PERMISSION, isPermissionMode } from '@ruobai/permissions'
 import type { SessionEvent, SessionMeta } from '@ruobai/session'
-import type { ChatBlock, ChatEvent, ChatMessage, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import type { AttachmentMeta, ChatBlock, ChatEvent, ChatMessage, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
 
 export type * from '@ruobai/chat-protocol'
 
@@ -53,6 +55,7 @@ export class ChatService extends Service {
     ctx.on('agent/step-start', (id, messageId) => {
       if (!this.visible(id)) return
       const session = this.ensure(id)
+      session.stats = undefined
       if (!session.messages.some(message => message.id === messageId)) {
         session.messages.push({
           id: messageId,
@@ -89,6 +92,13 @@ export class ChatService extends Service {
       this.ctx.emit('chat/event', { type: 'message-done', sessionId: id, session })
       this.touch(id, session)
     })
+
+    ctx.on('agent/usage', (id, stats) => {
+      if (!this.visible(id)) return
+      const session = this.ensure(id)
+      session.stats = stats
+      this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id, stats })
+    })
   }
 
   list(): SessionSummary[] {
@@ -100,7 +110,9 @@ export class ChatService extends Service {
         id: meta.id,
         title: meta.title,
         model: session.model,
+        provider: session.provider,
         mode: session.mode,
+        permission: session.permission,
         workspace: session.workspace,
         archived: meta.archived ?? false,
         updatedAt: meta.updatedAt,
@@ -116,7 +128,12 @@ export class ChatService extends Service {
 
   create(title?: string, mode?: string, workspace?: string): ChatSession {
     const settings = this.ctx.get('settings', false) as
-      | { raw(): { llm?: { activeProvider?: string; activeModel?: string }; agent?: { defaultMode?: string } } }
+      | {
+        raw(): {
+          llm?: { activeProvider?: string; activeModel?: string }
+          agent?: { defaultMode?: string; defaultPermission?: unknown }
+        }
+      }
       | undefined
     const config = settings?.raw()
     const provider = config?.llm?.activeProvider ?? this.ctx.llm.config.provider
@@ -126,7 +143,18 @@ export class ChatService extends Service {
     const resolvedMode = requested && this.ctx.modes.get(requested)
       ? requested
       : this.ctx.modes.defaultId()
-    const meta = this.ctx.sessions.create({ title, model, provider, mode: resolvedMode, workspace })
+    const requestedPermission = config?.agent?.defaultPermission
+    const permission = isPermissionMode(requestedPermission) && requestedPermission !== 'full-access'
+      ? requestedPermission
+      : undefined
+    const meta = this.ctx.sessions.create({
+      title,
+      model,
+      provider,
+      mode: resolvedMode,
+      workspace,
+      ...(permission ? { permission } : {}),
+    })
     return this.ensure(meta.id)
   }
 
@@ -141,6 +169,32 @@ export class ChatService extends Service {
 
   setArchived(id: string, archived: boolean): ChatSession {
     this.ctx.sessions.setArchived(id, archived)
+    const session = this.ensure(id)
+    this.syncMeta(session)
+    this.ctx.emit('chat/event', { type: 'session-updated', session })
+    return session
+  }
+
+  setPermission(id: string, mode: string, confirm = false): ChatSession {
+    if (!isPermissionMode(mode)) throw new Error(`unknown permission mode: ${mode}`)
+    if (mode === 'full-access' && !confirm) throw new Error('full access requires confirmation')
+    this.ctx.sessions.setPermission(id, mode)
+    const session = this.ensure(id)
+    this.syncMeta(session)
+    this.ctx.emit('chat/event', { type: 'session-updated', session })
+    return session
+  }
+
+  setModel(id: string, provider: string, model: string): ChatSession {
+    const nextProvider = provider.trim()
+    const nextModel = model.trim()
+    if (!nextProvider || !nextModel) throw new Error('provider and model are required')
+    const registered = this.ctx.llm.get(nextProvider)
+    if (!registered) throw new Error(`unknown provider: ${nextProvider}`)
+    if (registered.models?.length && !registered.models.includes(nextModel)) {
+      throw new Error(`model "${nextModel}" is not available for provider "${nextProvider}"`)
+    }
+    this.ctx.sessions.setModel(id, nextProvider, nextModel)
     const session = this.ensure(id)
     this.syncMeta(session)
     this.ctx.emit('chat/event', { type: 'session-updated', session })
@@ -172,13 +226,16 @@ export class ChatService extends Service {
     return this.ensure(meta.id)
   }
 
-  send(id: string, text: string): ChatMessage {
-    const user = this.ctx.agents.prompt(id, text)
+  send(id: string, text: string, attachments: AttachmentMeta[] = []): ChatMessage {
+    const user = this.ctx.agents.prompt(id, text, attachments)
     const session = this.ensure(id)
     return session.messages.find(message => message.id === user.id) ?? {
       id: user.id,
       role: 'user',
-      blocks: [{ type: 'text', text: user.text }],
+      blocks: [
+        ...(user.text ? [{ type: 'text' as const, text: user.text }] : []),
+        ...(user.attachments ?? []).map(attachment => ({ type: 'attachment' as const, attachment })),
+      ],
       status: 'done',
       createdAt: user.at,
     }
@@ -198,7 +255,9 @@ export class ChatService extends Service {
       id,
       title: record.meta.title,
       model: record.meta.model ?? this.ctx.llm.config.model ?? 'unknown',
+      provider: record.meta.provider,
       mode: record.meta.mode ?? this.ctx.modes.defaultId(),
+      permission: this.permissionFor(id),
       workspace: record.meta.workspace,
       archived: record.meta.archived ?? false,
       createdAt: record.meta.createdAt,
@@ -251,10 +310,15 @@ export class ChatService extends Service {
   private apply(session: ChatSession, event: SessionEvent) {
     if (event.type === 'message/user') {
       if (!session.messages.some(message => message.id === event.data.id)) {
+        const blocks: ChatBlock[] = []
+        if (event.data.text) blocks.push({ type: 'text', text: event.data.text })
+        for (const attachment of (event.data.attachments ?? []) as AttachmentMeta[]) {
+          blocks.push({ type: 'attachment', attachment })
+        }
         session.messages.push({
           id: event.data.id,
           role: 'user',
-          blocks: [{ type: 'text', text: event.data.text }],
+          blocks,
           status: 'done',
           createdAt: event.data.at ?? event.ts,
         })
@@ -304,10 +368,23 @@ export class ChatService extends Service {
     if (!meta) return
     session.title = meta.title
     session.model = meta.model ?? session.model
+    session.provider = meta.provider ?? session.provider
     session.mode = meta.mode ?? session.mode
+    session.permission = this.permissionFor(session.id)
     session.workspace = meta.workspace ?? session.workspace
     session.archived = meta.archived ?? false
     session.updatedAt = meta.updatedAt
+  }
+
+  private permissionFor(id: string): string {
+    const meta = this.ctx.sessions.get(id)?.meta
+    if (isPermissionMode(meta?.permission)) return meta.permission
+    const settings = this.ctx.get('settings', false) as
+      | { raw(): { agent?: { defaultPermission?: unknown } } }
+      | undefined
+    const fallback = settings?.raw().agent?.defaultPermission
+    if (isPermissionMode(fallback) && fallback !== 'full-access') return fallback
+    return DEFAULT_PERMISSION
   }
 
   private touch(id: string, session: ChatSession) {

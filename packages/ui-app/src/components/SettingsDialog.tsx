@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
-import { api, type ModeInfo, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
+import { api, type ModeInfo, type PermissionMode, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
 import { CloseIcon, PlusIcon } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
+import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
 import { PermissionsSettings } from './PermissionsSettings.tsx'
 import { Select } from './Select.tsx'
 
 interface SettingsDialogProps {
   open: boolean
+  initialTab?: SettingsTab
   onClose: () => void
 }
+
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior'
 
 interface Draft {
   id?: string
@@ -34,7 +38,7 @@ function draftOf(provider?: PublicProvider | null): Draft {
   }
 }
 
-export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ open, initialTab, onClose }: SettingsDialogProps) {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -43,9 +47,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [tab, setTab] = useState<'providers' | 'mcp' | 'permissions' | 'behavior'>('providers')
+  const [tab, setTab] = useState<SettingsTab>('providers')
   const [modes, setModes] = useState<ModeInfo[]>([])
   const [agentMode, setAgentMode] = useState('agent')
+  const [defaultPermission, setDefaultPermission] = useState<PermissionMode>('workspace-write')
   const [compactAt, setCompactAt] = useState(48_000)
 
   const providers = settings?.llm?.providers ?? []
@@ -57,6 +62,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const next = await api.getSettings()
     setSettings(next)
     setAgentMode(next.agent?.defaultMode ?? 'agent')
+    setDefaultPermission(next.agent?.defaultPermission ?? 'workspace-write')
     setCompactAt(next.agent?.compactAt ?? 48_000)
     const list = next.llm?.providers ?? []
     const target = list.find(provider => provider.id === selectId)
@@ -78,7 +84,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     setNotice(null)
     setBusy(null)
     setModelInput('')
-    setTab('providers')
+    setTab(initialTab ?? 'providers')
     void load().catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught))
     })
@@ -90,7 +96,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, initialTab])
 
   if (!open) return null
 
@@ -234,11 +240,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       const next = await api.updateSettings({
         agent: {
           defaultMode: agentMode,
+          defaultPermission,
           compactAt: Number(compactAt) || 48_000,
         },
       })
       setSettings(next)
-      setNotice('已保存。默认模式对新建会话生效。')
+      setNotice('已保存。默认模式与默认权限对新建会话生效。')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -440,6 +447,24 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 menuWidth={300}
               />
             </label>
+
+            <label className="field">
+              <span>默认权限（新建会话）</span>
+              <Select
+                value={defaultPermission}
+                options={PERMISSION_OPTIONS
+                  .filter(option => option.value !== 'full-access')
+                  .map(option => ({
+                    value: option.value,
+                    label: option.label,
+                    description: option.description,
+                  }))}
+                onChange={value => setDefaultPermission(value as PermissionMode)}
+                ariaLabel="Default permission"
+                menuWidth={320}
+              />
+            </label>
+            <p className="field-help">完全权限只能在单个会话里临时启用，不能作为全局默认。</p>
 
             <label className="field">
               <span>上下文压缩阈值（估算 token）</span>

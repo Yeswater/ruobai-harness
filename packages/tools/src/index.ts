@@ -13,6 +13,8 @@ export interface ToolRunContext {
 export interface ToolDefinition extends ToolSchema {
   /** Ask for human approval before executing (mutating tools). */
   requiresApproval?: boolean
+  /** Tool only observes state; required for the read-only permission mode. */
+  readOnly?: boolean
   /** What a persistent approval rule matches against. */
   approvalSubject?(args: any, run: ToolRunContext): { kind: 'command' | 'path'; value: string } | undefined
   /** Human-readable summary and optional diff shown in the approval card. */
@@ -97,6 +99,23 @@ export class ToolRegistry extends Service {
     if (!tool) return { content: `unknown tool: ${name}`, isError: true }
 
     const call: ToolCallInfo = { name, args, sessionId: run.sessionId }
+
+    // Defense in depth: the agent already hides unavailable tools, but a
+    // model may still emit a call for one it saw earlier in the turn.
+    const permissions = this.ctx.get('permissions', false) as
+      | {
+        modeFor(sessionId?: string): string
+        allowsTool(sessionId: string | undefined, tool: ToolDefinition): boolean
+      }
+      | undefined
+    if (permissions && !permissions.allowsTool(run.sessionId, tool)) {
+      const result: ToolResult = {
+        content: `tool "${name}" is not available in ${permissions.modeFor(run.sessionId)} mode`,
+        isError: true,
+      }
+      this.ctx.emit('tool/after', call, result)
+      return result
+    }
 
     if (tool.requiresApproval) {
       const approval = this.ctx.get('approval', false) as

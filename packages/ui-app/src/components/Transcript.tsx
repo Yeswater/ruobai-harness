@@ -3,6 +3,7 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ToolBlock } from '@ruobai/chat-protocol'
 import { ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
+import { AttachmentRail } from './AttachmentRail.tsx'
 import { TurnNav } from './TurnNav.tsx'
 
 interface TranscriptProps {
@@ -124,9 +125,13 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
 function Message({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     const text = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
+    const attachments = message.blocks
+      .filter(block => block.type === 'attachment')
+      .map(block => block.attachment)
     return (
       <div className="msg user" id={`msg-${message.id}`}>
-        <div className="bubble">{text}</div>
+        {attachments.length ? <AttachmentRail attachments={attachments} /> : null}
+        {text ? <div className="bubble">{text}</div> : null}
       </div>
     )
   }
@@ -136,16 +141,20 @@ function Message({ message }: { message: ChatMessage }) {
   return (
     <div className={`msg assistant ${toolOnly ? 'tool-only' : ''}`}>
       <div className="msg-body">
-        {message.blocks.map((block, index) => block.type === 'text'
-          ? (
-            <div className="prose markdown" key={index}>
-              <Markdown remarkPlugins={[remarkGfm]}>{block.text}</Markdown>
-              {message.status === 'streaming' && index === message.blocks.length - 1
-                ? <span className="caret" />
-                : null}
-            </div>
-          )
-          : <ToolCard key={index} block={block} />)}
+        {message.blocks.map((block, index) => {
+          if (block.type === 'text') {
+            return (
+              <div className="prose markdown" key={index}>
+                <Markdown remarkPlugins={[remarkGfm]}>{block.text}</Markdown>
+                {message.status === 'streaming' && index === message.blocks.length - 1
+                  ? <span className="caret" />
+                  : null}
+              </div>
+            )
+          }
+          if (block.type === 'tool') return <ToolCard key={index} block={block} />
+          return null
+        })}
         {message.status === 'streaming' && message.blocks.length === 0
           ? <div className="prose thinking"><span className="caret" /> Thinking</div>
           : null}

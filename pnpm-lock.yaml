@@ -83,6 +83,9 @@ importers:
       '@ruobai/modes':
         specifier: workspace:*
         version: link:packages/modes
+      '@ruobai/permissions':
+        specifier: workspace:*
+        version: link:packages/permissions
       '@ruobai/plugin-counter':
         specifier: workspace:*
         version: link:packages/plugin-counter
@@ -231,6 +234,9 @@ importers:
       '@ruobai/modes':
         specifier: workspace:*
         version: link:../modes
+      '@ruobai/permissions':
+        specifier: workspace:*
+        version: link:../permissions
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
@@ -432,6 +438,21 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+
+  packages/permissions:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/plugin-counter:
     dependencies:

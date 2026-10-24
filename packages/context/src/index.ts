@@ -134,9 +134,17 @@ export class ContextService extends Service {
       allows(id: string | undefined, tool: string): boolean
     } | undefined
     const modeId = record.meta.mode
+    const registry = this.ctx.get('tools', false) as {
+      list(): ToolSchema[]
+      get(name: string): unknown
+    } | undefined
+    const permissions = this.ctx.get('permissions', false) as
+      | { allowsTool(sessionId: string | undefined, tool: unknown): boolean }
+      | undefined
     const tools = cached?.tools
-      ?? (this.ctx.get('tools', false) as { list(): ToolSchema[] } | undefined)?.list()
-        ?.filter(tool => modes?.allows(modeId, tool.name) ?? true)
+      ?? registry?.list()?.filter(tool =>
+        (modes?.allows(modeId, tool.name) ?? true)
+        && (!permissions || permissions.allowsTool(sessionId, registry.get(tool.name))))
       ?? []
     const built = await this.build(sessionId, {
       basePrompt: cached?.basePrompt ?? agent?.config?.systemPrompt,
@@ -259,7 +267,23 @@ function latestSummary(record: SessionRecord): { upToSeq: number; text: string }
 
 function toMessages(event: SessionEvent): Message[] {
   if (event.type === 'message/user') {
-    return [{ role: 'user', content: [{ type: 'text', text: event.data.text }] }]
+    const parts: ContentPart[] = []
+    if (event.data.text) parts.push({ type: 'text', text: event.data.text })
+    const attachments = (event.data.attachments ?? []) as Array<{
+      kind: 'image' | 'file'
+      name: string
+      mime: string
+      data?: string
+      text?: string
+    }>
+    for (const attachment of attachments) {
+      if (attachment.kind === 'image' && attachment.data) {
+        parts.push({ type: 'image', mimeType: attachment.mime, data: attachment.data, name: attachment.name })
+      } else if (attachment.kind === 'file' && attachment.text !== undefined) {
+        parts.push({ type: 'file', name: attachment.name, mimeType: attachment.mime, text: attachment.text })
+      }
+    }
+    return parts.length ? [{ role: 'user', content: parts }] : []
   }
   if (event.type === 'message/assistant') {
     return [{ role: 'assistant', content: event.data.parts }]
@@ -282,8 +306,17 @@ function toMessages(event: SessionEvent): Message[] {
 function renderEvents(events: SessionEvent[]) {
   const lines: string[] = []
   for (const event of events) {
-    if (event.type === 'message/user') lines.push(`User: ${event.data.text}`)
-    else if (event.type === 'message/assistant') {
+    if (event.type === 'message/user') {
+      const attachments = (event.data.attachments ?? []) as Array<{
+        kind: 'image' | 'file'
+        name: string
+        text?: string
+      }>
+      const extra = attachments.map(attachment => attachment.kind === 'image'
+        ? `[image ${attachment.name}]`
+        : `[file ${attachment.name}]\n${(attachment.text ?? '').slice(0, 800)}`).join('\n')
+      lines.push(`User: ${event.data.text}${extra ? `\n${extra}` : ''}`)
+    } else if (event.type === 'message/assistant') {
       const parts = (event.data.parts as ContentPart[]).map(part => {
         if (part.type === 'text') return part.text
         if (part.type === 'tool-call') return `[tool ${part.name} ${part.arguments.slice(0, 300)}]`
@@ -311,10 +344,16 @@ function messageChars(messages: Message[]) {
       if (part.type === 'text') chars += part.text.length
       else if (part.type === 'tool-call') chars += part.name.length + part.arguments.length
       else if (part.type === 'tool-result') chars += part.content.length
+      else if (part.type === 'file') chars += part.text.length
+      // Images have no text length; use a documented token-equivalent constant.
+      else if (part.type === 'image') chars += IMAGE_CHAR_EQUIVALENT
     }
   }
   return chars
 }
+
+/** Rough per-image cost (1200 tokens) expressed in the estimator's char scale. */
+const IMAGE_CHAR_EQUIVALENT = 1_200 * 3
 
 function estimateText(text: string) {
   return Math.ceil(text.length / 3)

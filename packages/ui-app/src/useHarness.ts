@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import type { AttachmentMeta, ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
 import {
   api,
   connectEvents,
   summarize,
   type ApprovalDecision,
   type ApprovalRequest,
+  type ContextInfo,
   type ModeInfo,
+  type ModelProvider,
+  type PermissionMode,
 } from './api.ts'
 
 function upsert(list: SessionSummary[], next: SessionSummary) {
@@ -46,6 +49,10 @@ function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {  swit
           ? { ...message, blocks: [...message.blocks, event.block] }
           : message),
       }
+    case 'message-done':
+      return { ...event.session, stats: session.stats }
+    case 'session-stats':
+      return { ...session, stats: event.stats }
     default:
       return session
   }
@@ -74,6 +81,8 @@ export function useHarness() {
   const [error, setError] = useState<string | null>(null)
   const [modes, setModes] = useState<ModeInfo[]>([])
   const [defaultMode, setDefaultMode] = useState('agent')
+  const [models, setModels] = useState<ModelProvider[]>([])
+  const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null)
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
@@ -219,6 +228,40 @@ export function useHarness() {
   }, [fail])
 
   useEffect(() => {
+    let cancelled = false
+    void api.getModels()
+      .then((list) => {
+        if (!cancelled) setModels(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeId) {
+      setContextInfo(null)
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      try {
+        const info = await api.getContext(activeId)
+        if (!cancelled) setContextInfo(info)
+      } catch {
+        if (!cancelled) setContextInfo(null)
+      }
+    }
+    void load()
+    const timer = setInterval(load, 5_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [activeId, session?.updatedAt])
+
+  useEffect(() => {
     if (!activeId) return
     let cancelled = false
     void api.getApprovals(activeId)
@@ -273,10 +316,10 @@ export function useHarness() {
     return () => events.close()
   }, [dropSession])
 
-  const send = useCallback((text: string) => {
+  const send = useCallback((text: string, attachments: AttachmentMeta[] = []) => {
     const id = activeRef.current
     if (!id) return
-    void api.sendMessage(id, text)
+    void api.sendMessage(id, text, attachments)
       .then((message) => {
         setSession(previous => {
           if (!previous || previous.id !== id) return previous
@@ -317,6 +360,36 @@ export function useHarness() {
       .catch(fail)
   }, [fail])
 
+  const setModel = useCallback((provider: string, model: string) => {
+    const id = activeRef.current
+    if (!id) return
+    void api.setSessionModel(id, provider, model)
+      .then((next) => {
+        setSession(previous => previous && previous.id === id
+          ? { ...previous, provider: next.provider, model: next.model }
+          : previous)
+        setSessions(previous => previous.map(item => item.id === id
+          ? { ...item, provider: next.provider, model: next.model }
+          : item))
+      })
+      .catch(fail)
+  }, [fail])
+
+  const setPermission = useCallback((mode: PermissionMode, confirm = false) => {
+    const id = activeRef.current
+    if (!id) return
+    void api.setSessionPermission(id, mode, confirm)
+      .then((next) => {
+        setSession(previous => previous && previous.id === id
+          ? { ...previous, permission: next.permission }
+          : previous)
+        setSessions(previous => previous.map(item => item.id === id
+          ? { ...item, permission: next.permission }
+          : item))
+      })
+      .catch(fail)
+  }, [fail])
+
   const resolveApproval = useCallback((id: string, decision: ApprovalDecision) => {
     setApprovals(previous => previous.filter(item => item.id !== id))
     void api.resolveApproval(id, decision).catch((caught) => {
@@ -334,6 +407,8 @@ export function useHarness() {
     error,
     modes,
     defaultMode,
+    models,
+    contextInfo,
     approvals,
     recentWorkspaces,
     select,
@@ -345,6 +420,8 @@ export function useHarness() {
     archiveSession,
     forkSession,
     setMode,
+    setModel,
+    setPermission,
     resolveApproval,
     dismissError: () => setError(null),
   }

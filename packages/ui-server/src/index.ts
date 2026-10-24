@@ -4,6 +4,7 @@ import { isAbsolute, resolve } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 import type {} from '@ruobai/chat'
+import { MAX_MESSAGE_BODY_BYTES, normalizeAttachments } from './attachments.ts'
 import { SseHub } from './sse.ts'
 
 const STATES = ['PENDING', 'LOADING', 'ACTIVE', 'FAILED', 'DISPOSED', 'UNLOADING'] as const
@@ -21,7 +22,7 @@ declare module '@ruobai/cordis' {
  * assets, guard requests, or add WebSocket upgrades without touching this.
  */
 export class UiApi extends Service {
-  static inject = ['web', 'chat', 'modes', 'approval', 'context']
+  static inject = ['web', 'chat', 'modes', 'approval', 'context', 'llm']
 
   private readonly sse = new SseHub()
 
@@ -49,7 +50,16 @@ export class UiApi extends Service {
         : message.startsWith('unknown session')
           ? 404
           : message.includes('running') ? 409
-            : message.startsWith('unknown mode') || message.startsWith('title') ? 400 : 500
+            : message.startsWith('unknown mode')
+              || message.startsWith('title')
+              || message.startsWith('unknown permission')
+              || message.startsWith('permission')
+              || message.startsWith('full access')
+              || message.startsWith('unknown provider')
+              || message.startsWith('provider')
+              || message.startsWith('model')
+              ? 400
+              : 500
       if (status === 500) this.ctx.logger('ui').error(error)
       if (!res.headersSent) sendJson(res, status, { error: message })
       return true
@@ -95,6 +105,12 @@ export class UiApi extends Service {
       return true
     }
 
+    if (pathname === '/api/models') {
+      if (method !== 'GET') throw new HttpError(405, 'method not allowed')
+      sendJson(res, 200, { providers: this.ctx.llm.list() })
+      return true
+    }
+
     if (pathname === '/api/approvals') {
       if (method !== 'GET') throw new HttpError(405, 'method not allowed')
       const sessionId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('sessionId') ?? undefined
@@ -122,7 +138,7 @@ export class UiApi extends Service {
       return true
     }
 
-    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|context|fork))?$/.exec(pathname)
+    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork))?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
     const action = match[2]
@@ -180,11 +196,29 @@ export class UiApi extends Service {
       return true
     }
 
-    if (action === 'messages' && method === 'POST') {
+    if (action === 'model' && method === 'POST') {
       const body = await readJson(req)
+      const provider = typeof body.provider === 'string' ? body.provider.trim() : ''
+      const model = typeof body.model === 'string' ? body.model.trim() : ''
+      if (!provider || !model) throw new HttpError(400, 'provider and model are required')
+      sendJson(res, 200, { session: this.ctx.chat.setModel(id, provider, model) })
+      return true
+    }
+
+    if (action === 'permission' && method === 'POST') {
+      const body = await readJson(req)
+      const mode = typeof body.mode === 'string' ? body.mode.trim() : ''
+      if (!mode) throw new HttpError(400, 'permission mode is required')
+      sendJson(res, 200, { session: this.ctx.chat.setPermission(id, mode, body.confirm === true) })
+      return true
+    }
+
+    if (action === 'messages' && method === 'POST') {
+      const body = await readJson(req, MAX_MESSAGE_BODY_BYTES)
       const text = typeof body.text === 'string' ? body.text.trim() : ''
-      if (!text) throw new HttpError(400, 'text is required')
-      sendJson(res, 201, { message: this.ctx.chat.send(id, text) })
+      const attachments = normalizeAttachments(body.attachments)
+      if (!text && !attachments.length) throw new HttpError(400, 'text or attachments are required')
+      sendJson(res, 201, { message: this.ctx.chat.send(id, text, attachments) })
       return true
     }
 

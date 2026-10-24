@@ -28,6 +28,7 @@ export function apply(ctx: Context) {
   ctx.effect(() => ctx.tools.register({
     name: GOAL_COMPLETE,
     description: 'Mark the current goal as complete and stop the autonomous turn.',
+    readOnly: true,
     parameters: {
       type: 'object',
       properties: { summary: { type: 'string', description: 'Short summary of what was achieved.' } },

@@ -22,7 +22,27 @@ export interface ToolBlock {
   isError?: boolean
 }
 
-export type ChatBlock = TextBlock | ToolBlock
+export interface AttachmentMeta {
+  id: string
+  kind: 'image' | 'file'
+  name: string
+  mime: string
+  /** Decoded byte length. */
+  size: number
+  /** Images: base64 without the `data:` prefix. */
+  data?: string
+  /** Text files: decoded UTF-8 content. */
+  text?: string
+  /** Workspace-relative path when the attachment came from an `@` reference. */
+  path?: string
+}
+
+export interface AttachmentBlock {
+  type: 'attachment'
+  attachment: AttachmentMeta
+}
+
+export type ChatBlock = TextBlock | ToolBlock | AttachmentBlock
 
 export interface ChatMessage {
   id: string
@@ -36,8 +56,12 @@ export interface ChatSession {
   id: string
   title: string
   model: string
+  /** Provider id selected for this session. */
+  provider?: string
   /** Active agent mode id. */
   mode?: string
+  /** Enforced permission preset; absent means the settings default. */
+  permission?: string
   /** Absolute workspace root for this conversation. */
   workspace?: string
   /** Hidden from the default session list. */
@@ -46,18 +70,36 @@ export interface ChatSession {
   updatedAt: number
   messages: ChatMessage[]
   streaming: boolean
+  /** Metrics for the most recent turn; not persisted. */
+  stats?: TurnStats
 }
 
 export interface SessionSummary {
   id: string
   title: string
   model: string
+  provider?: string
   mode?: string
+  permission?: string
   workspace?: string
   archived?: boolean
   updatedAt: number
   messageCount: number
   streaming: boolean
+}
+
+/** Ephemeral metrics for the most recent turn. */
+export interface TurnStats {
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  /** Time from turn start to the first text delta. */
+  ttftMs?: number
+  /** Time between first and last text delta. */
+  generationMs?: number
+  durationMs?: number
+  steps?: number
+  outputChars?: number
 }
 
 export type ChatEvent =
@@ -69,3 +111,4 @@ export type ChatEvent =
   | { type: 'message-delta'; sessionId: string; messageId: string; delta: string }
   | { type: 'message-block'; sessionId: string; messageId: string; block: ChatBlock }
   | { type: 'message-done'; sessionId: string; session: ChatSession }
+  | { type: 'session-stats'; sessionId: string; stats: TurnStats }

@@ -41,6 +41,7 @@
     "@ruobai/mode-goal": "workspace:*",
     "@ruobai/mode-plan": "workspace:*",
     "@ruobai/modes": "workspace:*",
+    "@ruobai/permissions": "workspace:*",
     "@ruobai/plugin-counter": "workspace:*",
     "@ruobai/plugin-counter-view": "workspace:*",
     "@ruobai/plugin-hello": "workspace:*",

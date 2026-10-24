@@ -19,6 +19,7 @@ import ModeAsk from '@ruobai/mode-ask'
 import ModeGoal from '@ruobai/mode-goal'
 import ModePlan from '@ruobai/mode-plan'
 import ModeService from '@ruobai/modes'
+import PermissionService from '@ruobai/permissions'
 import SessionService from '@ruobai/session'
 import SettingsService from '@ruobai/settings'
 import SettingsWeb from '@ruobai/settings-web'
@@ -81,6 +82,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(ModeGoal))
   await mount(ctx.plugin(ContextService, { compactAt: 1_000_000 }))
   await mount(ctx.plugin(ApprovalService))
+  await mount(ctx.plugin(PermissionService))
   await mount(ctx.plugin(AgentService, { maxSteps: 4 }))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(ChatService))

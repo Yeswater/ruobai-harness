@@ -22,6 +22,8 @@ export interface SessionMeta {
   workspace?: string
   /** Hidden from the default session list, restorable from the archive view. */
   archived?: boolean
+  /** Permission preset id enforced for this session's tool calls. */
+  permission?: string
   createdAt: number
   updatedAt: number
 }
@@ -49,5 +51,6 @@ export interface SessionEventMap {
     parentId?: string
     workspace?: string
     archived?: boolean
+    permission?: string
   }
 }

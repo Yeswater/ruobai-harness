@@ -183,4 +183,101 @@ export function BranchIcon({ size }: IconProps) {
   )
 }
 
+export function FileTextIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  )
+}
+
+export function ImageIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m21 15-5-5L5 20" />
+    </svg>
+  )
+}
+
+export function ShieldIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6Z" />
+    </svg>
+  )
+}
+
+export function EyeIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+export function WrenchIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M14.5 6.5a4 4 0 0 0 5 5L9 22l-3.5-3.5L16 8Z" />
+      <path d="M18 3.5 20.5 6 18 8.5 15.5 6Z" />
+    </svg>
+  )
+}
+
+export function BotIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="4" y="8" width="16" height="11" rx="3" />
+      <path d="M12 4v4M8.5 13h.01M15.5 13h.01M9 16.5h6" />
+    </svg>
+  )
+}
+
+export function CommandIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M9 9V6a2 2 0 1 0-2 2h2Zm0 0v6m0-6h6m-6 6H6a2 2 0 1 0 2 2v-2Zm6-6h3a2 2 0 1 0-2-2v2Zm0 0v6m0 0h3a2 2 0 1 1-2 2v-2Zm0 0H9" />
+    </svg>
+  )
+}
+
+export function PlugIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0ZM12 17v4" />
+    </svg>
+  )
+}
+
+export function PuzzleIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M9 4a2 2 0 0 1 4 0c0 .6-.2 1-.5 1.5H16v3.5c.4-.3.8-.5 1.5-.5a2 2 0 1 1 0 4c-.7 0-1.1-.2-1.5-.5V16h-3.5c.3.4.5.8.5 1.5a2 2 0 1 1-4 0c0-.7.2-1.1.5-1.5H5V8h3.5C8.2 7.6 8 7.2 8 6.5A2 2 0 0 1 9 4Z" />
+    </svg>
+  )
+}
+
+export function AtIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1" />
+    </svg>
+  )
+}
+
+export function AlertIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 3 2.5 20h19Z" />
+      <path d="M12 9v5M12 17h.01" />
+    </svg>
+  )
+}
+
+
 

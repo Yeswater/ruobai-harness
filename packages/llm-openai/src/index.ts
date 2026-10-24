@@ -31,7 +31,6 @@ function toOpenAiMessages(messages: Message[]) {
       }
     }
 
-    const text = message.content.map(part => part.type === 'text' ? part.text : '').join('')
     const calls = message.content
       .filter(part => part.type === 'tool-call')
       .map(part => ({
@@ -39,6 +38,29 @@ function toOpenAiMessages(messages: Message[]) {
         type: 'function',
         function: { name: part.name, arguments: part.arguments },
       }))
+
+    // User turns carrying files or images must keep their part order for
+    // vision-capable OpenAI-compatible endpoints.
+    if (message.role === 'user' && message.content.some(part => part.type === 'image' || part.type === 'file')) {
+      type OpenAiContentPart =
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+      const content: OpenAiContentPart[] = []
+      for (const part of message.content) {
+        if (part.type === 'text') content.push({ type: 'text', text: part.text })
+        else if (part.type === 'file') {
+          content.push({ type: 'text', text: `<file name="${part.name}">\n${part.text}\n</file>` })
+        } else if (part.type === 'image') {
+          content.push({
+            type: 'image_url',
+            image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+          })
+        }
+      }
+      return { role: message.role, content }
+    }
+
+    const text = message.content.map(part => part.type === 'text' ? part.text : '').join('')
     return {
       role: message.role,
       content: text || null,
@@ -157,6 +179,9 @@ export class OpenAiProvider implements LlmProvider {
               usage = {
                 inputTokens: payload.usage.prompt_tokens,
                 outputTokens: payload.usage.completion_tokens,
+                cachedInputTokens: payload.usage.prompt_tokens_details?.cached_tokens
+                  ?? payload.usage.prompt_cache_hit_tokens
+                  ?? payload.usage.cache_read_input_tokens,
               }
             }
 

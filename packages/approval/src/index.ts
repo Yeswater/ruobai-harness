@@ -86,8 +86,21 @@ export class ApprovalService extends Service {
   }
 
   async request(input: ApprovalRequestInput, run: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
+    const permissions = this.ctx.get('permissions', false) as
+      | {
+        modeFor(sessionId?: string): string
+        approval(
+          sessionId: string | undefined,
+          toolName: string | undefined,
+          subject?: ApprovalSubject,
+        ): 'allow' | 'deny' | undefined
+      }
+      | undefined
+    const mode = permissions?.modeFor(input.sessionId)
     const guard = this.guard()
-    const danger = guard.enabled && input.subject?.kind === 'command'
+    // Full access intentionally skips the built-in danger confirmations;
+    // every other mode still escalates dangerous commands to the human.
+    const danger = guard.enabled && mode !== 'full-access' && input.subject?.kind === 'command'
       ? dangerFor(input.subject.value)
       : undefined
     const policy = this.decide(input.tool, input.subject)
@@ -106,6 +119,9 @@ export class ApprovalService extends Service {
         : undefined
 
     if (!forced) {
+      const modeDecision = permissions?.approval(input.sessionId, input.tool, input.subject)
+      if (modeDecision === 'deny') return 'deny'
+      if (modeDecision === 'allow') return 'allow'
       if (policy?.action === 'allow') return 'allow'
       if (this.bypassed()) return 'allow'
 

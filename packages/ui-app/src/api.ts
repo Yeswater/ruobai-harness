@@ -1,4 +1,19 @@
-import type { ChatEvent, ChatMessage, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import type {
+  AttachmentMeta, ChatEvent, ChatMessage, ChatSession, SessionSummary, TurnStats,
+} from '@ruobai/chat-protocol'
+
+export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
+
+export interface ModelProvider {
+  name: string
+  models: string[]
+}
+
+export interface WorkspaceMatch {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+}
 
 export interface RuntimeInfo {
   plugins: Array<{ uid: number | null; name: string; state: string; services: string[] }>
@@ -49,6 +64,7 @@ export interface PublicSettings {
   }
   agent?: {
     defaultMode?: string
+    defaultPermission?: PermissionMode
     bypassApprovals?: boolean
     compactAt?: number
   }
@@ -78,6 +94,7 @@ export interface SettingsPatch {
   }
   agent?: {
     defaultMode?: string
+    defaultPermission?: PermissionMode
     bypassApprovals?: boolean
     compactAt?: number
   }
@@ -258,10 +275,10 @@ export const api = {
       body: JSON.stringify({ upToSeq }),
     })).session,
 
-  sendMessage: async (id: string, text: string) =>
+  sendMessage: async (id: string, text: string, attachments: AttachmentMeta[] = []) =>
     (await request<{ message: ChatMessage }>(`/api/sessions/${encodeURIComponent(id)}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(attachments.length ? { text, attachments } : { text }),
     })).message,
 
   stopSession: async (id: string) =>
@@ -271,6 +288,21 @@ export const api = {
 
   getModes: async () =>
     request<{ modes: ModeInfo[]; default: string }>('/api/modes'),
+
+  getModels: async () =>
+    (await request<{ providers: ModelProvider[] }>('/api/models')).providers,
+
+  setSessionModel: async (id: string, provider: string, model: string) =>
+    (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}/model`, {
+      method: 'POST',
+      body: JSON.stringify({ provider, model }),
+    })).session,
+
+  setSessionPermission: async (id: string, mode: PermissionMode, confirm = false) =>
+    (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}/permission`, {
+      method: 'POST',
+      body: JSON.stringify({ mode, confirm }),
+    })).session,
 
   setSessionMode: async (id: string, mode: string) =>
     (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}/mode`, {
@@ -344,6 +376,12 @@ export const api = {
     if (sessionId) params.set('sessionId', sessionId)
     if (depth) params.set('depth', String(depth))
     return (await request<{ tree: WorkspaceEntry }>(`/api/workspace/tree?${params}`)).tree
+  },
+
+  searchWorkspace: async (query: string, sessionId?: string, limit = 20) => {
+    const params = new URLSearchParams({ q: query, limit: String(limit) })
+    if (sessionId) params.set('sessionId', sessionId)
+    return (await request<{ files: WorkspaceMatch[] }>(`/api/workspace/search?${params}`)).files
   },
 
   readWorkspaceFile: async (path: string, sessionId?: string) => {
@@ -533,7 +571,9 @@ export function summarize(session: ChatSession): SessionSummary {
     id: session.id,
     title: session.title,
     model: session.model,
+    provider: session.provider,
     mode: session.mode,
+    permission: session.permission,
     workspace: session.workspace,
     archived: session.archived,
     updatedAt: session.updatedAt,

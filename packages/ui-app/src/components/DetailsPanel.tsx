@@ -12,12 +12,13 @@ import { Slot } from './Slot.tsx'
 
 interface DetailsPanelProps {
   session: ChatSession | null
+  contextInfo: ContextInfo | null
   onClose: () => void
 }
 
 type CardKey = 'environment' | 'context' | 'changes' | 'snapshots' | 'files' | 'runtime'
 
-export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
+export function DetailsPanel({ session, contextInfo, onClose }: DetailsPanelProps) {
   const [open, setOpen] = useState<Record<CardKey, boolean>>({
     environment: true,
     context: true,
@@ -28,7 +29,6 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
   })
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null)
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
-  const [context, setContext] = useState<ContextInfo | null>(null)
   const [git, setGit] = useState<GitInfo | null>(null)
   const [gitError, setGitError] = useState<string | null>(null)
   const sessionId = session?.id
@@ -91,28 +91,6 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
     }
   }, [open.runtime])
 
-  useEffect(() => {
-    if (!sessionId) {
-      setContext(null)
-      return
-    }
-    let cancelled = false
-    const load = async () => {
-      try {
-        const info = await api.getContext(sessionId)
-        if (!cancelled) setContext(info)
-      } catch {
-        if (!cancelled) setContext(null)
-      }
-    }
-    void load()
-    const timer = setInterval(load, 5_000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [sessionId, session?.updatedAt])
-
   return (
     <aside className="details">
       <div className="details-head">
@@ -132,7 +110,7 @@ export function DetailsPanel({ session, onClose }: DetailsPanelProps) {
               </InfoCard>
 
               <InfoCard title="上下文" open={open.context} onToggle={() => toggle('context')}>
-                <ContextCard context={context} />
+                <ContextCard context={contextInfo} />
               </InfoCard>
 
               <InfoCard title="更改" open={open.changes} onToggle={() => toggle('changes')}>

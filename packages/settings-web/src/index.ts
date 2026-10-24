@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
 import { builtinDangerRules } from '@ruobai/approval'
-import type { ProviderInput } from '@ruobai/settings'
+import type { PermissionMode, ProviderInput } from '@ruobai/settings'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'settings-web'
@@ -49,6 +49,7 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
         agent: body?.agent && typeof body.agent === 'object'
           ? {
               defaultMode: typeof body.agent.defaultMode === 'string' ? body.agent.defaultMode : undefined,
+              defaultPermission: normalizeDefaultPermission(body.agent.defaultPermission),
               bypassApprovals: typeof body.agent.bypassApprovals === 'boolean' ? body.agent.bypassApprovals : undefined,
               compactAt: typeof body.agent.compactAt === 'number' ? body.agent.compactAt : undefined,
             }
@@ -216,4 +217,11 @@ function fail(ctx: Context, res: ServerResponse, error: unknown, label: string) 
     : 500
   if (status >= 500) ctx.logger(label).error(error)
   if (!res.headersSent) sendJson(res, status, { error: message })
+}
+
+/** Full access is per-session only; it may not become the global default. */
+function normalizeDefaultPermission(value: unknown): PermissionMode | undefined {
+  if (value === undefined) return undefined
+  if (value === 'read-only' || value === 'workspace-write' || value === 'auto-review') return value
+  throw new HttpError(400, 'defaultPermission must be read-only, workspace-write or auto-review')
 }

@@ -95,6 +95,14 @@ describe('agent modes', () => {
     })
 
     const session = harness.ctx.chat.create(undefined, 'agent')
+    // Workspace-write auto-allows in-workspace paths; an explicit ask rule
+    // keeps the human-approval path under test.
+    await harness.ctx.settings.upsertApprovalRule({
+      tool: 'write_file',
+      match: 'glob',
+      pattern: '**',
+      action: 'ask',
+    })
     const requested = new Promise<any>((resolve) => {
       harness.ctx.once('approval/requested', resolve)
     })
@@ -109,6 +117,39 @@ describe('agent modes', () => {
     await done
     expect(await readFile(target, 'utf8')).toBe('hello from approval')
     expect(step).toBe(2)
+  })
+
+  it('reports turn usage through agent/usage', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+
+    await useScripted(harness.ctx, {
+      name: 'scripted',
+      async *stream() {
+        yield { type: 'text-delta', text: 'hello' }
+        await new Promise(resolve => setTimeout(resolve, 20))
+        yield {
+          type: 'done',
+          reason: 'stop',
+          usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 6 },
+        }
+      },
+    })
+
+    const session = harness.ctx.chat.create(undefined, 'agent')
+    const usage = new Promise<any>((resolve) => {
+      harness.ctx.once('agent/usage', (_id, stats) => resolve(stats))
+    })
+    harness.ctx.chat.send(session.id, 'hi')
+
+    await expect(usage).resolves.toMatchObject({
+      inputTokens: 10,
+      outputTokens: 2,
+      cachedInputTokens: 6,
+      steps: 1,
+      outputChars: 5,
+    })
+    expect(harness.ctx.chat.get(session.id)?.stats).toMatchObject({ outputTokens: 2 })
   })
 
   it('Goal mode nudges once and stops on goal_complete', async () => {

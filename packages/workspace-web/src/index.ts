@@ -120,6 +120,17 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
       sendJson(res, 200, await ctx.workspace.browse(url.searchParams.get('path') ?? undefined))
       return true
     }
+    if (url.pathname === '/api/workspace/search') {
+      const query = (url.searchParams.get('q') ?? '').slice(0, 200)
+      const limitValue = Number(url.searchParams.get('limit'))
+      const files = await ctx.workspace.search(
+        query,
+        { limit: Number.isFinite(limitValue) ? limitValue : undefined },
+        sessionId,
+      )
+      sendJson(res, 200, { files })
+      return true
+    }
     if (url.pathname === '/api/workspace/git') {
       sendJson(res, 200, await gitInfo(ctx.workspace.rootFor(sessionId)))
       return true

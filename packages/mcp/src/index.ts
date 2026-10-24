@@ -276,6 +276,7 @@ export class McpService extends Service {
       description: `[${server.label}] ${tool.description?.trim() || tool.name}`.slice(0, 2_000),
       parameters: isSchema(tool.inputSchema) ? tool.inputSchema : { type: 'object', properties: {} },
       requiresApproval: approval,
+      readOnly: tool.annotations?.readOnlyHint === true,
       preview(args) {
         return {
           summary: `${server.label} · ${tool.name}`,

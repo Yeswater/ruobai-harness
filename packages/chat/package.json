@@ -12,6 +12,7 @@
     "@ruobai/cordis": "workspace:*",
     "@ruobai/llm": "workspace:*",
     "@ruobai/modes": "workspace:*",
+    "@ruobai/permissions": "workspace:*",
     "@ruobai/session": "workspace:*"
   }
 }

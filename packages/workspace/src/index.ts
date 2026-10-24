@@ -14,6 +14,12 @@ export interface WorkspaceEntry {
   children?: WorkspaceEntry[]
 }
 
+export interface WorkspaceMatch {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+}
+
 export interface Config {
   root?: string
   maxBytes?: number
@@ -106,6 +112,55 @@ export class WorkspaceService extends Service {
       home: homedir(),
       entries,
     }
+  }
+
+  /** Bounded workspace-relative file/directory search for `@` mentions. */
+  async search(query: string, options: { limit?: number } = {}, sessionId?: string): Promise<WorkspaceMatch[]> {
+    const root = this.rootFor(sessionId)
+    const term = query.trim().toLowerCase().slice(0, 200)
+    const limit = Math.min(Math.max(Math.floor(options.limit ?? 20), 1), 50)
+    const matches: WorkspaceMatch[] = []
+    const maxVisited = 5_000
+    let visited = 0
+
+    const consider = (name: string, path: string, type: 'file' | 'directory') => {
+      if (!term || name.toLowerCase().includes(term) || path.toLowerCase().includes(term)) {
+        matches.push({ name, path, type })
+      }
+    }
+
+    const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
+      if (visited >= maxVisited || depth > 12) return
+      const entries = (await readdir(dir, { withFileTypes: true }).catch(() => []))
+        .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
+      for (const entry of entries) {
+        if (visited >= maxVisited) return
+        if (IGNORED.has(entry.name) || entry.isSymbolicLink()) continue
+        visited += 1
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name
+        if (entry.isDirectory()) {
+          consider(entry.name, path, 'directory')
+          // An empty query shows the top level only; typing searches deeper.
+          if (term) await walk(resolve(dir, entry.name), path, depth + 1)
+        } else if (entry.isFile()) {
+          consider(entry.name, path, 'file')
+        }
+      }
+    }
+
+    await walk(root, '', 0)
+
+    const score = (item: WorkspaceMatch) => {
+      const name = item.name.toLowerCase()
+      if (!term) return item.type === 'directory' ? 0 : 1
+      if (name === term) return 0
+      if (name.startsWith(term)) return 1
+      if (name.includes(term)) return 2
+      return 3
+    }
+    return matches
+      .sort((a, b) => score(a) - score(b) || a.path.localeCompare(b.path))
+      .slice(0, limit)
   }
 
   private async entry(target: string, path: string, directory: boolean, depth: number): Promise<WorkspaceEntry> {

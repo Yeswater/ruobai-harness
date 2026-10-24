@@ -160,6 +160,92 @@ describe('ui server', () => {
     expect(invalid.status).toBe(400)
   })
 
+  it('accepts attachment-only messages and exposes them in the transcript', async () => {
+    const { ctx } = await setup()
+    const base = ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+
+    const created = await (await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ title: 'attachments' }),
+    })).json() as { session: ChatSession }
+
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const sent = await fetch(`${base}/api/sessions/${created.session.id}/messages`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({
+        attachments: [{ kind: 'image', name: 'shot.png', mime: 'image/png', data: png }],
+      }),
+    })
+    expect(sent.status).toBe(201)
+    const message = (await sent.json() as { message: { blocks: unknown[] } }).message
+    expect(message.blocks).toEqual([
+      expect.objectContaining({ type: 'attachment' }),
+    ])
+
+    const loaded = await (await fetch(`${base}/api/sessions/${created.session.id}`)).json() as { session: ChatSession }
+    const blocks = loaded.session.messages[0]?.blocks ?? []
+    expect(blocks.some(block => block.type === 'attachment')).toBe(true)
+
+    const invalid = await fetch(`${base}/api/sessions/${created.session.id}/messages`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({
+        attachments: [{ kind: 'image', name: 'bad.gif', mime: 'image/bmp', data: png }],
+      }),
+    })
+    expect(invalid.status).toBe(400)
+  })
+
+  it('persists the per-session model and permission preset', async () => {
+    const { ctx } = await setup()
+    const base = ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+
+    const created = await (await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ title: 'settings' }),
+    })).json() as { session: ChatSession }
+
+    const model = await fetch(`${base}/api/sessions/${created.session.id}/model`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ provider: 'mock', model: 'mock-1' }),
+    })
+    expect(model.status).toBe(200)
+
+    const unknownModel = await fetch(`${base}/api/sessions/${created.session.id}/model`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ provider: 'nope', model: 'x' }),
+    })
+    expect(unknownModel.status).toBe(400)
+
+    const unconfirmed = await fetch(`${base}/api/sessions/${created.session.id}/permission`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ mode: 'full-access' }),
+    })
+    expect(unconfirmed.status).toBe(400)
+
+    const confirmed = await (await fetch(`${base}/api/sessions/${created.session.id}/permission`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ mode: 'full-access', confirm: true }),
+    })).json() as { session: ChatSession }
+    expect(confirmed.session.permission).toBe('full-access')
+
+    const invalid = await fetch(`${base}/api/sessions/${created.session.id}/permission`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ mode: 'nope' }),
+    })
+    expect(invalid.status).toBe(400)
+  })
+
   it('exposes runtime state and an SSE stream', async () => {
     const { ctx } = await setup()
 

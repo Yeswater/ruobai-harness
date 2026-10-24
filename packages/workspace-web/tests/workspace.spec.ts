@@ -135,4 +135,22 @@ describe('workspace web', () => {
     expect(info.branch).toBeNull()
     expect(info.workspace).toBe(dir)
   })
+
+  it('searches files for composer mentions', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+
+    const found = await (await fetch(`${base}/api/workspace/search?q=package&limit=5`)).json() as {
+      files: Array<{ path: string; type: string }>
+    }
+    expect(found.files.length).toBeLessThanOrEqual(5)
+    expect(found.files.some(file => file.path === 'package.json')).toBe(true)
+
+    const top = await (await fetch(`${base}/api/workspace/search?limit=50`)).json() as {
+      files: Array<{ path: string }>
+    }
+    expect(top.files.length).toBeGreaterThan(0)
+    expect(top.files.every(file => !file.path.includes('/'))).toBe(true)
+  })
 })

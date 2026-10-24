@@ -19,6 +19,7 @@ export interface CreateSessionOptions {
   kind?: string
   parentId?: string
   workspace?: string
+  permission?: string
   createdAt?: number
 }
 
@@ -83,6 +84,7 @@ export class SessionService extends Service {
       kind: options.kind,
       parentId: options.parentId,
       workspace: options.workspace,
+      permission: options.permission,
       createdAt: now,
       updatedAt: now,
     }
@@ -91,7 +93,7 @@ export class SessionService extends Service {
     this.ctx.emit('session/created', meta)
     // The title must be an event, otherwise a restart would restore the default.
     if (options.title && options.title !== 'New session') this.append(id, 'session/title', { title: options.title })
-    if (options.model || options.provider || options.mode || options.kind || options.parentId || options.workspace) {
+    if (options.model || options.provider || options.mode || options.kind || options.parentId || options.workspace || options.permission) {
       this.append(id, 'session/meta', {
         model: options.model,
         provider: options.provider,
@@ -99,6 +101,7 @@ export class SessionService extends Service {
         kind: options.kind,
         parentId: options.parentId,
         workspace: options.workspace,
+        permission: options.permission,
       })
     }
     return this.records.get(id)!.meta
@@ -150,6 +153,20 @@ export class SessionService extends Service {
     this.append(id, 'session/meta', { archived })
   }
 
+  setPermission(id: string, permission: string) {
+    const record = this.records.get(id)
+    if (!record) throw new Error(`unknown session: ${id}`)
+    if (record.meta.permission === permission) return
+    this.append(id, 'session/meta', { permission })
+  }
+
+  setModel(id: string, provider: string, model: string) {
+    const record = this.records.get(id)
+    if (!record) throw new Error(`unknown session: ${id}`)
+    if (record.meta.provider === provider && record.meta.model === model) return
+    this.append(id, 'session/meta', { provider, model })
+  }
+
   /**
    * Copy a session's log into a new session.
    *
@@ -168,6 +185,7 @@ export class SessionService extends Service {
       provider: record.meta.provider,
       mode: record.meta.mode,
       workspace: record.meta.workspace,
+      permission: record.meta.permission,
     })
 
     for (const event of record.events) {
@@ -239,6 +257,7 @@ export class SessionService extends Service {
       meta.parentId = event.data.parentId ?? meta.parentId
       meta.workspace = event.data.workspace ?? meta.workspace
       meta.archived = event.data.archived ?? meta.archived
+      meta.permission = event.data.permission ?? meta.permission
     }
   }
 }

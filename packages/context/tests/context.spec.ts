@@ -102,4 +102,36 @@ describe('context service', () => {
       + info.breakdown.systemTools + info.breakdown.mcpTools,
     )
   })
+
+  it('turns attached images and files into content parts', async () => {
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'fake', model: 'fake-1' })
+    await llm
+    cleanups.push(() => llm.dispose())
+    const sessions = ctx.plugin(SessionService)
+    await sessions
+    cleanups.push(() => sessions.dispose())
+    const context = ctx.plugin(ContextService, { compactAt: 100_000 })
+    await context
+    cleanups.push(() => context.dispose())
+
+    const meta = ctx.sessions.create()
+    ctx.sessions.append(meta.id, 'message/user', {
+      id: 'm1',
+      text: '看看',
+      at: 1,
+      attachments: [
+        { id: 'a1', kind: 'image', name: 'shot.png', mime: 'image/png', size: 4, data: 'AAAA' },
+        { id: 'a2', kind: 'file', name: 'notes.txt', mime: 'text/plain', size: 5, text: 'hello' },
+      ],
+    })
+
+    const built = await ctx.context.build(meta.id)
+    expect(built.messages).toHaveLength(1)
+    expect(built.messages[0]!.content).toEqual([
+      { type: 'text', text: '看看' },
+      { type: 'image', mimeType: 'image/png', data: 'AAAA', name: 'shot.png' },
+      { type: 'file', name: 'notes.txt', mimeType: 'text/plain', text: 'hello' },
+    ])
+  })
 })

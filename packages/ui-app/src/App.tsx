@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
+import type { PermissionMode } from './api.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { Composer } from './components/Composer.tsx'
 import { DetailsPanel } from './components/DetailsPanel.tsx'
 import { MenuIcon, PanelIcon, FolderIcon } from './components/Icons.tsx'
-import { SettingsDialog } from './components/SettingsDialog.tsx'
+import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
 import { Transcript } from './components/Transcript.tsx'
@@ -26,6 +27,11 @@ export function App() {
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('providers')
+  const openSettings = (tab: SettingsTab = 'providers') => {
+    setSettingsTab(tab)
+    setSettingsOpen(true)
+  }
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
   const pendingApprovals = harness.approvals
 
@@ -73,7 +79,7 @@ export function App() {
         onArchive={harness.archiveSession}
         onDelete={harness.deleteSession}
         onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => openSettings('providers')}
       />
 
       <main className="main">
@@ -135,18 +141,34 @@ export function App() {
         <Composer
           disabled={!harness.session}
           streaming={harness.session?.streaming ?? false}
+          sessionId={harness.session?.id}
+          provider={harness.session?.provider}
           model={harness.session?.model ?? 'ruobai-chat'}
+          models={harness.models}
           modes={harness.modes}
           mode={harness.session?.mode ?? harness.defaultMode}
+          permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
+          contextInfo={harness.contextInfo}
+          stats={harness.session?.stats ?? null}
           onModeChange={harness.setMode}
+          onModelChange={harness.setModel}
+          onPermissionChange={harness.setPermission}
           onSend={harness.send}
           onStop={harness.stop}
+          onNewSession={() => setWorkspacePickerOpen(true)}
+          onOpenConnectors={() => openSettings('mcp')}
         />
       </main>
 
-      {detailsOpen ? <DetailsPanel session={harness.session} onClose={() => setDetailsOpen(false)} /> : null}
+      {detailsOpen
+        ? <DetailsPanel session={harness.session} contextInfo={harness.contextInfo} onClose={() => setDetailsOpen(false)} />
+        : null}
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        initialTab={settingsTab}
+        onClose={() => setSettingsOpen(false)}
+      />
 
       <WorkspacePicker
         open={workspacePickerOpen}

@@ -57,6 +57,10 @@
 - id: approval
   name: '@ruobai/approval'
 
+# Per-session permission presets enforced by the agent, tools and approvals.
+- id: permissions
+  name: '@ruobai/permissions'
+
 # System prompt assembly, token estimate, and LLM compaction.
 - id: context
   name: '@ruobai/context'

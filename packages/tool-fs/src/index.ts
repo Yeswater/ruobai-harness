@@ -101,6 +101,7 @@ function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): Too
     {
       name: 'read_file',
       description: 'Read a UTF-8 text file inside the workspace.',
+      readOnly: true,
       parameters: {
         type: 'object',
         properties: { path: { type: 'string', description: 'Path relative to the workspace root.' } },
@@ -120,6 +121,7 @@ function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): Too
     {
       name: 'list_dir',
       description: 'List the entries of a directory inside the workspace.',
+      readOnly: true,
       parameters: {
         type: 'object',
         properties: { path: { type: 'string', description: 'Directory relative to the workspace root.' } },

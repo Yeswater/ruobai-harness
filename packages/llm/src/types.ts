@@ -23,7 +23,23 @@ export interface ToolResultPart {
   isError?: boolean
 }
 
-export type ContentPart = TextPart | ToolCallPart | ToolResultPart
+/** Inline image bytes, base64 without the `data:` prefix. */
+export interface ImagePart {
+  type: 'image'
+  mimeType: string
+  data: string
+  name?: string
+}
+
+/** Text file attached to a user message. */
+export interface FilePart {
+  type: 'file'
+  name: string
+  mimeType?: string
+  text: string
+}
+
+export type ContentPart = TextPart | ToolCallPart | ToolResultPart | ImagePart | FilePart
 
 export interface Message {
   role: Role
@@ -40,6 +56,8 @@ export interface ToolSchema {
 export interface Usage {
   inputTokens?: number
   outputTokens?: number
+  /** Prompt tokens billed as cache reads, when the provider reports them. */
+  cachedInputTokens?: number
 }
 
 export interface ModelRequest {

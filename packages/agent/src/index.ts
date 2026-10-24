@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
+import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart } from '@ruobai/llm'
 import type { ModeDefinition } from '@ruobai/modes'
 import type { SessionRecord } from '@ruobai/session'
+import type { ToolDefinition } from '@ruobai/tools'
 
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 
@@ -26,6 +28,7 @@ export interface UserMessageData {
   id: string
   text: string
   at: number
+  attachments?: AttachmentMeta[]
 }
 
 export interface Config {
@@ -47,6 +50,7 @@ declare module '@ruobai/cordis' {
     'agent/delta'(sessionId: string, messageId: string, delta: string): void
     'agent/turn-end'(sessionId: string, reason: TurnEndReason): void
     'agent/error'(sessionId: string, message: string): void
+    'agent/usage'(sessionId: string, stats: TurnStats): void
   }
 }
 
@@ -86,15 +90,21 @@ export class AgentService extends Service {
     return this.turns.has(sessionId)
   }
 
-  prompt(sessionId: string, input: string): UserMessageData {
+  prompt(sessionId: string, input: string, attachments: AttachmentMeta[] = []): UserMessageData {
     if (this.turns.has(sessionId)) throw new Error('session is already running')
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
-    const message: UserMessageData = { id: randomUUID(), text: input, at: Date.now() }
+    const message: UserMessageData = {
+      id: randomUUID(),
+      text: input,
+      at: Date.now(),
+      ...(attachments.length ? { attachments } : {}),
+    }
     this.ctx.sessions.append(sessionId, 'message/user', message)
     if (record.meta.title === 'New session') {
-      this.ctx.sessions.rename(sessionId, input.slice(0, 42) || 'New session')
+      const fallback = input.trim().slice(0, 42) || attachments[0]?.name.slice(0, 42)
+      this.ctx.sessions.rename(sessionId, fallback || 'New session')
     }
 
     const controller = new AbortController()
@@ -138,6 +148,15 @@ export class AgentService extends Service {
   private async run(sessionId: string, controller: AbortController, options: RunOptions = {}): Promise<RunResult> {
     let reason: TurnEndReason = 'done'
     let lastText = ''
+    const startedAt = Date.now()
+    let firstDeltaAt: number | undefined
+    let lastDeltaAt: number | undefined
+    let outputChars = 0
+    let steps = 0
+    let usageSeen = false
+    let inputTokens = 0
+    let outputTokens = 0
+    let cachedInputTokens = 0
     try {
       const record = this.ctx.sessions.get(sessionId)
       if (!record) throw new Error(`session disappeared: ${sessionId}`)
@@ -154,7 +173,7 @@ export class AgentService extends Service {
         signal: controller.signal,
         basePrompt: this.config.systemPrompt,
         modePrompt: mode?.systemPrompt,
-        tools: this.toolsFor(mode, options.denyTools),
+        tools: this.toolsFor(sessionId, mode, options.denyTools),
       })
 
       for (let step = 0; step < maxSteps; step += 1) {
@@ -164,6 +183,7 @@ export class AgentService extends Service {
         }
 
         const messageId = randomUUID()
+        steps += 1
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
         const request = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
@@ -175,6 +195,10 @@ export class AgentService extends Service {
         for await (const chunk of this.ctx.llm.stream(request, provider)) {
           if (chunk.type === 'text-delta') {
             textContent += chunk.text
+            outputChars += chunk.text.length
+            const now = Date.now()
+            firstDeltaAt ??= now
+            lastDeltaAt = now
             this.ctx.emit('agent/delta', sessionId, messageId, chunk.text)
           } else if (chunk.type === 'tool-call') {
             calls.push({ type: 'tool-call', id: chunk.id, name: chunk.name, arguments: chunk.arguments })
@@ -182,6 +206,12 @@ export class AgentService extends Service {
             failure = chunk.message
           } else {
             stop = chunk.reason ?? 'stop'
+            if (chunk.usage) {
+              usageSeen = true
+              inputTokens += chunk.usage.inputTokens ?? 0
+              outputTokens += chunk.usage.outputTokens ?? 0
+              cachedInputTokens += chunk.usage.cachedInputTokens ?? 0
+            }
           }
         }
 
@@ -258,6 +288,21 @@ export class AgentService extends Service {
     } finally {
       this.turns.delete(sessionId)
       this.ctx.emit('agent/turn-end', sessionId, reason)
+      const stats: TurnStats = {
+        ...(usageSeen ? {
+          inputTokens,
+          outputTokens,
+          ...(cachedInputTokens ? { cachedInputTokens } : {}),
+        } : {}),
+        ...(firstDeltaAt !== undefined ? { ttftMs: firstDeltaAt - startedAt } : {}),
+        ...(firstDeltaAt !== undefined && lastDeltaAt !== undefined
+          ? { generationMs: lastDeltaAt - firstDeltaAt }
+          : {}),
+        durationMs: Date.now() - startedAt,
+        steps,
+        outputChars,
+      }
+      this.ctx.emit('agent/usage', sessionId, stats)
     }
     return { reason, text: lastText }
   }
@@ -272,7 +317,7 @@ export class AgentService extends Service {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
-    const tools = this.toolsFor(mode, denyTools)
+    const tools = this.toolsFor(sessionId, mode, denyTools)
     const built = await this.ctx.context.build(sessionId, {
       basePrompt: this.config.systemPrompt,
       modePrompt: mode?.systemPrompt,
@@ -293,9 +338,16 @@ export class AgentService extends Service {
     }
   }
 
-  private toolsFor(mode: ModeDefinition | undefined, denyTools?: string[]) {
-    return this.ctx.tools.list().filter(tool =>
-      this.ctx.modes.allows(mode?.id, tool.name) && !denyTools?.includes(tool.name))
+  private toolsFor(sessionId: string, mode: ModeDefinition | undefined, denyTools?: string[]) {
+    const permissions = this.ctx.get('permissions', false) as
+      | { allowsTool(sessionId: string | undefined, tool: ToolDefinition | undefined): boolean }
+      | undefined
+    return this.ctx.tools.list().filter((tool) => {
+      if (!this.ctx.modes.allows(mode?.id, tool.name)) return false
+      if (denyTools?.includes(tool.name)) return false
+      if (!permissions) return true
+      return permissions.allowsTool(sessionId, this.ctx.tools.get(tool.name))
+    })
   }
 
   private modelFor(record: SessionRecord) {
