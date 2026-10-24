@@ -45,6 +45,10 @@ export interface PublicSettings {
     bypassApprovals?: boolean
     compactAt?: number
   }
+  approval?: {
+    rules: ApprovalRule[]
+    guard: ApprovalGuard
+  }
 }
 
 export interface ProviderInput {
@@ -81,6 +85,38 @@ export interface ModeInfo {
 }
 
 export type ApprovalDecision = 'allow' | 'always' | 'deny'
+
+export type ApprovalMatch = 'exact' | 'prefix' | 'glob' | 'contains'
+
+export type ApprovalAction = 'allow' | 'ask' | 'deny'
+
+export interface ApprovalRule {
+  id: string
+  tool: string
+  match: ApprovalMatch
+  pattern: string
+  action: ApprovalAction
+  note?: string
+  createdAt: number
+}
+
+export interface ApprovalRuleInput {
+  tool?: string
+  match?: ApprovalMatch
+  pattern?: string
+  action?: ApprovalAction
+  note?: string
+}
+
+export interface ApprovalGuard {
+  enabled?: boolean
+}
+
+export interface DangerRuleInfo {
+  id: string
+  label: string
+  sample: string
+}
 
 export type McpApproval = 'auto' | 'always' | 'never'
 export type McpStatus = 'connecting' | 'connected' | 'error' | 'disconnected'
@@ -120,6 +156,8 @@ export interface ApprovalRequest {
   sessionId: string
   tool: string
   args: unknown
+  subject?: { kind: 'command' | 'path'; value: string }
+  guard?: string
   summary: string
   diff?: string
   createdAt: number
@@ -200,6 +238,35 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision }),
     }),
+
+  getApprovalRules: async () =>
+    (await request<{ rules: ApprovalRule[] }>('/api/approval/rules')).rules,
+
+  createApprovalRule: async (input: ApprovalRuleInput) =>
+    (await request<{ rules: ApprovalRule[] }>('/api/approval/rules', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })).rules,
+
+  updateApprovalRule: async (id: string, input: ApprovalRuleInput) =>
+    (await request<{ rules: ApprovalRule[] }>(`/api/approval/rules/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })).rules,
+
+  deleteApprovalRule: async (id: string) =>
+    (await request<{ rules: ApprovalRule[] }>(`/api/approval/rules/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })).rules,
+
+  getApprovalGuard: async () =>
+    request<{ guard: ApprovalGuard; builtin: DangerRuleInfo[] }>('/api/approval/guard'),
+
+  updateApprovalGuard: async (input: ApprovalGuard) =>
+    (await request<{ guard: ApprovalGuard }>('/api/approval/guard', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    })).guard,
 
   getContext: async (id: string) =>
     request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),

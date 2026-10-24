@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
@@ -57,6 +58,40 @@ export interface AgentSettings {
   compactAt?: number
 }
 
+export type ApprovalAction = 'allow' | 'ask' | 'deny'
+export type ApprovalMatch = 'exact' | 'prefix' | 'glob' | 'contains'
+
+export interface ApprovalRule {
+  id: string
+  /** Tool name, e.g. `bash`, `write_file`, `edit_file`. */
+  tool: string
+  match: ApprovalMatch
+  /** Command text or workspace-relative path. */
+  pattern: string
+  /** What a matching call does: run, prompt, or block. */
+  action: ApprovalAction
+  note?: string
+  createdAt: number
+}
+
+export interface ApprovalRuleInput {
+  tool?: string
+  match?: ApprovalMatch
+  pattern?: string
+  action?: ApprovalAction
+  note?: string
+}
+
+export interface ApprovalGuard {
+  /** Built-in ask rules for dangerous commands, enforced even when approvals are bypassed. */
+  enabled?: boolean
+}
+
+export interface ApprovalSettings {
+  rules?: ApprovalRule[]
+  guard?: ApprovalGuard
+}
+
 export type McpApproval = 'auto' | 'always' | 'never'
 
 export interface McpServerEntry {
@@ -105,6 +140,7 @@ export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
   agent?: AgentSettings
+  approval?: ApprovalSettings
   mcp?: McpSettings
 }
 
@@ -127,6 +163,7 @@ export interface PublicSettings {
   }
   ui?: UiSettings
   agent?: AgentSettings
+  approval?: { rules: ApprovalRule[]; guard: { enabled: boolean } }
   mcp?: PublicMcpSettings
 }
 
@@ -151,6 +188,9 @@ declare module '@ruobai/cordis' {
 }
 
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1'
+
+/** Shell control and expansion characters that make prefix matching unsafe. */
+const CONTROL_CHARACTERS = /[;&|<>`$()\\\n\r]/
 
 /** JSON-file settings with write-only secrets and provider CRUD. */
 export class SettingsService extends Service {
@@ -213,6 +253,12 @@ export class SettingsService extends Service {
     }
     if (this.data.ui) result.ui = { ...this.data.ui }
     if (this.data.agent) result.agent = { ...this.data.agent }
+    if (this.data.approval) {
+      result.approval = {
+        rules: structuredClone(this.data.approval.rules ?? []),
+        guard: this.approvalGuard(),
+      }
+    }
     if (this.data.mcp) {
       result.mcp = {
         servers: (this.data.mcp.servers ?? []).map(entry => this.publicMcpServer(entry)),
@@ -384,6 +430,98 @@ export class SettingsService extends Service {
     return this.commit()
   }
 
+  approvalRules(): ApprovalRule[] {
+    return structuredClone(this.data.approval?.rules ?? [])
+  }
+
+  approvalGuard(): { enabled: boolean } {
+    return { enabled: this.data.approval?.guard?.enabled !== false }
+  }
+
+  async updateApprovalGuard(input: ApprovalGuard): Promise<PublicSettings> {
+    const approval = this.data.approval ??= {}
+    const guard = approval.guard ??= { enabled: true }
+    if (input.enabled !== undefined) guard.enabled = Boolean(input.enabled)
+    return this.commit()
+  }
+
+  async upsertApprovalRule(input: ApprovalRuleInput, id?: string): Promise<PublicSettings> {
+    const approval = this.data.approval ??= {}
+    const rules = approval.rules ??= []
+
+    const requested = (id ?? '').trim()
+    const existing = requested ? rules.find(rule => rule.id === requested) : undefined
+    if (id && !existing) throw new SettingsError(404, `unknown approval rule: ${id}`)
+
+    const tool = (input.tool ?? existing?.tool ?? '').trim()
+    if (!tool) throw new SettingsError(400, 'approval rule tool is required')
+    if (tool.length > 200 || /\s/.test(tool)) throw new SettingsError(400, 'invalid approval rule tool')
+
+    const match = input.match ?? existing?.match ?? 'exact'
+    if (match !== 'exact' && match !== 'prefix' && match !== 'glob' && match !== 'contains') {
+      throw new SettingsError(400, 'approval match must be exact, prefix, glob or contains')
+    }
+
+    const action = input.action ?? existing?.action ?? 'allow'
+    if (action !== 'allow' && action !== 'ask' && action !== 'deny') {
+      throw new SettingsError(400, 'approval action must be allow, ask or deny')
+    }
+
+    const pattern = (input.pattern ?? existing?.pattern ?? '').trim()
+    if (!pattern) throw new SettingsError(400, 'approval rule pattern is required')
+    if (pattern.length > 2_000) throw new SettingsError(400, 'approval rule pattern is too long')
+    if (match === 'prefix' && CONTROL_CHARACTERS.test(pattern)) {
+      throw new SettingsError(400, 'prefix rules cannot contain shell operators')
+    }
+    if (match === 'glob' && (pattern.startsWith('/') || /(^|\/)\.\.(\/|$)/.test(pattern) || pattern.includes('\\'))) {
+      throw new SettingsError(400, 'glob rules must be relative workspace paths')
+    }
+
+    const note = input.note === undefined ? existing?.note : input.note.trim() || undefined
+    if (note && note.length > 500) throw new SettingsError(400, 'approval rule note is too long')
+
+    const duplicate = rules.find(rule =>
+      rule.id !== existing?.id
+      && rule.tool === tool
+      && rule.match === match
+      && rule.pattern === pattern
+      && rule.action === action)
+    if (duplicate) {
+      // Editing a rule into an existing one collapses them instead of silently
+      // discarding the edit.
+      if (existing) approval.rules = rules.filter(rule => rule.id !== existing.id)
+      return this.commit()
+    }
+
+    if (existing) {
+      existing.tool = tool
+      existing.match = match
+      existing.pattern = pattern
+      existing.action = action
+      if (note) existing.note = note
+      else delete existing.note
+    } else {
+      if (rules.length >= 200) throw new SettingsError(400, 'too many approval rules')
+      rules.push({
+        id: randomUUID(),
+        tool,
+        match,
+        pattern,
+        action,
+        ...(note ? { note } : {}),
+        createdAt: Date.now(),
+      })
+    }
+
+    return this.commit()
+  }
+
+  async removeApprovalRule(id: string): Promise<PublicSettings> {
+    const approval = this.data.approval ??= {}
+    approval.rules = (approval.rules ?? []).filter(rule => rule.id !== id)
+    return this.commit()
+  }
+
   private async commit() {
     const snapshot = this.get()
     this.queue = this.queue
@@ -456,6 +594,68 @@ export class SettingsService extends Service {
       this.data.mcp = { servers: [] }
       changed = true
     }
+
+    if (!this.data.approval) {
+      this.data.approval = { rules: [], guard: { enabled: true } }
+      changed = true
+    }
+
+    if (!Array.isArray(this.data.approval.rules)) {
+      this.data.approval.rules = []
+      changed = true
+    } else {
+      const rules = this.data.approval.rules.filter(rule =>
+        rule && typeof rule === 'object'
+        && typeof rule.id === 'string' && rule.id
+        && typeof rule.tool === 'string' && rule.tool
+        && (rule.match === 'exact' || rule.match === 'prefix' || rule.match === 'glob' || rule.match === 'contains')
+        && typeof rule.pattern === 'string')
+      if (rules.length !== this.data.approval.rules.length) {
+        this.data.approval.rules = rules
+        changed = true
+      }
+      for (const rule of this.data.approval.rules) {
+        if (rule.action !== 'allow' && rule.action !== 'ask' && rule.action !== 'deny') {
+          rule.action = 'allow'
+          changed = true
+        }
+      }
+    }
+
+    const guard = this.data.approval.guard ??= {}
+    if (typeof guard.enabled !== 'boolean') {
+      guard.enabled = true
+      changed = true
+    }
+
+    // The first guard version stored extra substrings separately; they are now
+    // ordinary ask rules so every policy lives in one list.
+    const legacyExtra = (guard as { extra?: unknown }).extra
+    if (Array.isArray(legacyExtra)) {
+      for (const raw of legacyExtra) {
+        if (typeof raw !== 'string') continue
+        const pattern = raw.trim()
+        if (!pattern) continue
+        const exists = this.data.approval.rules.some(rule =>
+          rule.tool === 'bash'
+          && rule.match === 'contains'
+          && rule.pattern === pattern
+          && rule.action === 'ask')
+        if (exists) continue
+        this.data.approval.rules.push({
+          id: randomUUID(),
+          tool: 'bash',
+          match: 'contains',
+          pattern,
+          action: 'ask',
+          note: '从旧版守卫迁移',
+          createdAt: Date.now(),
+        })
+      }
+      delete (guard as { extra?: unknown }).extra
+      changed = true
+    }
+
     return changed
   }
 

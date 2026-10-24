@@ -9,6 +9,8 @@ export interface ToolRunContext {
 export interface ToolDefinition extends ToolSchema {
   /** Ask for human approval before executing (mutating tools). */
   requiresApproval?: boolean
+  /** What a persistent approval rule matches against. */
+  approvalSubject?(args: any, run: ToolRunContext): { kind: 'command' | 'path'; value: string } | undefined
   /** Human-readable summary and optional diff shown in the approval card. */
   preview?(args: any, run: ToolRunContext): Promise<ToolPreview> | ToolPreview
   execute(args: any, run: ToolRunContext): Promise<string> | string
@@ -111,14 +113,26 @@ export class ToolRegistry extends Service {
       } catch (error) {
         preview = { summary: `${name}: ${error instanceof Error ? error.message : String(error)}` }
       }
+
+      let subject: { kind: 'command' | 'path'; value: string } | undefined
+      if (tool.approvalSubject) {
+        try {
+          subject = tool.approvalSubject(args, run)
+        } catch {
+          // An unusable argument cannot match a persistent rule; ask instead.
+          subject = undefined
+        }
+      }
+
       const decision = await approval.request({
         sessionId: run.sessionId ?? '',
         tool: name,
         args,
+        subject,
         ...preview,
       }, { signal: run.signal })
       if (decision === 'deny') {
-        const result: ToolResult = { content: 'The user denied this operation.', isError: true }
+        const result: ToolResult = { content: 'The operation was denied by the approval policy.', isError: true }
         this.ctx.emit('tool/after', call, result)
         return result
       }

@@ -201,7 +201,6 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
-    devDependencies:
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
@@ -471,6 +470,9 @@ importers:
 
   packages/settings-web:
     dependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis

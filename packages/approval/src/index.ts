@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
+import type { ApprovalRule } from '@ruobai/settings'
+import { builtinDangerRules, dangerFor } from './danger.ts'
+import { exactRule, matchesRule, type ApprovalSubject } from './rules.ts'
+
+export type { ApprovalSubject } from './rules.ts'
+export type { DangerMatch, DangerRule } from './danger.ts'
+export { builtinDangerRules, DANGER_RULES, dangerFor } from './danger.ts'
 
 export type ApprovalDecision = 'allow' | 'always' | 'deny'
 
@@ -13,6 +20,10 @@ export interface ApprovalRequest extends ApprovalPreview {
   sessionId: string
   tool: string
   args: unknown
+  /** What a persistent rule would match against; absent for tools without one. */
+  subject?: ApprovalSubject
+  /** Set when a built-in or custom danger rule forces this confirmation. */
+  guard?: string
   createdAt: number
 }
 
@@ -37,6 +48,7 @@ export interface ApprovalRequestInput extends ApprovalPreview {
   sessionId: string
   tool: string
   args: unknown
+  subject?: ApprovalSubject
 }
 
 /**
@@ -48,10 +60,15 @@ export interface ApprovalRequestInput extends ApprovalPreview {
 export class ApprovalService extends Service {
   private readonly pending = new Map<string, { request: ApprovalRequest; resolve: (decision: ApprovalDecision) => void }>()
   private readonly always = new Set<string>()
+  /** Rules granted in this process when settings cannot persist them. */
+  private readonly granted: ApprovalRule[] = []
 
   constructor(ctx: Context) {
     super(ctx, 'approval')
-    ctx.effect(() => () => this.denyAll(), 'approval.dispose')
+    ctx.effect(() => () => {
+      this.denyAll()
+      this.granted.length = 0
+    }, 'approval.dispose')
   }
 
   /** True when settings opt out of approvals entirely. */
@@ -69,14 +86,39 @@ export class ApprovalService extends Service {
   }
 
   async request(input: ApprovalRequestInput, run: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
-    if (this.bypassed()) return 'allow'
-    const key = `${input.sessionId}:${input.tool}`
-    if (this.always.has(key)) return 'allow'
+    const guard = this.guard()
+    const danger = guard.enabled && input.subject?.kind === 'command'
+      ? dangerFor(input.subject.value)
+      : undefined
+    const policy = this.decide(input.tool, input.subject)
+
+    if (policy?.action === 'deny') {
+      this.ctx.logger('approval').info('rule denied %s: %s', input.tool, policy.rule.pattern)
+      return 'deny'
+    }
+
+    // Explicit ask rules (built-in or user) outrank the bypass setting and
+    // allow rules, matching Claude Code's deny > ask > allow precedence.
+    const forced = danger
+      ? `内置规则：${danger.label}`
+      : policy?.action === 'ask'
+        ? `规则：${policy.rule.tool} · ${policy.rule.pattern}`
+        : undefined
+
+    if (!forced) {
+      if (policy?.action === 'allow') return 'allow'
+      if (this.bypassed()) return 'allow'
+
+      // Tools without a subject (MCP) keep the old session+tool grant.
+      const key = `${input.sessionId}:${input.tool}`
+      if (!input.subject && this.always.has(key)) return 'allow'
+    }
 
     const request: ApprovalRequest = {
       id: randomUUID(),
       createdAt: Date.now(),
       ...input,
+      ...(forced ? { guard: forced } : {}),
     }
 
     const decision = await new Promise<ApprovalDecision>((resolve) => {
@@ -94,9 +136,7 @@ export class ApprovalService extends Service {
     const entry = this.pending.get(id)
     if (!entry) return false
     this.pending.delete(id)
-    if (decision === 'always') {
-      this.always.add(`${entry.request.sessionId}:${entry.request.tool}`)
-    }
+    if (decision === 'always') this.remember(entry.request)
     this.ctx.emit('approval/resolved', { id, decision, request: entry.request })
     entry.resolve(decision)
     return true
@@ -104,6 +144,67 @@ export class ApprovalService extends Service {
 
   denyAll(sessionId?: string) {
     for (const request of this.list(sessionId)) this.resolve(request.id, 'deny')
+  }
+
+  /** Built-in danger rules, surfaced in settings. */
+  dangerous() {
+    return builtinDangerRules()
+  }
+
+  private guard(): { enabled: boolean } {
+    const settings = this.ctx.get('settings', false) as
+      | { approvalGuard?(): { enabled: boolean } }
+      | undefined
+    return settings?.approvalGuard?.() ?? { enabled: true }
+  }
+
+  /** Strongest matching user rule wins: deny, then ask, then allow. */
+  private decide(tool: string, subject: ApprovalSubject | undefined) {
+    if (!subject) return undefined
+    const matched = this.rules().filter(rule => matchesRule(rule, tool, subject))
+    for (const action of ['deny', 'ask', 'allow'] as const) {
+      const rule = matched.find(candidate => candidate.action === action)
+      if (rule) return { action, rule }
+    }
+    return undefined
+  }
+
+  private rules(): ApprovalRule[] {    const settings = this.ctx.get('settings', false) as
+      | {
+          approvalRules?(): ApprovalRule[]
+          raw?(): { approval?: { rules?: ApprovalRule[] } }
+        }
+      | undefined
+    const stored = settings?.approvalRules?.() ?? settings?.raw?.().approval?.rules ?? []
+    return [...stored, ...this.granted]
+  }
+
+  /**
+   * Persist "always allow" as an exact-match rule. Settings mutates its
+   * in-memory data before awaiting, so the next tool call sees the rule even
+   * though the write is asynchronous.
+   */
+  private remember(request: ApprovalRequest) {
+    if (!request.subject) {
+      this.always.add(`${request.sessionId}:${request.tool}`)
+      return
+    }
+    // A guarded command is confirmed every time; "always" must not weaken it.
+    if (request.guard) return
+
+    const rule = exactRule(request.tool, request.subject)
+    const settings = this.ctx.get('settings', false) as
+      | { upsertApprovalRule?(input: { tool: string; match: string; pattern: string }): Promise<unknown> }
+      | undefined
+    const persisted = settings?.upsertApprovalRule?.({ tool: rule.tool, match: rule.match, pattern: rule.pattern })
+    if (!persisted) {
+      this.granted.push(rule)
+      return
+    }
+    void persisted.catch((error) => {
+      this.ctx.logger('approval').warn(error)
+      this.granted.push(rule)
+    })
   }
 }
 

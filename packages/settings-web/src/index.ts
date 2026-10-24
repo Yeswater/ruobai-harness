@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
+import { builtinDangerRules } from '@ruobai/approval'
 import type { ProviderInput } from '@ruobai/settings'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
@@ -17,6 +18,11 @@ export function apply(ctx: Context) {
     prefix: '/api/providers',
     handler: (req, res, url) => handleProviders(ctx, req, res, url),
   }), 'settings-web.providers')
+
+  ctx.effect(() => ctx.web.register({
+    prefix: '/api/approval',
+    handler: (req, res, url) => handleApproval(ctx, req, res, url),
+  }), 'settings-web.approval')
 }
 
 export default { name, inject, apply }
@@ -148,6 +154,59 @@ async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: stri
     .map((row: any) => typeof row === 'string' ? row : row?.id)
     .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
   return [...new Set<string>(ids)].map(id => ({ id }))
+}
+
+async function handleApproval(ctx: Context, req: IncomingMessage, res: ServerResponse, url: URL) {
+  try {
+    const parts = url.pathname.split('/').filter(Boolean) // ['api','approval','rules'|'guard', id?]
+
+    if (parts.length === 3 && parts[2] === 'guard') {
+      if (req.method === 'GET') {
+        sendJson(res, 200, { guard: ctx.settings.approvalGuard(), builtin: builtinDangerRules() })
+        return true
+      }
+      if (req.method === 'PATCH' || req.method === 'PUT') {
+        const body = await readJson(req)
+        await ctx.settings.updateApprovalGuard({
+          enabled: typeof body?.enabled === 'boolean' ? body.enabled : undefined,
+        })
+        sendJson(res, 200, { guard: ctx.settings.approvalGuard() })
+        return true
+      }
+      throw new HttpError(405, 'method not allowed')
+    }
+
+    if (parts[2] !== 'rules' || parts.length > 4) throw new HttpError(404, 'not found')
+
+    if (parts.length === 3) {
+      if (req.method === 'GET') {
+        sendJson(res, 200, { rules: ctx.settings.approvalRules() })
+        return true
+      }
+      if (req.method === 'POST') {
+        await ctx.settings.upsertApprovalRule(await readJson(req))
+        sendJson(res, 201, { rules: ctx.settings.approvalRules() })
+        return true
+      }
+      throw new HttpError(405, 'method not allowed')
+    }
+
+    const id = decodeURIComponent(parts[3]!)
+    if (req.method === 'PATCH' || req.method === 'PUT') {
+      await ctx.settings.upsertApprovalRule(await readJson(req), id)
+      sendJson(res, 200, { rules: ctx.settings.approvalRules() })
+      return true
+    }
+    if (req.method === 'DELETE') {
+      await ctx.settings.removeApprovalRule(id)
+      sendJson(res, 200, { rules: ctx.settings.approvalRules() })
+      return true
+    }
+    throw new HttpError(405, 'method not allowed')
+  } catch (error) {
+    fail(ctx, res, error, 'settings-web')
+  }
+  return true
 }
 
 function fail(ctx: Context, res: ServerResponse, error: unknown, label: string) {

@@ -215,6 +215,9 @@ function bashTool(root: string, config: RunConfig, children: Set<ChildProcess>):
       required: ['command'],
     },
     requiresApproval: true,
+    approvalSubject(args) {
+      return { kind: 'command', value: commandOf(args) }
+    },
     preview(args) {
       const command = commandOf(args)
       return previewOf(command, resolveCwd(root, args?.cwd), root)

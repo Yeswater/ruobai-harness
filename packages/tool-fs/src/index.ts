@@ -53,6 +53,12 @@ async function writeAtomic(target: string, content: string) {
 }
 
 function tools(root: string, maxBytes: number): ToolDefinition[] {
+  const pathSubject = (args: any) => {
+    const target = resolveInside(root, args?.path)
+    const path = relative(root, target).split(/[\\/]/).join('/')
+    return path ? { kind: 'path' as const, value: path } : undefined
+  }
+
   return [
     {
       name: 'read_file',
@@ -103,6 +109,7 @@ function tools(root: string, maxBytes: number): ToolDefinition[] {
         required: ['path', 'content'],
       },
       requiresApproval: true,
+      approvalSubject: pathSubject,
       async preview(args) {
         const target = resolveInside(root, args?.path)
         const content = String(args?.content ?? '')
@@ -133,6 +140,7 @@ function tools(root: string, maxBytes: number): ToolDefinition[] {
         required: ['path', 'oldText', 'newText'],
       },
       requiresApproval: true,
+      approvalSubject: pathSubject,
       async preview(args) {
         const target = resolveInside(root, args?.path)
         const before = await readText(target)

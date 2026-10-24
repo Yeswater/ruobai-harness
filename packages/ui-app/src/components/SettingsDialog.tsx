@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, type ModeInfo, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
 import { CloseIcon, PlusIcon } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
+import { PermissionsSettings } from './PermissionsSettings.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -41,10 +42,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [tab, setTab] = useState<'providers' | 'mcp' | 'behavior'>('providers')
+  const [tab, setTab] = useState<'providers' | 'mcp' | 'permissions' | 'behavior'>('providers')
   const [modes, setModes] = useState<ModeInfo[]>([])
   const [agentMode, setAgentMode] = useState('agent')
-  const [bypass, setBypass] = useState(false)
   const [compactAt, setCompactAt] = useState(48_000)
 
   const providers = settings?.llm?.providers ?? []
@@ -56,7 +56,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     const next = await api.getSettings()
     setSettings(next)
     setAgentMode(next.agent?.defaultMode ?? 'agent')
-    setBypass(Boolean(next.agent?.bypassApprovals))
     setCompactAt(next.agent?.compactAt ?? 48_000)
     const list = next.llm?.providers ?? []
     const target = list.find(provider => provider.id === selectId)
@@ -234,7 +233,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       const next = await api.updateSettings({
         agent: {
           defaultMode: agentMode,
-          bypassApprovals: bypass,
           compactAt: Number(compactAt) || 48_000,
         },
       })
@@ -264,7 +262,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         <div className="settings-tabs">
           <button className={`tab ${tab === 'providers' ? 'active' : ''}`} onClick={() => setTab('providers')}>供应商</button>
           <button className={`tab ${tab === 'mcp' ? 'active' : ''}`} onClick={() => setTab('mcp')}>MCP</button>
-          <button className={`tab ${tab === 'behavior' ? 'active' : ''}`} onClick={() => setTab('behavior')}>行为与权限</button>
+          <button className={`tab ${tab === 'permissions' ? 'active' : ''}`} onClick={() => setTab('permissions')}>权限</button>
+          <button className={`tab ${tab === 'behavior' ? 'active' : ''}`} onClick={() => setTab('behavior')}>行为</button>
         </div>
 
         {tab === 'providers' ? (
@@ -426,14 +425,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               </select>
             </label>
 
-            <label className="check-field">
-              <input type="checkbox" checked={bypass} onChange={event => setBypass(event.target.checked)} />
-              <span>
-                跳过写操作审批
-                <small>开启后写文件/改文件不再询问，风险自负。</small>
-              </span>
-            </label>
-
             <label className="field">
               <span>上下文压缩阈值（估算 token）</span>
               <input
@@ -456,8 +447,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               </button>
             </div>
           </div>
-        ) : (
+        ) : tab === 'mcp' ? (
           <McpSettings />
+        ) : (
+          <PermissionsSettings />
         )}
       </div>
     </div>

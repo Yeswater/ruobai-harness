@@ -27,9 +27,24 @@ export function ApprovalCard({ request, onResolve }: ApprovalCardProps) {
         </div>
       ) : null}
 
+      {request.subject && !request.guard ? (
+        <div className="approval-remember">
+          始终允许将记住这条{request.subject.kind === 'command' ? '命令' : '路径'}：
+          <code>{request.subject.value}</code>
+        </div>
+      ) : null}
+
+      {request.guard ? (
+        <div className="approval-remember forced">
+          {request.guard}。此操作每次都需要确认。
+        </div>
+      ) : null}
+
       <div className="approval-actions">
         <button className="btn ghost danger" onClick={() => onResolve('deny')}>拒绝</button>
-        <button className="btn ghost" onClick={() => onResolve('always')}>始终允许</button>
+        {request.guard ? null : (
+          <button className="btn ghost" onClick={() => onResolve('always')}>始终允许</button>
+        )}
         <button className="btn" onClick={() => onResolve('allow')}>允许一次</button>
       </div>
     </div>

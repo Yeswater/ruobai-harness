@@ -35,6 +35,13 @@ function nextRequest(ctx: Context) {
 }
 
 describe('tool registry and fs tools', () => {
+  it('reports normalized workspace paths for approval rules', async () => {
+    const { ctx } = await setup()
+    const subject = ctx.tools.get('write_file')!.approvalSubject!({ path: './src/../src/a.ts' }, {})
+    expect(subject).toEqual({ kind: 'path', value: 'src/a.ts' })
+    expect(() => ctx.tools.get('edit_file')!.approvalSubject!({ path: '../outside' }, {})).toThrow(/escapes/)
+  })
+
   it('reads files inside the workspace and rejects traversal', async () => {
     const { ctx, root } = await setup()
     await writeFile(join(root, 'hello.txt'), 'hello world')

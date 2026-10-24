@@ -99,4 +99,122 @@ describe('settings migration', () => {
     await ctx.settings.removeMcpServer('files')
     expect(ctx.settings.mcpServers()).toEqual([])
   })
+
+  it('seeds, persists and validates approval rules', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-settings-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    const path = join(dir, 'settings.json')
+
+    const ctx = new Context()
+    const fiber = ctx.plugin(SettingsService, { path })
+    await fiber
+    cleanups.push(() => fiber.dispose())
+
+    expect(ctx.settings.get().approval).toEqual({ rules: [], guard: { enabled: true } })
+
+    await ctx.settings.upsertApprovalRule({ tool: 'bash', match: 'prefix', pattern: 'pnpm test', note: 'tests' })
+    const [rule] = ctx.settings.approvalRules()
+    expect(rule).toMatchObject({ tool: 'bash', match: 'prefix', pattern: 'pnpm test', action: 'allow', note: 'tests' })
+
+    await ctx.settings.upsertApprovalRule({ tool: 'bash', match: 'prefix', pattern: 'pnpm test' })
+    expect(ctx.settings.approvalRules()).toHaveLength(1)
+
+    await ctx.settings.upsertApprovalRule({ pattern: 'pnpm test --watch' }, rule!.id)
+    expect(ctx.settings.approvalRules()[0]!.pattern).toBe('pnpm test --watch')
+
+    await expect(ctx.settings.upsertApprovalRule({
+      tool: 'bash', match: 'prefix', pattern: 'pnpm test && rm -rf /',
+    })).rejects.toThrow(/shell operators/)
+    await expect(ctx.settings.upsertApprovalRule({
+      tool: 'write_file', match: 'glob', pattern: '../**',
+    })).rejects.toThrow(/relative workspace paths/)
+    await expect(ctx.settings.upsertApprovalRule({}, 'missing')).rejects.toThrow(/unknown approval rule/)
+    await expect(ctx.settings.upsertApprovalRule({
+      tool: 'bash', match: 'exact', pattern: 'ls', action: 'sometimes' as never,
+    })).rejects.toThrow(/approval action/)
+    await expect(ctx.settings.upsertApprovalRule({
+      tool: 'bash', match: 'sometimes' as never, pattern: 'ls',
+    })).rejects.toThrow(/approval match/)
+
+    const stored = JSON.parse(await readFile(path, 'utf8'))
+    expect(stored.approval.rules).toHaveLength(1)
+
+    await ctx.settings.removeApprovalRule(rule!.id)
+    expect(ctx.settings.approvalRules()).toEqual([])
+
+    await ctx.settings.updateApprovalGuard({ enabled: false })
+    expect(ctx.settings.approvalGuard()).toEqual({ enabled: false })
+  })
+
+  it('migrates legacy guard extras into ask rules and defaults rule actions', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-settings-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    const path = join(dir, 'settings.json')
+    await writeFile(path, JSON.stringify({
+      approval: {
+        guard: { enabled: true, extra: ['docker compose down -v', '  '] },
+        rules: [{ id: 'keep', tool: 'bash', match: 'exact', pattern: 'pnpm test', createdAt: 1 }],
+      },
+    }))
+
+    const ctx = new Context()
+    const fiber = ctx.plugin(SettingsService, { path })
+    await fiber
+    cleanups.push(() => fiber.dispose())
+
+    const rules = ctx.settings.approvalRules()
+    expect(rules.find(rule => rule.id === 'keep')).toMatchObject({ action: 'allow' })
+    expect(rules.find(rule => rule.action === 'ask')).toMatchObject({
+      tool: 'bash',
+      match: 'contains',
+      pattern: 'docker compose down -v',
+    })
+    expect(ctx.settings.approvalGuard()).toEqual({ enabled: true })
+
+    const stored = JSON.parse(await readFile(path, 'utf8'))
+    expect(stored.approval.guard.extra).toBeUndefined()
+  })
+
+  it('collapses a rule edited into an existing one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-settings-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+
+    const ctx = new Context()
+    const fiber = ctx.plugin(SettingsService, { path: join(dir, 'settings.json') })
+    await fiber
+    cleanups.push(() => fiber.dispose())
+
+    await ctx.settings.upsertApprovalRule({ tool: 'bash', match: 'exact', pattern: 'ls' })
+    await ctx.settings.upsertApprovalRule({ tool: 'bash', match: 'exact', pattern: 'pwd' })
+    const pwd = ctx.settings.approvalRules().find(rule => rule.pattern === 'pwd')!
+
+    await ctx.settings.upsertApprovalRule({ pattern: 'ls' }, pwd.id)
+    expect(ctx.settings.approvalRules()).toHaveLength(1)
+    expect(ctx.settings.approvalRules()[0]!.pattern).toBe('ls')
+  })
+
+  it('drops malformed approval rules on load', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-settings-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    const path = join(dir, 'settings.json')
+    await writeFile(path, JSON.stringify({
+      approval: {
+        rules: [
+          { id: 'keep', tool: 'bash', match: 'exact', pattern: 'ls', createdAt: 1 },
+          { id: 'bad-match', tool: 'bash', match: 'sometimes', pattern: 'ls' },
+          { tool: 'bash', match: 'exact', pattern: 'ls' },
+          'nope',
+        ],
+      },
+    }))
+
+    const ctx = new Context()
+    const fiber = ctx.plugin(SettingsService, { path })
+    await fiber
+    cleanups.push(() => fiber.dispose())
+
+    expect(ctx.settings.approvalRules()).toEqual([
+      { id: 'keep', tool: 'bash', match: 'exact', pattern: 'ls', action: 'allow', createdAt: 1 },
+    ])
+  })
 })

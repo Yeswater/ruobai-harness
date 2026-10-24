@@ -48,6 +48,15 @@ async function call(ctx: Context, args: unknown, decision: 'allow' | 'deny' = 'a
 }
 
 describe('bash tool', () => {
+  it('reports the trimmed command as the approval subject', async () => {
+    const { ctx } = await setup()
+    expect(ctx.tools.get('bash')!.approvalSubject!({ command: '  echo hi  ' }, {})).toEqual({
+      kind: 'command',
+      value: 'echo hi',
+    })
+    expect(() => ctx.tools.get('bash')!.approvalSubject!({}, {})).toThrow(/command is required/)
+  })
+
   it('asks for approval, runs in the workspace and reports the exit code', async () => {
     const { ctx, root } = await setup()
     const { request, result } = await call(ctx, { command: 'printf hello && pwd' })
