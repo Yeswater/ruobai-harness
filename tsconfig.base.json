@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@ruobai/cordis": ["./vendor/cordis/src/index.ts"],
+      "@ruobai/cosmokit": ["./vendor/cosmokit/src/index.ts"],
+      "@ruobai/schemastery": ["./vendor/schemastery/src/index.ts"],
+      "@ruobai/cordis-plugin-loader": ["./vendor/loader/src/index.ts"],
+      "@ruobai/cordis-plugin-include": ["./vendor/include/src/index.ts"],
+      "@ruobai/cordis-plugin-group": ["./vendor/group/src/index.ts"],
+      "@ruobai/cordis-plugin-timer": ["./vendor/timer/src/index.ts"],
+      "@ruobai/cordis-plugin-logger-console": ["./vendor/logger-console/src/index.ts"],
+      "@ruobai/*": ["./packages/*/src/index.ts"]
+    }
+  }
+}

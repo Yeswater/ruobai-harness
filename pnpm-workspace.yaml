@@ -1,0 +1,13 @@
+packages:
+  - vendor/*
+  - packages/*
+  - apps/*
+
+# Resolve the workspace's own packages from the vendor copies and local
+# packages, never from the registry.
+linkWorkspacePackages: true
+
+# pnpm 10+ refuses to run dependency install scripts unless they are listed.
+# esbuild's native binary is required by vite/vitest and tsx.
+allowBuilds:
+  esbuild: true

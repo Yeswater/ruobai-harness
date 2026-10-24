@@ -1,0 +1,16 @@
+{
+  "name": "@ruobai/plugin-counter-view",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/cordis-plugin-timer": "workspace:*"
+  },
+  "devDependencies": {
+    "@ruobai/plugin-counter": "workspace:*"
+  }
+}

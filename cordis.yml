@@ -1,0 +1,23 @@
+# The harness is this file: every row is a plugin mounted on one Context.
+# Order does not matter — `inject` decides when a plugin activates.
+
+- id: timer
+  name: '@ruobai/cordis-plugin-timer'
+
+- id: demo
+  name: '@ruobai/cordis-plugin-group'
+  group: true
+  config:
+    - id: hello
+      name: '@ruobai/plugin-hello'
+      config:
+        target: ruobai
+
+    - id: counter
+      name: '@ruobai/plugin-counter'
+      config:
+        initial: 0
+
+    # Stays PENDING until both `counter` and `timer` exist.
+    - id: counter-view
+      name: '@ruobai/plugin-counter-view'

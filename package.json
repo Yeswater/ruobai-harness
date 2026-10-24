@@ -1,0 +1,34 @@
+{
+  "name": "ruobai-harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "dev": "tsx apps/cli/src/bin.ts",
+    "start": "tsx apps/cli/src/bin.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/cordis-plugin-group": "workspace:*",
+    "@ruobai/cordis-plugin-include": "workspace:*",
+    "@ruobai/cordis-plugin-loader": "workspace:*",
+    "@ruobai/cordis-plugin-logger-console": "workspace:*",
+    "@ruobai/cordis-plugin-timer": "workspace:*",
+    "@ruobai/plugin-counter": "workspace:*",
+    "@ruobai/plugin-counter-view": "workspace:*",
+    "@ruobai/plugin-hello": "workspace:*",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vite-tsconfig-paths": "^5.0.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // The vendored framework is compiled with these relaxations upstream
+    // (see vendor/cordis/tsconfig.json). A single-program skeleton cannot
+    // apply per-directory options; split into package tsconfigs once the
+    // harness grows its own build graph.
+    "noImplicitAny": false,
+    "noImplicitThis": false,
+    "strictFunctionTypes": false
+  },
+  "include": [
+    "vendor/*/src",
+    "packages/*/src",
+    "packages/*/tests",
+    "apps/*/src",
+    "apps/*/tests",
+    "vitest.config.ts"
+  ]
+}
