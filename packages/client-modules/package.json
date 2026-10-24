@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/client-modules",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/cordis-plugin-loader": "workspace:*",
+    "@ruobai/web-server": "workspace:*",
+    "esbuild": "^0.28.0"
+  }
+}

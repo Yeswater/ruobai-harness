@@ -6,3 +6,5 @@ coverage/
 *.log
 .env
 .claude/settings.local.json
+.sessions/
+.ruobai/

@@ -1,10 +1,101 @@
 # The harness is this file: every row is a plugin mounted on one Context.
 # Order does not matter — `inject` decides when a plugin activates.
 
+# Model access. `mock` works offline; providers are registered dynamically from
+# settings by llm-catalog (DeepSeek ships as the seeded provider).
+- id: llm
+  name: '@ruobai/llm'
+  config:
+    provider: mock
+    model: mock-1
+
+- id: llm-mock
+  name: '@ruobai/llm-mock'
+
+- id: llm-catalog
+  name: '@ruobai/llm-catalog'
+
+# Append-only session log plus its JSONL persistence adapter.
+- id: sessions
+  name: '@ruobai/session'
+
+- id: sessions-jsonl
+  name: '@ruobai/session-jsonl'
+  config:
+    root: .sessions
+
+# Tool registry and the read-only workspace tools.
+- id: tools
+  name: '@ruobai/tools'
+
+- id: tool-fs
+  name: '@ruobai/tool-fs'
+  config:
+    root: !!js "process.cwd()"
+
+# Turn driver: llm + tools + session log.
+- id: agent
+  name: '@ruobai/agent'
+  config:
+    maxSteps: 8
+
+# Browser-facing projection consumed by ui-server.
+- id: chat
+  name: '@ruobai/chat'
+
 - id: timer
   name: '@ruobai/cordis-plugin-timer'
 
-- id: demo
+# HTTP host and its adapters. `web-server` knows nothing about the UI; routes,
+# static assets, auth and WebSocket upgrades are separate plugins.
+- id: web
+  name: '@ruobai/web-server'
+  config:
+    host: 127.0.0.1
+    port: 4310
+
+- id: ui-api
+  name: '@ruobai/ui-server'
+
+- id: ui-static
+  name: '@ruobai/web-static'
+  config:
+    dev: !!js "process.env.NODE_ENV !== 'production'"
+
+# Disabled unless RBU_TOKEN is set; loopback development needs no token.
+- id: web-auth
+  name: '@ruobai/web-auth'
+  config:
+    token: !!js "process.env.RBU_TOKEN ?? ''"
+
+- id: web-ws
+  name: '@ruobai/web-ws'
+
+- id: workspace
+  name: '@ruobai/workspace'
+  config:
+    root: !!js "process.cwd()"
+
+- id: workspace-web
+  name: '@ruobai/workspace-web'
+
+- id: settings
+  name: '@ruobai/settings'
+  config:
+    path: .ruobai/settings.json
+
+- id: settings-web
+  name: '@ruobai/settings-web'
+
+# Client-half plugins: discovered from loader entries whose package.json
+# declares `rbu.client`, bundled with esbuild and loaded by the UI at runtime.
+- id: client-modules
+  name: '@ruobai/client-modules'
+
+- id: welcome
+  name: '@ruobai/plugin-welcome'
+
+- id: examples
   name: '@ruobai/cordis-plugin-group'
   group: true
   config:

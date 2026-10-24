@@ -1,0 +1,16 @@
+{
+  "name": "@ruobai/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/llm": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/tools": "workspace:*"
+  }
+}

@@ -1,0 +1,187 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import { api, connectEvents, summarize } from './api.ts'
+
+function upsert(list: SessionSummary[], next: SessionSummary) {
+  return [next, ...list.filter(item => item.id !== next.id)].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {  switch (event.type) {
+    case 'session-updated':
+      return event.session
+    case 'message-added':
+      return session.messages.some(message => message.id === event.message.id)
+        ? session
+        : { ...session, messages: [...session.messages, event.message] }
+    case 'message-updated':
+      return {
+        ...session,
+        messages: session.messages.some(message => message.id === event.message.id)
+          ? session.messages.map(message => message.id === event.message.id ? event.message : message)
+          : [...session.messages, event.message],
+      }
+    case 'message-delta':
+      return {
+        ...session,
+        messages: session.messages.map((message) => {
+          if (message.id !== event.messageId) return message
+          const blocks = [...message.blocks]
+          const last = blocks.at(-1)
+          if (!last || last.type !== 'text') blocks.push({ type: 'text', text: event.delta })
+          else blocks[blocks.length - 1] = { ...last, text: last.text + event.delta }
+          return { ...message, blocks }
+        }),
+      }
+    case 'message-block':
+      return {
+        ...session,
+        messages: session.messages.map(message => message.id === event.messageId
+          ? { ...message, blocks: [...message.blocks, event.block] }
+          : message),
+      }
+    default:
+      return session
+  }
+}
+
+let bootstrapPromise: Promise<{ sessions: SessionSummary[]; activeId: string | null }> | undefined
+
+/** One initial load per page, shared by StrictMode's double effect run. */
+function bootstrap() {
+  bootstrapPromise ??= (async () => {
+    let list = await api.listSessions()
+    if (!list.length) {
+      const created = await api.createSession()
+      list = [summarize(created)]
+    }
+    return { sessions: list, activeId: list[0]?.id ?? null }
+  })()
+  return bootstrapPromise
+}
+
+export function useHarness() {
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [session, setSession] = useState<ChatSession | null>(null)
+  const [connected, setConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const activeRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    activeRef.current = activeId
+  }, [activeId])
+
+  const fail = useCallback((caught: unknown) => {
+    setError(caught instanceof Error ? caught.message : String(caught))
+  }, [])
+
+  const select = useCallback((id: string) => {
+    // Clicking the active row must not clear the transcript: activeId would
+    // not change, so the loading effect would never run again.
+    if (activeRef.current === id) return
+    activeRef.current = id
+    setActiveId(id)
+    setSession(null)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void bootstrap()
+      .then(({ sessions, activeId }) => {
+        if (cancelled) return
+        setSessions(sessions)
+        if (activeId) setActiveId(activeId)
+      })
+      .catch((caught) => {
+        if (!cancelled) fail(caught)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fail])
+
+  useEffect(() => {
+    if (!activeId) return
+    let cancelled = false
+    setSession(null)
+    void api.getSession(activeId)
+      .then(next => {
+        if (!cancelled) setSession(next)
+      })
+      .catch(caught => {
+        if (!cancelled) fail(caught)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeId, fail])
+
+  useEffect(() => {
+    const events = connectEvents({
+      onOpen: () => {
+        setConnected(true)
+        setError(null)
+      },
+      onError: () => setConnected(false),
+      onChat: (event) => {
+        if (event.type === 'session-created' || event.type === 'session-updated' || event.type === 'message-done') {
+          setSessions(previous => upsert(previous, summarize(event.session)))
+        }
+        if (!('sessionId' in event)) {
+          if (event.type === 'session-updated' && event.session.id === activeRef.current) {
+            setSession(event.session)
+          }
+          return
+        }
+        if (event.sessionId !== activeRef.current) return
+        if (event.type === 'message-done') {
+          setSession(event.session)
+        } else {
+          setSession(previous => previous ? applyEvent(previous, event) : previous)
+        }
+      },
+    })
+    return () => events.close()
+  }, [])
+
+  const send = useCallback((text: string) => {
+    const id = activeRef.current
+    if (!id) return
+    void api.sendMessage(id, text)
+      .then((message) => {
+        setSession(previous => {
+          if (!previous || previous.id !== id) return previous
+          if (previous.messages.some(item => item.id === message.id)) return previous
+          return { ...previous, messages: [...previous.messages, message] }
+        })
+      })
+      .catch(fail)
+  }, [fail])
+
+  const stop = useCallback(() => {
+    const id = activeRef.current
+    if (id) void api.stopSession(id).catch(fail)
+  }, [fail])
+
+  const createSession = useCallback(() => {
+    void api.createSession()
+      .then((created) => {
+        setSessions(previous => upsert(previous, summarize(created)))
+        setActiveId(created.id)
+      })
+      .catch(fail)
+  }, [fail])
+
+  return {
+    sessions,
+    activeId,
+    session,
+    connected,
+    error,
+    select,
+    send,
+    stop,
+    createSession,
+    dismissError: () => setError(null),
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/web-static",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/web-server": "workspace:*",
+    "vite": "^7.0.0"
+  }
+}

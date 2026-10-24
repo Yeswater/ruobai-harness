@@ -1,0 +1,16 @@
+{
+  "name": "@ruobai/chat",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/agent": "workspace:*",
+    "@ruobai/chat-protocol": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/llm": "workspace:*",
+    "@ruobai/session": "workspace:*"
+  }
+}

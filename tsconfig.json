@@ -7,14 +7,21 @@
     // harness grows its own build graph.
     "noImplicitAny": false,
     "noImplicitThis": false,
-    "strictFunctionTypes": false
+    "strictFunctionTypes": false,
+    "jsx": "react-jsx",
+    "lib": ["es2024", "dom", "dom.iterable"]
   },
   "include": [
     "vendor/*/src",
     "packages/*/src",
+    "packages/*/client",
     "packages/*/tests",
     "apps/*/src",
     "apps/*/tests",
+    "tests",
     "vitest.config.ts"
+  ],
+  "exclude": [
+    "packages/ui-app"
   ]
 }

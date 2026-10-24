@@ -1,0 +1,14 @@
+{
+  "name": "@ruobai/workspace-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/web-server": "workspace:*",
+    "@ruobai/workspace": "workspace:*"
+  }
+}
