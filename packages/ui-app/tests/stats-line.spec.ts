@@ -14,4 +14,16 @@ describe('stats line', () => {
     const items = statsItems(null, null)
     expect(items.map(item => item.label)).toEqual(['— tok/s', '缓存命中 —', '上下文 —'])
   })
+
+  it('prefers the configured model context window', () => {
+    const items = statsItems(null, {
+      estimatedTokens: 24_000,
+      compactAt: 48_000,
+      contextWindow: 96_000,
+      summaries: 0,
+      breakdown: { messages: 0, systemPrompt: 0, systemTools: 0, mcpTools: 0 },
+      mcpTools: [],
+    })
+    expect(items[2]?.label).toBe('上下文 25%')
+  })
 })

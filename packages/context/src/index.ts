@@ -30,6 +30,8 @@ export interface ContextInfo {
   estimatedTokens: number
   compactAt: number
   summaries: number
+  /** Configured model context window, when the provider settings define one. */
+  contextWindow?: number
   /** Estimated token size of each prompt region; they sum to `estimatedTokens`. */
   breakdown: {
     messages: number
@@ -158,10 +160,25 @@ export class ContextService extends Service {
       systemTools: estimateSchema(regular),
       mcpTools: estimateSchema(mcp),
     }
+    const settings = this.ctx.get('settings', false) as
+      | {
+        raw?(): { llm?: { activeProvider?: string; activeModel?: string } }
+        findProvider?(id: string): {
+          models: Array<{ id: string; contextWindow?: number }>
+        } | undefined
+      }
+      | undefined
+    const config = settings?.raw?.()
+    const providerId = record.meta.provider ?? config?.llm?.activeProvider
+    const modelId = record.meta.model ?? config?.llm?.activeModel
+    const model = providerId
+      ? settings?.findProvider?.(providerId)?.models.find(item => item.id === modelId)
+      : undefined
     return {
       estimatedTokens: breakdown.messages + breakdown.systemPrompt
         + breakdown.systemTools + breakdown.mcpTools,
       compactAt: this.threshold(),
+      ...(model?.contextWindow ? { contextWindow: model.contextWindow } : {}),
       summaries: record.events.filter(event => event.type === SUMMARY_TYPE).length,
       breakdown,
       mcpTools: mcp.map(tool => tool.name),

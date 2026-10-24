@@ -24,7 +24,8 @@ export function ContextCard({ context }: ContextCardProps) {
 
   if (!context) return <div className="ctx-empty">正在统计上下文…</div>
 
-  const budget = Math.max(1, context.compactAt)
+  const compactAt = Math.max(1, context.compactAt)
+  const budget = Math.max(1, context.contextWindow ?? context.compactAt)
   const used = context.estimatedTokens
   const free = Math.max(0, budget - used)
   const percent = (value: number) => Math.min(100, (value / budget) * 100)
@@ -45,6 +46,9 @@ export function ContextCard({ context }: ContextCardProps) {
           ? <span key={row.key} className={`ctx-seg seg-${row.key}`} style={{ width: `${percent(row.tokens)}%` }} />
           : null)}
       </div>
+      {context.contextWindow ? (
+        <div className="ctx-hint">压缩阈值 {formatTokens(compactAt)}</div>
+      ) : null}
 
       <div className="ctx-legend">
         {rows.map(row => (

@@ -16,7 +16,9 @@ export function statsItems(stats: TurnStats | null | undefined, contextInfo: Con
     ? Math.min(100, (stats.cachedInputTokens / stats.inputTokens) * 100)
     : undefined
   const contextPercent = contextInfo
-    ? Math.min(100, Math.round((contextInfo.estimatedTokens / Math.max(1, contextInfo.compactAt)) * 100))
+    ? Math.min(100, Math.round(
+      (contextInfo.estimatedTokens / Math.max(1, contextInfo.contextWindow ?? contextInfo.compactAt)) * 100,
+    ))
     : undefined
 
   return [

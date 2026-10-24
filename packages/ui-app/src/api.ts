@@ -4,14 +4,16 @@ import type {
 
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
+export type ThemePreference = 'system' | 'light' | 'dark'
+
 /** Extra slash-command trigger configured in settings. */
 export type CommandPrefix = '～' | '！' | '#'
 
 export interface ModelProvider {
   id: string
   name: string
-  /** Configured models; may be empty when the provider has none yet. */
-  models: string[]
+  /** Configured models with their display metadata. */
+  models: ProviderModel[]
   note?: string
 }
 
@@ -42,8 +44,14 @@ export interface WorkspaceBrowse {
   entries: Array<{ name: string; path: string }>
 }
 
+export type ModelInput = 'text' | 'image'
+
 export interface ProviderModel {
   id: string
+  name?: string
+  contextWindow?: number
+  maxOutputTokens?: number
+  inputTypes?: ModelInput[]
 }
 
 export type ProviderMode = 'direct' | 'mapping'
@@ -219,6 +227,8 @@ export interface ContextInfo {
   estimatedTokens: number
   compactAt: number
   summaries: number
+  /** Configured model context window, when provider settings define one. */
+  contextWindow?: number
   breakdown: {
     messages: number
     systemPrompt: number

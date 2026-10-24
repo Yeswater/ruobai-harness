@@ -35,13 +35,35 @@ describe('provider API', () => {
     const created = await (await fetch(`${base}/api/providers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Fake', baseUrl, apiKey: 'sk-test', models: ['fake-a'] }),
+      body: JSON.stringify({
+        name: 'Fake',
+        baseUrl,
+        apiKey: 'sk-test',
+        models: [{
+          id: 'fake-a',
+          name: 'Fake A',
+          contextWindow: 128_000,
+          maxOutputTokens: 8_000,
+          inputTypes: ['text', 'image'],
+        }],
+      }),
     })).json() as {
       settings: { llm: { activeProvider?: string; activeModel?: string; providers: Array<any> } }
     }
 
     const provider = created.settings.llm.providers.find(item => item.name === 'Fake')
-    expect(provider).toMatchObject({ baseUrl, mode: 'direct', models: [{ id: 'fake-a' }], hasApiKey: true })
+    expect(provider).toMatchObject({
+      baseUrl,
+      mode: 'direct',
+      models: [{
+        id: 'fake-a',
+        name: 'Fake A',
+        contextWindow: 128_000,
+        maxOutputTokens: 8_000,
+        inputTypes: ['text', 'image'],
+      }],
+      hasApiKey: true,
+    })
     expect(JSON.stringify(created)).not.toContain('sk-test')
     // active was mock, so the first configured provider becomes active
     expect(created.settings.llm.activeProvider).toBe(provider.id)

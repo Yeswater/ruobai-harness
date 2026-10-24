@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
-import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type PublicProvider, type PublicSettings } from '../api.ts'
-import { CloseIcon, PlusIcon } from './Icons.tsx'
+import { useEffect, useState, type ReactNode } from 'react'
+import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type ProviderModel, type PublicProvider, type PublicSettings, type RuntimeInfo, type ThemePreference } from '../api.ts'
+import {
+  BotIcon, CloseIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
+} from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
 import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
 import { PermissionsSettings } from './PermissionsSettings.tsx'
@@ -9,11 +11,35 @@ import { Select } from './Select.tsx'
 interface SettingsDialogProps {
   open: boolean
   initialTab?: SettingsTab
+  themePreference: ThemePreference
+  onThemeChange: (value: ThemePreference) => void
   onClose: () => void
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior'
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'appearance' | 'runtime'
+
+const NAV_GROUPS: Array<{
+  label: string
+  items: Array<{ id: SettingsTab; label: string; icon: ReactNode; keywords?: string }>
+}> = [
+  {
+    label: '设置',
+    items: [
+      { id: 'behavior', label: '常规', icon: <SlidersIcon size={15} />, keywords: '模式 权限 前缀 上下文 压缩 命令' },
+      { id: 'appearance', label: '外观', icon: <SunIcon size={15} />, keywords: '主题 深色 浅色 跟随系统' },
+      { id: 'providers', label: '供应商', icon: <BotIcon size={15} />, keywords: '模型 密钥 地址 上下文窗口 输入类型' },
+      { id: 'mcp', label: 'MCP 连接器', icon: <PlugIcon size={15} />, keywords: '服务器 工具 连接' },
+      { id: 'permissions', label: '权限', icon: <ShieldIcon size={15} />, keywords: '审批 规则 危险命令' },
+    ],
+  },
+  {
+    label: '这台电脑',
+    items: [
+      { id: 'runtime', label: '运行时', icon: <MonitorIcon size={15} />, keywords: '插件 服务 地址' },
+    ],
+  },
+]
 
 interface Draft {
   id?: string
@@ -23,7 +49,7 @@ interface Draft {
   baseUrl: string
   apiKey: string
   mode: ProviderMode
-  models: string[]
+  models: ProviderModel[]
 }
 
 function draftOf(provider?: PublicProvider | null): Draft {
@@ -35,20 +61,29 @@ function draftOf(provider?: PublicProvider | null): Draft {
     baseUrl: provider?.baseUrl ?? 'https://api.deepseek.com/v1',
     apiKey: '',
     mode: provider?.mode ?? 'direct',
-    models: provider?.models.map(model => model.id) ?? [],
+    models: provider?.models.map(model => ({
+      ...model,
+      // Existing models predate capability metadata; keep images enabled until
+      // the user narrows the type explicitly.
+      inputTypes: model.inputTypes?.length ? [...model.inputTypes] : ['text', 'image'],
+    })) ?? [],
   }
 }
 
-export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsDialogProps) {
+export function SettingsDialog({
+  open, initialTab, themePreference, onThemeChange, onClose, onSaved,
+}: SettingsDialogProps) {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [defaultModel, setDefaultModel] = useState('')
-  const [modelInput, setModelInput] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [tab, setTab] = useState<SettingsTab>('providers')
+  const [tab, setTab] = useState<SettingsTab>('behavior')
+  const [settingQuery, setSettingQuery] = useState('')
+  const [runtime, setRuntime] = useState<RuntimeInfo | null>(null)
+  const [runtimeError, setRuntimeError] = useState<string | null>(null)
   const [modes, setModes] = useState<ModeInfo[]>([])
   const [agentMode, setAgentMode] = useState('agent')
   const [defaultPermission, setDefaultPermission] = useState<PermissionMode>('workspace-write')
@@ -86,8 +121,8 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
     setError(null)
     setNotice(null)
     setBusy(null)
-    setModelInput('')
-    setTab(initialTab ?? 'providers')
+    setSettingQuery('')
+    setTab(initialTab ?? 'behavior')
     void load().catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught))
     })
@@ -100,6 +135,28 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
       cancelled = true
     }
   }, [open, initialTab])
+
+  useEffect(() => {
+    if (!open || tab !== 'runtime') return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const info = await api.getRuntime()
+        if (!cancelled) {
+          setRuntime(info)
+          setRuntimeError(null)
+        }
+      } catch (caught) {
+        if (!cancelled) setRuntimeError(caught instanceof Error ? caught.message : String(caught))
+      }
+    }
+    void load()
+    const timer = setInterval(load, 3_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [open, tab])
 
   if (!open) return null
 
@@ -126,18 +183,24 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
   }
 
   const addModel = () => {
-    const id = modelInput.trim()
-    if (!id || !draft) return
-    patch({ models: [...new Set([...draft.models, id])] })
-    setModelInput('')
-    if (!defaultModel) setDefaultModel(id)
+    if (!draft) return
+    patch({ models: [...draft.models, { id: '', name: '', inputTypes: ['text'] }] })
   }
 
-  const removeModel = (id: string) => {
+  const updateModel = (index: number, changes: Partial<ProviderModel>) => {
     if (!draft) return
-    const models = draft.models.filter(model => model !== id)
+    const models = draft.models.map((model, current) => current === index ? { ...model, ...changes } : model)
     patch({ models })
-    if (defaultModel === id) setDefaultModel(models[0] ?? '')
+  }
+
+  const removeModel = (index: number) => {
+    if (!draft) return
+    const removed = draft.models[index]
+    const models = draft.models.filter((_, current) => current !== index)
+    patch({ models })
+    if (removed?.id && defaultModel === removed.id) {
+      setDefaultModel(models.find(model => model.id)?.id ?? '')
+    }
   }
 
   const fetchModels = async () => {
@@ -151,9 +214,16 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
         apiKey: draft.apiKey || undefined,
         id: draft.id,
       })
-      const merged = [...new Set([...draft.models, ...models.map(model => model.id)])]
+      const known = new Map(draft.models.filter(model => model.id).map(model => [model.id, model]))
+      const merged = [...draft.models]
+      for (const model of models) {
+        if (!model.id || known.has(model.id)) continue
+        const entry: ProviderModel = { id: model.id, inputTypes: ['text'] }
+        known.set(model.id, entry)
+        merged.push(entry)
+      }
       patch({ models: merged })
-      if (!defaultModel && merged[0]) setDefaultModel(merged[0])
+      if (!defaultModel && models[0]?.id) setDefaultModel(models[0].id)
       setNotice(`获取到 ${models.length} 个模型`)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -168,13 +238,30 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
     setError(null)
     setNotice(null)
     try {
+      const seen = new Set<string>()
+      const models: ProviderModel[] = []
+      for (const model of draft.models) {
+        const id = model.id.trim()
+        if (!id) continue
+        if (seen.has(id)) throw new Error(`模型 ID 重复：${id}`)
+        seen.add(id)
+        const next: ProviderModel = { id }
+        if (model.name?.trim()) next.name = model.name.trim()
+        if (model.contextWindow && model.contextWindow > 0) next.contextWindow = Math.floor(model.contextWindow)
+        if (model.maxOutputTokens && model.maxOutputTokens > 0) next.maxOutputTokens = Math.floor(model.maxOutputTokens)
+        next.inputTypes = model.inputTypes?.length ? model.inputTypes : ['text']
+        models.push(next)
+      }
+      if (defaultModel && !models.some(model => model.id === defaultModel)) {
+        setDefaultModel(models[0]?.id ?? '')
+      }
       const input = {
         name: draft.name.trim(),
         note: draft.note.trim() || undefined,
         website: draft.website.trim() || undefined,
         baseUrl: draft.baseUrl.trim(),
         mode: draft.mode,
-        models: draft.models,
+        models,
         ...(draft.apiKey ? { apiKey: draft.apiKey } : {}),
       }
       const next = draft.id
@@ -258,26 +345,84 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
     }
   }
 
+  const term = settingQuery.trim().toLowerCase()
+  const matchedGroups = NAV_GROUPS
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item =>
+        !term
+        || item.label.toLowerCase().includes(term)
+        || item.keywords?.toLowerCase().includes(term)),
+    }))
+    .filter(group => group.items.length)
+  const currentLabel = NAV_GROUPS
+    .flatMap(group => group.items)
+    .find(item => item.id === tab)?.label ?? '设置'
+
+  const selectTab = (next: SettingsTab) => {
+    setTab(next)
+    setError(null)
+    setNotice(null)
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal settings-modal" onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Model providers">
-        <div className="modal-head">
-          <div>
-            <h2>设置</h2>
-            <div className="modal-sub">
-              当前默认：{activeProvider === 'mock' ? 'Mock（离线）' : activeProvider}
-              {activeModel ? ` · ${activeModel}` : ''}
-            </div>
-          </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close settings"><CloseIcon /></button>
-        </div>
+      <div
+        className="modal settings-modal"
+        onClick={event => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
+      >
+        <button className="icon-btn settings-close" onClick={onClose} aria-label="关闭设置">
+          <CloseIcon />
+        </button>
 
-        <div className="settings-tabs">
-          <button className={`tab ${tab === 'providers' ? 'active' : ''}`} onClick={() => setTab('providers')}>供应商</button>
-          <button className={`tab ${tab === 'mcp' ? 'active' : ''}`} onClick={() => setTab('mcp')}>MCP</button>
-          <button className={`tab ${tab === 'permissions' ? 'active' : ''}`} onClick={() => setTab('permissions')}>权限</button>
-          <button className={`tab ${tab === 'behavior' ? 'active' : ''}`} onClick={() => setTab('behavior')}>行为</button>
-        </div>
+        <div className="settings-shell">
+          <aside className="settings-nav">
+            <div className="settings-search">
+              <SearchIcon size={14} />
+              <input
+                value={settingQuery}
+                onChange={event => setSettingQuery(event.target.value)}
+                placeholder="搜索设置"
+                aria-label="搜索设置"
+              />
+              {settingQuery
+                ? <button onClick={() => setSettingQuery('')} aria-label="清除搜索">×</button>
+                : null}
+            </div>
+
+            {matchedGroups.map(group => (
+              <div className="settings-nav-group" key={group.label}>
+                <div className="settings-nav-label">{group.label}</div>
+                {group.items.map(item => (
+                  <button
+                    key={item.id}
+                    className={`settings-nav-item ${tab === item.id ? 'active' : ''}`}
+                    onClick={() => selectTab(item.id)}
+                  >
+                    <span className="settings-nav-icon">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {matchedGroups.length ? null : <div className="settings-nav-empty">没有匹配的设置</div>}
+          </aside>
+
+          <section className="settings-content">
+            <header className="settings-page-head">
+              <h2>{currentLabel}</h2>
+              {tab === 'providers'
+                ? (
+                  <div className="settings-page-sub">
+                    当前默认：{activeProvider === 'mock' ? 'Mock（离线）' : activeProvider}
+                    {activeModel ? ` · ${activeModel}` : ''}
+                  </div>
+                )
+                : null}
+            </header>
 
         {tab === 'providers' ? (
         <div className="settings-grid">
@@ -364,8 +509,10 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
                       <span>默认模型</span>
                       <Select
                         value={defaultModel}
-                        options={draft.models.length
-                          ? draft.models.map(model => ({ value: model, label: model }))
+                        options={draft.models.some(model => model.id)
+                          ? draft.models
+                              .filter(model => model.id)
+                              .map(model => ({ value: model.id, label: model.name || model.id }))
                           : [{ value: '', label: '（先添加模型）' }]}
                         onChange={setDefaultModel}
                         ariaLabel="Default model"
@@ -381,33 +528,90 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
                     </button>
                   </div>
 
-                  <div className="model-add">
-                    <input
-                      value={modelInput}
-                      onChange={event => setModelInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          addModel()
-                        }
-                      }}
-                      placeholder="deepseek-chat"
-                    />
-                    <button className="btn ghost" onClick={addModel} disabled={!modelInput.trim()}>添加</button>
-                  </div>
-
-                  <div className="model-chips">
-                    {draft.models.map(model => (
-                      <span className="model-chip" key={model}>
-                        {model}
-                        <button onClick={() => removeModel(model)} aria-label={`Remove ${model}`}>×</button>
-                      </span>
+                  <div className="model-editor">
+                    {draft.models.map((model, index) => (
+                      <div className="model-card" key={index}>
+                        <div className="model-card-head">
+                          <input
+                            className="model-id-input mono"
+                            value={model.id}
+                            onChange={event => updateModel(index, { id: event.target.value })}
+                            placeholder="模型 ID，例如 deepseek-chat"
+                            aria-label="Model id"
+                          />
+                          <input
+                            className="model-name-input"
+                            value={model.name ?? ''}
+                            onChange={event => updateModel(index, { name: event.target.value })}
+                            placeholder="显示名称，例如 DeepSeek-V4.1-Flash"
+                            aria-label="Model display name"
+                          />
+                          <button
+                            className="icon-btn subtle"
+                            onClick={() => removeModel(index)}
+                            aria-label={`删除模型 ${model.id || index + 1}`}
+                          >
+                            <CloseIcon size={13} />
+                          </button>
+                        </div>
+                        <div className="model-card-row">
+                          <label className="model-mini-field">
+                            <span>上下文窗口</span>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1000}
+                              value={model.contextWindow ?? ''}
+                              onChange={event => updateModel(index, {
+                                contextWindow: event.target.value ? Number(event.target.value) : undefined,
+                              })}
+                              placeholder="1048576"
+                            />
+                          </label>
+                          <label className="model-mini-field">
+                            <span>最大输出 token</span>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1000}
+                              value={model.maxOutputTokens ?? ''}
+                              onChange={event => updateModel(index, {
+                                maxOutputTokens: event.target.value ? Number(event.target.value) : undefined,
+                              })}
+                              placeholder="262144"
+                            />
+                          </label>
+                        </div>
+                        <div className="model-types">
+                          <span>输入类型</span>
+                          {(['text', 'image'] as const).map(type => (
+                            <label key={type}>
+                              <input
+                                type="checkbox"
+                                checked={(model.inputTypes ?? ['text']).includes(type)}
+                                onChange={(event) => {
+                                  const current = model.inputTypes ?? ['text']
+                                  const next = event.target.checked
+                                    ? [...new Set([...current, type])]
+                                    : current.filter(item => item !== type)
+                                  updateModel(index, { inputTypes: next })
+                                }}
+                              />
+                              {type === 'image' ? '图片' : '文本'}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     ))}
-                    {draft.models.length === 0 ? <span className="muted">还没有模型，先获取或手动添加。</span> : null}
+                    <button className="btn ghost model-add" onClick={addModel}>
+                      <PlusIcon size={14} />
+                      添加模型
+                    </button>
                   </div>
 
                   <p className="field-help">
                     “获取模型列表”会请求 <code>{draft.baseUrl.replace(/\/+$/, '')}/models</code>。
+                    上下文窗口用于右上角占用比例；输入类型决定该模型能否接收图片附件。
                   </p>
 
                   {error ? <div className="detail-note error">{error}</div> : null}
@@ -509,12 +713,87 @@ export function SettingsDialog({ open, initialTab, onClose, onSaved }: SettingsD
               </button>
             </div>
           </div>
+        ) : tab === 'appearance' ? (
+          <div className="settings-page-body scroll">
+            <div className="appearance-row">
+              <div className="appearance-label">
+                主题
+                <span className="appearance-hint">跟随系统，或固定浅色 / 深色；仅保存在本机。</span>
+              </div>
+              <div className="theme-switch" role="group" aria-label="主题">
+                <button
+                  className={themePreference === 'system' ? 'active' : ''}
+                  onClick={() => onThemeChange('system')}
+                  aria-label="跟随系统"
+                  title="跟随系统"
+                >
+                  <MonitorIcon size={15} />
+                </button>
+                <button
+                  className={themePreference === 'light' ? 'active' : ''}
+                  onClick={() => onThemeChange('light')}
+                  aria-label="浅色"
+                  title="浅色"
+                >
+                  <SunIcon size={15} />
+                </button>
+                <button
+                  className={themePreference === 'dark' ? 'active' : ''}
+                  onClick={() => onThemeChange('dark')}
+                  aria-label="深色"
+                  title="深色"
+                >
+                  <MoonIcon size={15} />
+                </button>
+              </div>
+            </div>
+          </div>
         ) : tab === 'mcp' ? (
           <McpSettings />
-        ) : (
+        ) : tab === 'permissions' ? (
           <PermissionsSettings />
+        ) : (
+          <div className="settings-page-body scroll runtime-settings">
+            <h3 className="settings-section-title">服务地址</h3>
+            {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
+            {runtime
+              ? (
+                <>
+                  <div className="mono small">{runtime.url}</div>
+                  <h3 className="settings-section-title">插件</h3>
+                  <div className="plugin-list">
+                    {runtime.plugins.map(plugin => (
+                      <div className="plugin" key={`${plugin.name}-${plugin.uid}`}>
+                        <span className={`status-dot ${runtimeState(plugin.state)}`} />
+                        <span className="plugin-name">{plugin.name}</span>
+                        <span className={`state state-${runtimeState(plugin.state)}`}>
+                          {plugin.state.toLowerCase()}
+                        </span>
+                        {plugin.services.length
+                          ? <span className="plugin-services">{plugin.services.join(', ')}</span>
+                          : null}
+                      </div>
+                    ))}
+                  </div>
+                  <h3 className="settings-section-title">服务</h3>
+                  <div className="chip-row">
+                    {runtime.services.map(service => <span className="chip" key={service}>{service}</span>)}
+                  </div>
+                </>
+              )
+              : <div className="loading">loading runtime…</div>}
+          </div>
         )}
+          </section>
+        </div>
       </div>
     </div>
   )
+}
+
+function runtimeState(state: string) {
+  if (state === 'ACTIVE') return 'ok'
+  if (state === 'PENDING' || state === 'LOADING') return 'warn'
+  if (state === 'FAILED') return 'danger'
+  return 'off'
 }

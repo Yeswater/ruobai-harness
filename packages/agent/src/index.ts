@@ -334,8 +334,27 @@ export class AgentService extends Service {
       signal,
       model: this.modelFor(record),
       temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens,
+      maxTokens: this.maxTokensFor(record),
     }
+  }
+
+  private maxTokensFor(record: SessionRecord): number | undefined {
+    const settings = this.ctx.get('settings', false) as
+      | {
+        findProvider?(id: string): {
+          models: Array<{ id: string; maxOutputTokens?: number }>
+        } | undefined
+      }
+      | undefined
+    const model = record.meta.provider
+      ? settings?.findProvider?.(record.meta.provider)?.models.find(
+        item => item.id === this.modelFor(record),
+      )
+      : undefined
+    const limit = model?.maxOutputTokens
+    const configured = this.config.maxTokens
+    if (configured && limit) return Math.min(configured, limit)
+    return configured ?? limit
   }
 
   private toolsFor(sessionId: string, mode: ModeDefinition | undefined, denyTools?: string[]) {

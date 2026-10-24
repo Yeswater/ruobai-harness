@@ -128,12 +128,18 @@ export class UiApi extends Service {
       // over the adapter's single default model.
       const providers = this.ctx.llm.list().map((provider) => {
         const entry = configured.get(provider.name)
-        if (!entry) return { id: provider.name, name: provider.name, models: provider.models }
+        if (!entry) {
+          return {
+            id: provider.name,
+            name: provider.name,
+            models: provider.models.map(model => ({ id: model })),
+          }
+        }
         return {
           id: entry.id,
           name: entry.name,
           ...(entry.note ? { note: entry.note } : {}),
-          models: entry.models.map(model => model.id),
+          models: entry.models.map(model => ({ ...model })),
         }
       })
       sendJson(res, 200, { providers })
@@ -247,6 +253,22 @@ export class UiApi extends Service {
       const text = typeof body.text === 'string' ? body.text.trim() : ''
       const attachments = normalizeAttachments(body.attachments)
       if (!text && !attachments.length) throw new HttpError(400, 'text or attachments are required')
+      if (attachments.some(attachment => attachment.kind === 'image')) {
+        const session = this.ctx.chat.get(id)
+        const settings = this.ctx.get('settings', false) as
+          | {
+            findProvider?(id: string): {
+              models: Array<{ id: string; inputTypes?: string[] }>
+            } | undefined
+          }
+          | undefined
+        const model = session?.provider
+          ? settings?.findProvider?.(session.provider)?.models.find(item => item.id === session.model)
+          : undefined
+        if (model?.inputTypes && !model.inputTypes.includes('image')) {
+          throw new HttpError(400, `模型 ${session?.model ?? ''} 不支持图片输入`)
+        }
+      }
       sendJson(res, 201, { message: this.ctx.chat.send(id, text, attachments) })
       return true
     }

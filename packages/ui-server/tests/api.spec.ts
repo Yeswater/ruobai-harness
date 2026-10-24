@@ -218,11 +218,12 @@ describe('ui server', () => {
     expect(model.status).toBe(200)
 
     const listed = await (await fetch(`${base}/api/models`)).json() as {
-      providers: Array<{ id: string; name: string; models: string[] }>
+      providers: Array<{ id: string; name: string; models: Array<{ id: string }> }>
     }
     const deepseek = listed.providers.find(provider => provider.id === 'deepseek')
     expect(deepseek?.name).toBe('DeepSeek')
-    expect(deepseek?.models).toEqual(expect.arrayContaining(['deepseek-chat', 'deepseek-reasoner']))
+    expect(deepseek?.models.map(model => model.id))
+      .toEqual(expect.arrayContaining(['deepseek-chat', 'deepseek-reasoner']))
 
     const configuredModel = await fetch(`${base}/api/sessions/${created.session.id}/model`, {
       method: 'POST',
@@ -230,6 +231,36 @@ describe('ui server', () => {
       body: JSON.stringify({ provider: 'deepseek', model: 'deepseek-reasoner' }),
     })
     expect(configuredModel.status).toBe(200)
+
+    await fetch(`${base}/api/providers/deepseek`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({
+        models: [
+          { id: 'deepseek-chat', contextWindow: 128_000, inputTypes: ['text', 'image'] },
+          { id: 'deepseek-reasoner', contextWindow: 128_000, maxOutputTokens: 8_000, inputTypes: ['text'] },
+        ],
+      }),
+    })
+
+    const context = await (await fetch(`${base}/api/sessions/${created.session.id}/context`)).json() as {
+      contextWindow?: number
+    }
+    expect(context.contextWindow).toBe(128_000)
+
+    const image = await fetch(`${base}/api/sessions/${created.session.id}/messages`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({
+        attachments: [{
+          kind: 'image',
+          name: 'shot.png',
+          mime: 'image/png',
+          data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        }],
+      }),
+    })
+    expect(image.status).toBe(400)
 
     const unknownModel = await fetch(`${base}/api/sessions/${created.session.id}/model`, {
       method: 'POST',

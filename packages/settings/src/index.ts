@@ -4,8 +4,18 @@ import { dirname, resolve } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
 
+export type ModelInput = 'text' | 'image'
+
 export interface ProviderModel {
   id: string
+  /** Display name used by the model picker; falls back to `id`. */
+  name?: string
+  /** Model context window in tokens, used by the context meter. */
+  contextWindow?: number
+  /** Per-request output cap in tokens. */
+  maxOutputTokens?: number
+  /** Accepted input kinds; absent means text only. */
+  inputTypes?: ModelInput[]
 }
 
 export type ProviderMode = 'direct' | 'mapping'
@@ -715,14 +725,31 @@ function normalizeModels(models: Array<ProviderModel | string> | undefined): Pro
   const seen = new Set<string>()
   const result: ProviderModel[] = []
   for (const item of models ?? []) {
-    const id = typeof item === 'string' ? item : item?.id
-    if (typeof id !== 'string') continue
-    const value = id.trim()
-    if (!value || seen.has(value)) continue
-    seen.add(value)
-    result.push({ id: value })
+    if (!item) continue
+    const raw = typeof item === 'string' ? { id: item } : item
+    const id = typeof raw.id === 'string' ? raw.id.trim() : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    const model: ProviderModel = { id }
+    if (typeof raw.name === 'string' && raw.name.trim()) model.name = raw.name.trim().slice(0, 200)
+    const contextWindow = positiveInt(raw.contextWindow)
+    if (contextWindow) model.contextWindow = contextWindow
+    const maxOutputTokens = positiveInt(raw.maxOutputTokens)
+    if (maxOutputTokens) model.maxOutputTokens = maxOutputTokens
+    if (Array.isArray(raw.inputTypes)) {
+      const types = [...new Set(raw.inputTypes.filter(
+        (type): type is ModelInput => type === 'text' || type === 'image',
+      ))]
+      model.inputTypes = types.length ? types : ['text']
+    }
+    result.push(model)
   }
   return result
+}
+
+function positiveInt(value: unknown) {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : undefined
 }
 
 function normalizeArgs(args: string[] | undefined): string[] {

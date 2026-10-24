@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
-import type { PermissionMode } from './api.ts'
+import type { PermissionMode, ThemePreference } from './api.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { Composer } from './components/Composer.tsx'
 import { DetailsPanel } from './components/DetailsPanel.tsx'
@@ -14,21 +14,23 @@ import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
 
-function initialTheme(): Theme {
+function initialPreference(): ThemePreference {
   const saved = localStorage.getItem('rbh-theme')
-  if (saved === 'light' || saved === 'dark') return saved
-  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  if (saved === 'light' || saved === 'dark' || saved === 'system') return saved
+  return 'system'
 }
 
 export function App() {
   const harness = useHarness()
   useClientPlugins()
-  const [theme, setTheme] = useState<Theme>(initialTheme)
+  const [preference, setPreference] = useState<ThemePreference>(initialPreference)
+  const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>('providers')
-  const openSettings = (tab: SettingsTab = 'providers') => {
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('behavior')
+  const openSettings = (tab: SettingsTab = 'behavior') => {
     setSettingsTab(tab)
     setSettingsOpen(true)
   }
@@ -36,9 +38,16 @@ export function App() {
   const pendingApprovals = harness.approvals
 
   useEffect(() => {
+    const query = matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme
-    localStorage.setItem('rbh-theme', theme)
-  }, [theme])
+    localStorage.setItem('rbh-theme', preference)
+  }, [theme, preference])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -58,7 +67,6 @@ export function App() {
         activeId={harness.activeId}
         connected={harness.connected}
         open={sidebarOpen}
-        theme={theme}
         onSelect={(id) => {
           harness.select(id)
           setSidebarOpen(false)
@@ -78,8 +86,7 @@ export function App() {
         }}
         onArchive={harness.archiveSession}
         onDelete={harness.deleteSession}
-        onToggleTheme={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
-        onOpenSettings={() => openSettings('providers')}
+        onOpenSettings={() => openSettings('behavior')}
       />
 
       <main className="main">
@@ -168,6 +175,8 @@ export function App() {
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
+        themePreference={preference}
+        onThemeChange={setPreference}
         onSaved={() => { void harness.refreshSettings() }}
         onClose={() => setSettingsOpen(false)}
       />

@@ -5,8 +5,7 @@ import {
   UNGROUPED_KEY, type ManualOrder, type SidebarView,
 } from '../sidebar-model.ts'
 import {
-  ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, MoonIcon, PlusIcon,
-  SearchIcon, SunIcon,
+  ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PlusIcon, SearchIcon,
 } from './Icons.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
 import { Slot } from './Slot.tsx'
@@ -16,7 +15,6 @@ interface SidebarProps {
   activeId: string | null
   connected: boolean
   open: boolean
-  theme: 'light' | 'dark'
   onSelect: (id: string) => void
   onCreate: () => void
   onCreateIn: (workspace?: string) => void
@@ -24,7 +22,6 @@ interface SidebarProps {
   onFork: (id: string) => void
   onArchive: (id: string, archived: boolean) => void
   onDelete: (id: string) => void
-  onToggleTheme: () => void
   onOpenSettings: () => void
 }
 
@@ -406,9 +403,6 @@ export function Sidebar(props: SidebarProps) {
           <span className="foot-spacer" />
           <button className="icon-btn subtle" onClick={props.onOpenSettings} aria-label="设置">
             <GearIcon size={14} />
-          </button>
-          <button className="icon-btn subtle" onClick={props.onToggleTheme} aria-label="切换主题">
-            {props.theme === 'dark' ? <SunIcon size={14} /> : <MoonIcon size={14} />}
           </button>
           <Slot name="sidebar.footer" />
         </div>
