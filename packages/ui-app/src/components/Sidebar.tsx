@@ -248,7 +248,7 @@ export function Sidebar(props: SidebarProps) {
                 ? <span className="pulse" aria-label="running" />
                 : null}
               {session.archived ? <span className="session-tag">已归档</span> : null}
-              <span>{session.streaming ? '运行中' : relativeTime(session.updatedAt)}</span>
+              <span className="session-time">{session.streaming ? '运行中' : relativeTime(session.updatedAt)}</span>
             </span>
           </button>
         )}

@@ -3205,3 +3205,18 @@ body {
 .view-menu-text {
   flex: 1;
 }
+
+.session-time {
+  transition: opacity .12s;
+}
+
+.session:hover .session-time,
+.session:focus-within .session-time {
+  opacity: 0;
+}
+
+@media (hover: none) {
+  .session-meta {
+    padding-right: 16px;
+  }
+}
