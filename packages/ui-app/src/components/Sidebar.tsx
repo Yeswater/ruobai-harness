@@ -8,6 +8,7 @@ import {
   ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PlusIcon, SearchIcon,
 } from './Icons.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
+import { shortcutLabel } from '../shortcuts.ts'
 
 interface SidebarProps {
   sessions: SessionSummary[]
@@ -400,6 +401,7 @@ export function Sidebar(props: SidebarProps) {
           className="sidebar-foot"
           onClick={props.onOpenSettings}
           aria-label="打开设置"
+          title={`打开设置 (${shortcutLabel(',')})`}
         >
           <GearIcon size={15} />
           <span>设置</span>

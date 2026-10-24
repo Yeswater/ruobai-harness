@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { useEscapeKey } from '../useEscapeKey.ts'
 import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type ProviderModel, type PublicProvider, type PublicSettings, type RuntimeInfo, type ThemePreference } from '../api.ts'
 import {
   BotIcon, CloseIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
@@ -136,6 +137,9 @@ export function SettingsDialog({
       cancelled = true
     }
   }, [open, initialTab])
+
+  // Esc leaves settings; a nested dropdown consumes the first press instead.
+  useEscapeKey(onClose, open)
 
   useEffect(() => {
     if (!open || tab !== 'runtime') return
@@ -388,7 +392,12 @@ export function SettingsDialog({
         aria-modal="true"
         aria-label="设置"
       >
-        <button className="icon-btn settings-close" onClick={onClose} aria-label="关闭设置">
+        <button
+          className="icon-btn settings-close"
+          onClick={onClose}
+          aria-label="关闭设置"
+          title="关闭设置 (Esc)"
+        >
           <CloseIcon />
         </button>
 

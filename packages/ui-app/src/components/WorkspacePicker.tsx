@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEscapeKey } from '../useEscapeKey.ts'
 import { api, type WorkspaceBrowse } from '../api.ts'
 import { ChevronRightIcon, CloseIcon, FolderIcon } from './Icons.tsx'
 
@@ -39,6 +40,8 @@ export function WorkspacePicker({ open, recent, onClose, onPick }: WorkspacePick
     setError(null)
     void load()
   }, [open])
+
+  useEscapeKey(onClose, open)
 
   if (!open) return null
 

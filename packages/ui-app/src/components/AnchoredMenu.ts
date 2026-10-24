@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useEscapeKey } from '../useEscapeKey.ts'
 
 export interface MenuPosition {
   left: number
@@ -40,20 +41,17 @@ export function useAnchoredMenu({ open, onClose, width }: Options) {
       if (triggerRef.current?.contains(event.target as Node)) return
       closeRef.current()
     }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeRef.current()
-    }
     window.addEventListener('mousedown', onPointer)
-    window.addEventListener('keydown', onKey)
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
     return () => {
       window.removeEventListener('mousedown', onPointer)
-      window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
   }, [open, width])
+
+  useEscapeKey(() => closeRef.current(), open)
 
   return { triggerRef, menuRef, position }
 }

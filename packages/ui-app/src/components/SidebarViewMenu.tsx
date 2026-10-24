@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { useEscapeKey } from '../useEscapeKey.ts'
 import type { ArchiveFilter, GroupBy, OrderBy, SidebarView } from '../sidebar-model.ts'
 import {
   ArchiveIcon, ChatIcon, CheckIcon, ClockIcon, FolderIcon, FolderTreeIcon,
@@ -61,20 +62,17 @@ export function SidebarViewMenu({ view, onChange }: SidebarViewMenuProps) {
       if (triggerRef.current?.contains(event.target as Node)) return
       setOpen(false)
     }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
     window.addEventListener('mousedown', onPointer)
-    window.addEventListener('keydown', onKey)
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
     return () => {
       window.removeEventListener('mousedown', onPointer)
-      window.removeEventListener('keydown', onKey)
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
     }
   }, [open])
+
+  useEscapeKey(() => setOpen(false), open)
 
   return (
     <>
