@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
+import { isContextOverflow } from '@ruobai/context'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart } from '@ruobai/llm'
 import type { ModeDefinition } from '@ruobai/modes'
@@ -168,12 +169,12 @@ export class AgentService extends Service {
       const provider = this.providerName(record)
       const extra: Message[] = []
       let nudges = 0
+      let overflowRetries = 0
 
       // `/name` in the user's message loads that skill for this turn.
       await this.injectSkillGestures(sessionId)
 
-      // Summarize older history before the request is assembled.
-      await this.ctx.context.maybeCompact(sessionId, {
+      const compactOptions = () => ({
         provider,
         model: this.modelFor(record),
         signal: controller.signal,
@@ -182,46 +183,93 @@ export class AgentService extends Service {
         tools: this.toolsFor(sessionId, mode, options.denyTools),
       })
 
+      // `/compact [focus]` is a maintenance gesture: summarize now and end the
+      // turn without a model call.
+      const focus = this.compactCommand(sessionId)
+      if (focus !== undefined) {
+        const info = await this.ctx.context.compactNow(sessionId, {
+          ...compactOptions(),
+          ...(focus ? { focus } : {}),
+        })
+        this.ctx.sessions.append(sessionId, 'turn/notice', info
+          ? { kind: 'compacted', before: info.before, after: info.after, trigger: 'manual' }
+          : { kind: 'compact-empty' })
+        return { reason: 'done', text: '' }
+      }
+
+      // Summarize older history before the turn's first request.
+      await this.ctx.context.maybeCompact(sessionId, compactOptions())
+
       while (true) {
         if (controller.signal.aborted) {
           reason = 'stopped'
           break
         }
 
+        // Tool output can balloon mid-turn; re-check pressure before every
+        // follow-up request instead of only once per turn.
+        if (steps > 0) await this.ctx.context.maybeCompact(sessionId, compactOptions())
+
         const messageId = randomUUID()
         steps += 1
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
-        const request = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
+        const built = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
         let textContent = ''
         const calls: ToolCallPart[] = []
         let failure: string | undefined
+        let failureCode: string | undefined
         let stop: StopReason = 'stop'
+        let stepInputTokens = 0
 
-        for await (const chunk of this.ctx.llm.stream(request, provider)) {
-          if (chunk.type === 'text-delta') {
-            textContent += chunk.text
-            outputChars += chunk.text.length
-            const now = Date.now()
-            firstDeltaAt ??= now
-            lastDeltaAt = now
-            this.ctx.emit('agent/delta', sessionId, messageId, chunk.text)
-          } else if (chunk.type === 'tool-call') {
-            calls.push({ type: 'tool-call', id: chunk.id, name: chunk.name, arguments: chunk.arguments })
-          } else if (chunk.type === 'error') {
-            failure = chunk.message
-          } else {
-            stop = chunk.reason ?? 'stop'
-            if (chunk.usage) {
-              usageSeen = true
-              inputTokens += chunk.usage.inputTokens ?? 0
-              outputTokens += chunk.usage.outputTokens ?? 0
-              cachedInputTokens += chunk.usage.cachedInputTokens ?? 0
+        try {
+          for await (const chunk of this.ctx.llm.stream(built.request, provider)) {
+            if (chunk.type === 'text-delta') {
+              textContent += chunk.text
+              outputChars += chunk.text.length
+              const now = Date.now()
+              firstDeltaAt ??= now
+              lastDeltaAt = now
+              this.ctx.emit('agent/delta', sessionId, messageId, chunk.text)
+            } else if (chunk.type === 'tool-call') {
+              calls.push({ type: 'tool-call', id: chunk.id, name: chunk.name, arguments: chunk.arguments })
+            } else if (chunk.type === 'error') {
+              failure = chunk.message
+              failureCode = chunk.code
+            } else {
+              stop = chunk.reason ?? 'stop'
+              if (chunk.usage) {
+                usageSeen = true
+                inputTokens += chunk.usage.inputTokens ?? 0
+                outputTokens += chunk.usage.outputTokens ?? 0
+                cachedInputTokens += chunk.usage.cachedInputTokens ?? 0
+                stepInputTokens += chunk.usage.inputTokens ?? 0
+              }
             }
           }
+        } catch (error) {
+          failure = error instanceof Error ? error.message : String(error)
         }
 
-        if (failure) throw new Error(failure)
+        // Anchor the estimator to what the provider actually billed.
+        if (stepInputTokens) this.ctx.context.observeUsage(sessionId, built.estimatedTokens, stepInputTokens)
+
+        if (failure) {
+          if (isContextOverflow(failure, failureCode) && overflowRetries < 1) {
+            overflowRetries += 1
+            const info = await this.ctx.context.forceCompact(sessionId, compactOptions())
+            if (info) {
+              this.ctx.sessions.append(sessionId, 'turn/notice', {
+                kind: 'compacted',
+                before: info.before,
+                after: info.after,
+                trigger: 'overflow',
+              })
+              continue
+            }
+          }
+          throw new Error(failure)
+        }
         if (textContent) lastText = textContent
 
         const parts: ContentPart[] = []
@@ -324,7 +372,7 @@ export class AgentService extends Service {
     mode: ModeDefinition | undefined,
     extra: Message[],
     denyTools?: string[],
-  ): Promise<ModelRequest> {
+  ): Promise<{ request: ModelRequest; estimatedTokens: number }> {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
@@ -340,12 +388,15 @@ export class AgentService extends Service {
       : built.messages
 
     return {
-      messages,
-      tools,
-      signal,
-      model: this.modelFor(record),
-      temperature: this.config.temperature,
-      maxTokens: this.maxTokensFor(record),
+      request: {
+        messages,
+        tools,
+        signal,
+        model: this.modelFor(record),
+        temperature: this.config.temperature,
+        maxTokens: this.maxTokensFor(record),
+      },
+      estimatedTokens: built.estimatedTokens,
     }
   }
 
@@ -366,6 +417,18 @@ export class AgentService extends Service {
     const configured = this.config.maxTokens
     if (configured && limit) return Math.min(configured, limit)
     return configured ?? limit
+  }
+
+  /** `/compact` or `/compact <focus>` in the latest user message. */
+  private compactCommand(sessionId: string): string | undefined {
+    const record = this.ctx.sessions.get(sessionId)
+    if (!record) return
+    const lastUser = [...record.events].reverse().find(event =>
+      event.type === 'message/user' && event.data?.source?.kind !== 'skill')
+    if (!lastUser) return
+    const match = /^\/compact(?:\s+([\s\S]+))?$/i.exec(String(lastUser.data?.text ?? '').trim())
+    if (!match) return
+    return match[1]?.trim() ?? ''
   }
 
   /**

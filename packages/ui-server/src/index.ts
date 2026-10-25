@@ -22,7 +22,7 @@ declare module '@ruobai/cordis' {
  * assets, guard requests, or add WebSocket upgrades without touching this.
  */
 export class UiApi extends Service {
-  static inject = ['web', 'chat', 'modes', 'approval', 'context', 'llm']
+  static inject = ['web', 'chat', 'sessions', 'modes', 'approval', 'context', 'llm']
 
   private readonly sse = new SseHub()
 
@@ -207,7 +207,7 @@ export class UiApi extends Service {
       return true
     }
 
-    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork))?$/.exec(pathname)
+    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact))?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
     const action = match[2]
@@ -254,6 +254,50 @@ export class UiApi extends Service {
 
     if (action === 'context' && method === 'GET') {
       sendJson(res, 200, await this.ctx.context.info(id))
+      return true
+    }
+
+    if (action === 'trajectory' && method === 'GET') {
+      const record = this.ctx.sessions.get(id)
+      if (!record) throw new HttpError(404, 'session not found')
+      sendJson(res, 200, {
+        events: record.events
+          .map(trajectoryEvent)
+          .filter(Boolean),
+      })
+      return true
+    }
+
+    if (action === 'compact' && method === 'POST') {
+      const session = this.ctx.chat.get(id)
+      if (!session) throw new HttpError(404, 'session not found')
+      if (session.streaming) throw new HttpError(409, 'session is running')
+      const record = this.ctx.sessions.get(id)
+      if (!record) throw new HttpError(404, 'session not found')
+      const settings = this.ctx.get('settings', false) as
+        | {
+          raw?(): {
+            llm?: { activeProvider?: string; activeModel?: string }
+          }
+        }
+        | undefined
+      const agents = this.ctx.get('agents', false) as
+        | { config?: { systemPrompt?: string } }
+        | undefined
+      const modes = this.ctx.get('modes', false) as
+        | { get(mode?: string): { systemPrompt?: string } | undefined }
+        | undefined
+      const config = settings?.raw?.()
+      const provider = record.meta.provider ?? config?.llm?.activeProvider
+      const model = record.meta.model ?? config?.llm?.activeModel
+      const modePrompt = modes?.get(record.meta.mode)?.systemPrompt
+      const info = await this.ctx.context.compactNow(id, {
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
+        ...(agents?.config?.systemPrompt ? { basePrompt: agents.config.systemPrompt } : {}),
+        ...(modePrompt ? { modePrompt } : {}),
+      })
+      sendJson(res, 200, { compacted: Boolean(info), info })
       return true
     }
 
@@ -360,4 +404,99 @@ function pluginSlug(name: string) {
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .toLowerCase()
     .replace(/^-+|-+$/g, '') || 'plugin'
+}
+
+const TRAJECTORY_CLIP = 12_000
+
+function clip(value: unknown, limit = TRAJECTORY_CLIP) {
+  const text = typeof value === 'string' ? value : String(value ?? '')
+  return text.length <= limit ? text : `${text.slice(0, limit)}… [truncated ${text.length - limit} chars]`
+}
+
+/** Browser-safe projection of one session event for the trajectory view. */
+function trajectoryEvent(event: { seq: number; ts: number; type: string; data: any }) {
+  const base = { seq: event.seq, ts: event.ts, type: event.type }
+  const data = event.data ?? {}
+  switch (event.type) {
+    case 'message/user':
+      return {
+        ...base,
+        data: {
+          id: data.id,
+          text: clip(data.text),
+          at: data.at,
+          attachments: (data.attachments ?? []).map((attachment: any) => ({
+            id: attachment.id,
+            name: attachment.name,
+            kind: attachment.kind,
+            mime: attachment.mime,
+            size: attachment.size,
+            ...(attachment.path ? { path: attachment.path } : {}),
+          })),
+          ...(data.source ? { source: data.source } : {}),
+        },
+      }
+    case 'message/assistant':
+      return {
+        ...base,
+        data: {
+          id: data.id,
+          at: data.at,
+          parts: (data.parts ?? []).map((part: any) => {
+            if (part.type === 'text') return { type: 'text', text: clip(part.text) }
+            if (part.type === 'tool-call') {
+              return {
+                type: 'tool-call',
+                id: part.id,
+                name: part.name,
+                arguments: clip(part.arguments, 4_000),
+              }
+            }
+            if (part.type === 'tool-result') {
+              return {
+                type: 'tool-result',
+                callId: part.callId,
+                name: part.name,
+                content: clip(part.content, 4_000),
+                isError: part.isError,
+              }
+            }
+            return { type: part.type }
+          }),
+        },
+      }
+    case 'tool/result':
+      return {
+        ...base,
+        data: {
+          callId: data.callId,
+          name: data.name,
+          isError: Boolean(data.isError),
+          content: clip(data.content),
+          chars: String(data.content ?? '').length,
+        },
+      }
+    case 'context/summary':
+      return {
+        ...base,
+        data: {
+          upToSeq: data.upToSeq,
+          text: clip(data.text, 20_000),
+          at: data.at,
+          before: data.before,
+          after: data.after,
+          trigger: data.trigger,
+        },
+      }
+    case 'context/memory':
+      return { ...base, data: { upToSeq: data.upToSeq, text: clip(data.text, 4_000), at: data.at } }
+    case 'turn/error':
+      return { ...base, data: { message: clip(data.message, 4_000) } }
+    case 'turn/notice':
+    case 'session/title':
+    case 'session/meta':
+      return { ...base, data }
+    default:
+      return { ...base, data: JSON.stringify(data).length <= 8_000 ? data : undefined }
+  }
 }

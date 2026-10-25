@@ -12,8 +12,10 @@ import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
 import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
-import { SessionPanel } from './components/SessionPanel.tsx'
-import { BranchIcon, FilePanelIcon, FolderIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
+import { ContextView } from './components/ContextView.tsx'
+import { OpenInMenu } from './components/OpenInMenu.tsx'
+import { TrajectoryView } from './components/TrajectoryView.tsx'
+import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
@@ -21,6 +23,19 @@ import { Transcript } from './components/Transcript.tsx'
 import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
+type MainView = 'chat' | 'trajectory' | 'context'
+
+const MAIN_VIEW_KEY = 'rbh-main-view'
+const MAIN_TABS: Array<{ id: MainView; label: string }> = [
+  { id: 'chat', label: '会话' },
+  { id: 'trajectory', label: '轨迹' },
+  { id: 'context', label: '上下文' },
+]
+
+function loadMainView(): MainView {
+  const saved = localStorage.getItem(MAIN_VIEW_KEY)
+  return saved === 'trajectory' || saved === 'context' ? saved : 'chat'
+}
 
 function initialPreference(): ThemePreference {
   const saved = localStorage.getItem('rbh-theme')
@@ -36,16 +51,15 @@ function loadCollapsed() {
   return localStorage.getItem(SIDEBAR_KEY) === '1'
 }
 
-function maxDetailsWidth(collapsed: boolean, sessionOpen: boolean) {
-  const reserved = (collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272)
-    + (sessionOpen ? 304 : 0)
+function maxDetailsWidth(collapsed: boolean) {
+  const reserved = collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272
   return Math.max(320, window.innerWidth - reserved)
 }
 
 function loadDetailsWidth() {
   const saved = Number(localStorage.getItem(DETAILS_WIDTH_KEY))
   const width = Number.isFinite(saved) && saved >= 280 ? saved : DETAILS_DEFAULT_WIDTH
-  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1', true))
+  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1'))
 }
 
 export function App() {
@@ -55,9 +69,8 @@ export function App() {
   const [preference, setPreference] = useState<ThemePreference>(initialPreference)
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
-  const [detailsOpen, setDetailsOpen] = useState(true)
   const [fileOpen, setFileOpen] = useState(false)
-  const [expandedPanel, setExpandedPanel] = useState<'session' | 'file' | null>(null)
+  const [expandedPanel, setExpandedPanel] = useState<'file' | null>(null)
   const [panelView, setPanelView] = useState<FileView>('files')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -73,6 +86,11 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const [skills, setSkills] = useState<SkillSummary[]>([])
+  const [mainView, setMainView] = useState<MainView>(loadMainView)
+
+  useEffect(() => {
+    localStorage.setItem(MAIN_VIEW_KEY, mainView)
+  }, [mainView])
 
   useEffect(() => {
     const sessionId = harness.session?.id
@@ -111,17 +129,17 @@ export function App() {
   }, [sidebarCollapsed])
 
   const resizeDetails = useCallback((next: number) => {
-    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed, detailsOpen), Math.max(280, Math.round(next)))
+    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed), Math.max(280, Math.round(next)))
     setDetailsWidth(clamped)
     localStorage.setItem(DETAILS_WIDTH_KEY, String(clamped))
-  }, [sidebarCollapsed, detailsOpen])
+  }, [sidebarCollapsed])
 
   useEffect(() => {
     const clamp = () => setDetailsWidth(current =>
-      Math.min(current, maxDetailsWidth(sidebarCollapsed, detailsOpen)))
+      Math.min(current, maxDetailsWidth(sidebarCollapsed)))
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
-  }, [sidebarCollapsed, detailsOpen])
+  }, [sidebarCollapsed])
 
   const toggleSidebar = useCallback(() => {
     if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(current => !current)
@@ -145,35 +163,23 @@ export function App() {
   const showFilePanel = useCallback((view: FileView) => {
     if (fileOpen && panelView === view) {
       setFileOpen(false)
-      if (expandedPanel === 'file') setExpandedPanel(null)
+      setExpandedPanel(null)
       return
     }
     setPanelView(view)
     setFileOpen(true)
-    if (expandedPanel === 'session') setExpandedPanel(null)
     // The Git workbench needs two columns; open it wide and let the user collapse.
     if (view === 'git' && window.innerWidth > 1120) setExpandedPanel('file')
-  }, [fileOpen, panelView, expandedPanel])
+  }, [fileOpen, panelView])
 
-  const toggleSessionPanel = useCallback(() => {
-    if (detailsOpen) {
-      setDetailsOpen(false)
-      if (expandedPanel === 'session') setExpandedPanel(null)
-      return
-    }
-    setDetailsOpen(true)
-    if (expandedPanel === 'file') setExpandedPanel(null)
-  }, [detailsOpen, expandedPanel])
-
-  const toggleExpandPanel = useCallback((panel: 'session' | 'file') => {
+  const toggleExpandPanel = useCallback(() => {
     if (window.innerWidth <= 1120) return
-    if (expandedPanel === panel) {
+    if (expandedPanel === 'file') {
       setExpandedPanel(null)
       return
     }
-    if (panel === 'session') setDetailsOpen(true)
-    else setFileOpen(true)
-    setExpandedPanel(panel)
+    setFileOpen(true)
+    setExpandedPanel('file')
   }, [expandedPanel])
 
   useEffect(() => {
@@ -210,8 +216,7 @@ export function App() {
       if (isExpandShortcut(event)) {
         event.preventDefault()
         if (expandedPanel) setExpandedPanel(null)
-        else if (fileOpen) toggleExpandPanel('file')
-        else toggleExpandPanel('session')
+        else if (fileOpen) toggleExpandPanel()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -241,9 +246,6 @@ export function App() {
       case 'permissions':
         openSettings('permissions')
         break
-      case 'toggle-details':
-        setDetailsOpen(current => !current)
-        break
       case 'show-files':
         showFilePanel('files')
         break
@@ -255,8 +257,7 @@ export function App() {
         break
       case 'expand-panel':
         if (expandedPanel) setExpandedPanel(null)
-        else if (fileOpen) toggleExpandPanel('file')
-        else toggleExpandPanel('session')
+        else if (fileOpen) toggleExpandPanel()
         break
       case 'toggle-theme':
         setPreference(theme === 'dark' ? 'light' : 'dark')
@@ -273,9 +274,7 @@ export function App() {
     <div
       className={[
         'app',
-        detailsOpen ? 'session-panel-open' : '',
         fileOpen ? 'file-panel-open' : '',
-        expandedPanel === 'session' ? 'session-expanded' : '',
         expandedPanel === 'file' ? 'file-expanded' : '',
         sidebarCollapsed ? 'sidebar-collapsed' : '',
       ].filter(Boolean).join(' ')}
@@ -334,23 +333,20 @@ export function App() {
             </button>
             <div className="main-title">
               <h1>{harness.session?.title ?? 'New session'}</h1>
-              <div className="main-sub">
-                {harness.session?.workspace ? (
-                  <span className="workspace-chip" title={harness.session.workspace}>
-                    <FolderIcon size={11} />
-                    {nameOf(harness.session.workspace)}
-                  </span>
-                ) : null}
-                <span>
-                  {harness.session
-                    ? [
-                        `${harness.session.messages.length} messages`,
-                        harness.session.model,
-                        harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
-                      ].filter(Boolean).join(' · ')
-                    : 'loading…'}
-                </span>
-              </div>
+              <nav className="main-tabs" role="tablist" aria-label="对话视图">
+                {MAIN_TABS.map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={mainView === tab.id}
+                    className={mainView === tab.id ? 'active' : ''}
+                    onClick={() => setMainView(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
             </div>
           </div>
 
@@ -368,17 +364,9 @@ export function App() {
           </div>
 
           <div className="main-head-right">
+            <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
             <Slot name="header.actions" />
             <div className="main-tools" role="toolbar" aria-label="面板">
-              <button
-                className={`icon-btn ${detailsOpen ? 'active' : ''}`}
-                onClick={toggleSessionPanel}
-                aria-label="会话"
-                title="会话"
-              >
-                <PanelIcon size={16} />
-              </button>
-              <span className="main-tools-sep" />
               <button
                 className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
                 onClick={() => showFilePanel('files')}
@@ -450,61 +438,60 @@ export function App() {
           )
           : null}
 
-        <Transcript session={harness.session} onSuggestion={harness.send} />
-
-        {pendingApprovals.length
+        {mainView === 'chat'
           ? (
-            <div className="approval-stack">
-              {pendingApprovals.map(request => (
-                <ApprovalCard
-                  key={request.id}
-                  request={request}
-                  onResolve={decision => harness.resolveApproval(request.id, decision)}
-                />
-              ))}
-            </div>
+            <>
+              <Transcript session={harness.session} onSuggestion={harness.send} />
+
+              {pendingApprovals.length
+                ? (
+                  <div className="approval-stack">
+                    {pendingApprovals.map(request => (
+                      <ApprovalCard
+                        key={request.id}
+                        request={request}
+                        onResolve={decision => harness.resolveApproval(request.id, decision)}
+                      />
+                    ))}
+                  </div>
+                )
+                : null}
+
+              <Composer
+                disabled={!harness.session}
+                streaming={harness.session?.streaming ?? false}
+                sessionId={harness.session?.id}
+                provider={harness.session?.provider}
+                model={harness.session?.model ?? 'ruobai-chat'}
+                models={harness.models}
+                modes={harness.modes}
+                skills={skills}
+                mode={harness.session?.mode ?? harness.defaultMode}
+                permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
+                commandPrefix={harness.commandPrefix}
+                contextInfo={harness.contextInfo}
+                stats={harness.session?.stats ?? null}
+                onModeChange={harness.setMode}
+                onModelChange={harness.setModel}
+                onPermissionChange={harness.setPermission}
+                onSend={harness.send}
+                onStop={harness.stop}
+                onNewSession={() => setWorkspacePickerOpen(true)}
+                onOpenConnectors={() => openSettings('mcp')}
+                reference={reference}
+              />
+            </>
           )
-          : null}
-
-        <Composer
-          disabled={!harness.session}
-          streaming={harness.session?.streaming ?? false}
-          sessionId={harness.session?.id}
-          provider={harness.session?.provider}
-          model={harness.session?.model ?? 'ruobai-chat'}
-          models={harness.models}
-          modes={harness.modes}
-          skills={skills}
-          mode={harness.session?.mode ?? harness.defaultMode}
-          permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
-          commandPrefix={harness.commandPrefix}
-          contextInfo={harness.contextInfo}
-          stats={harness.session?.stats ?? null}
-          onModeChange={harness.setMode}
-          onModelChange={harness.setModel}
-          onPermissionChange={harness.setPermission}
-          onSend={harness.send}
-          onStop={harness.stop}
-          onNewSession={() => setWorkspacePickerOpen(true)}
-          onOpenConnectors={() => openSettings('mcp')}
-          reference={reference}
-        />
+          : mainView === 'trajectory'
+            ? <TrajectoryView session={harness.session} />
+            : (
+              <ContextView
+                session={harness.session}
+                context={harness.contextInfo}
+                onRefresh={harness.refreshContext}
+              />
+            )}
       </main>
-
-      {detailsOpen
-        ? (
-          <SessionPanel
-            session={harness.session}
-            contextInfo={harness.contextInfo}
-            expanded={expandedPanel === 'session'}
-            onToggleExpand={() => toggleExpandPanel('session')}
-            onClose={() => {
-              setDetailsOpen(false)
-              if (expandedPanel === 'session') setExpandedPanel(null)
-            }}
-          />
-        )
-        : null}
 
       {fileOpen
         ? (
@@ -513,7 +500,7 @@ export function App() {
             view={panelView}
             width={detailsWidth}
             expanded={expandedPanel === 'file'}
-            onToggleExpand={() => toggleExpandPanel('file')}
+            onToggleExpand={toggleExpandPanel}
             onResize={resizeDetails}
             onClose={() => {
               setFileOpen(false)
@@ -561,8 +548,4 @@ export function App() {
         : null}
     </div>
   )
-}
-
-function nameOf(path: string) {
-  return path.split('/').filter(Boolean).at(-1) ?? path
 }

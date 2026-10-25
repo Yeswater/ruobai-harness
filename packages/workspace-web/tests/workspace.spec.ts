@@ -125,33 +125,58 @@ describe('workspace web', () => {
     const session = harness.ctx.sessions.create({ title: 'open', workspace: process.cwd() })
     const url = `${base}/api/workspace/open`
 
-    const missingPath = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: session.id }),
-    })
-    expect(missingPath.status).toBe(400)
-
     const escape = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: session.id, path: '../../etc/passwd' }),
     })
     expect(escape.status).toBe(403)
+
+    const unknown = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, editor: 'not-an-editor' }),
+    })
+    expect(unknown.status).toBe(400)
+  })
+
+  it('detects editors and always offers the file manager', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const session = harness.ctx.sessions.create({ title: 'editors', workspace: process.cwd() })
+
+    const listed = await (await fetch(
+      `${base}/api/workspace/editors?sessionId=${session.id}`,
+    )).json() as { editors: Array<{ id: string; name: string; kind: string }> }
+    expect(listed.editors.length).toBeGreaterThan(0)
+    expect(listed.editors.some(editor => editor.id === 'system' && editor.kind === 'folder')).toBe(true)
+    expect(new Set(listed.editors.map(editor => editor.id)).size).toBe(listed.editors.length)
+    expect(listed.editors.every(editor => editor.name.length > 0)).toBe(true)
   })
 
   it('searches files for composer mentions', async () => {
     const harness = await createHarness()
     harnesses.push(harness)
     const base = harness.ctx.web.url
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-search-web-'))
+    dirs.push(dir)
+    await mkdir(join(dir, 'src'))
+    await writeFile(join(dir, 'package.json'), '{}')
+    await writeFile(join(dir, 'src', 'package-lock.json'), '{}')
+    const session = harness.ctx.sessions.create({ title: 'search', workspace: dir })
 
-    const found = await (await fetch(`${base}/api/workspace/search?q=package&limit=5`)).json() as {
+    const found = await (await fetch(
+      `${base}/api/workspace/search?q=package&limit=5&sessionId=${session.id}`,
+    )).json() as {
       files: Array<{ path: string; type: string }>
     }
     expect(found.files.length).toBeLessThanOrEqual(5)
     expect(found.files.some(file => file.path === 'package.json')).toBe(true)
 
-    const top = await (await fetch(`${base}/api/workspace/search?limit=50`)).json() as {
+    const top = await (await fetch(
+      `${base}/api/workspace/search?limit=50&sessionId=${session.id}`,
+    )).json() as {
       files: Array<{ path: string }>
     }
     expect(top.files.length).toBeGreaterThan(0)

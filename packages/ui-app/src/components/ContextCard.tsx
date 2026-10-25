@@ -49,6 +49,31 @@ export function ContextCard({ context }: ContextCardProps) {
       {context.contextWindow ? (
         <div className="ctx-hint">压缩阈值 {formatTokens(compactAt)}</div>
       ) : null}
+      {context.prunedToolResults
+        ? <div className="ctx-hint">已裁剪 {context.prunedToolResults} 条旧工具输出</div>
+        : null}
+      {Math.abs(context.calibration - 1) >= 0.05
+        ? <div className="ctx-hint">估算校准 ×{context.calibration.toFixed(2)}</div>
+        : null}
+      {context.compaction.lastAt
+        ? (
+          <div className="ctx-hint">
+            上次压缩 {formatTokens(context.compaction.lastBefore ?? 0)}
+            {' → '}
+            {formatTokens(context.compaction.lastAfter ?? 0)}
+          </div>
+        )
+        : null}
+      {context.compaction.disabled
+        ? (
+          <div className="ctx-hint error">
+            自动压缩已暂停（连续失败 {context.compaction.failures} 次）
+          </div>
+        )
+        : null}
+      {!context.compaction.disabled && context.compaction.lastError
+        ? <div className="ctx-hint error">{context.compaction.lastError}</div>
+        : null}
 
       <div className="ctx-legend">
         {rows.map(row => (

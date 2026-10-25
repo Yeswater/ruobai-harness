@@ -29,6 +29,9 @@ importers:
       '@ruobai/checkpoints-web':
         specifier: workspace:*
         version: link:packages/checkpoints-web
+      '@ruobai/client-fixture':
+        specifier: workspace:*
+        version: link:packages/client-modules/tests/fixtures/client-fixture
       '@ruobai/client-modules':
         specifier: workspace:*
         version: link:packages/client-modules
@@ -101,18 +104,6 @@ importers:
       '@ruobai/permissions':
         specifier: workspace:*
         version: link:packages/permissions
-      '@ruobai/plugin-counter':
-        specifier: workspace:*
-        version: link:packages/plugin-counter
-      '@ruobai/plugin-counter-view':
-        specifier: workspace:*
-        version: link:packages/plugin-counter-view
-      '@ruobai/plugin-hello':
-        specifier: workspace:*
-        version: link:packages/plugin-hello
-      '@ruobai/plugin-welcome':
-        specifier: workspace:*
-        version: link:packages/plugin-welcome
       '@ruobai/session':
         specifier: workspace:*
         version: link:packages/session
@@ -336,6 +327,8 @@ importers:
         specifier: ^0.28.0
         version: 0.28.2
 
+  packages/client-modules/tests/fixtures/client-fixture: {}
+
   packages/context:
     dependencies:
       '@ruobai/cordis':
@@ -537,50 +530,6 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:../tools
-
-  packages/plugin-counter:
-    dependencies:
-      '@ruobai/cordis':
-        specifier: workspace:*
-        version: link:../../vendor/cordis
-      '@ruobai/schemastery':
-        specifier: workspace:*
-        version: link:../../vendor/schemastery
-
-  packages/plugin-counter-view:
-    dependencies:
-      '@ruobai/cordis':
-        specifier: workspace:*
-        version: link:../../vendor/cordis
-      '@ruobai/cordis-plugin-timer':
-        specifier: workspace:*
-        version: link:../../vendor/timer
-    devDependencies:
-      '@ruobai/plugin-counter':
-        specifier: workspace:*
-        version: link:../plugin-counter
-
-  packages/plugin-hello:
-    dependencies:
-      '@ruobai/cordis':
-        specifier: workspace:*
-        version: link:../../vendor/cordis
-      '@ruobai/schemastery':
-        specifier: workspace:*
-        version: link:../../vendor/schemastery
-
-  packages/plugin-welcome:
-    dependencies:
-      '@ruobai/cordis':
-        specifier: workspace:*
-        version: link:../../vendor/cordis
-    devDependencies:
-      '@ruobai/client-api':
-        specifier: workspace:*
-        version: link:../client-api
-      '@types/react':
-        specifier: ^19.0.0
-        version: 19.3.0
 
   packages/session:
     dependencies:
@@ -2206,6 +2155,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0

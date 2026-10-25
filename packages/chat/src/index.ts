@@ -431,11 +431,26 @@ function blocksOf(parts: ContentPart[]): ChatBlock[] {
   return blocks
 }
 
-function noticeText(data: { kind?: string; steps?: number }) {
+function noticeText(data: { kind?: string; steps?: number; before?: number; after?: number; trigger?: string }) {
   if (data.kind === 'max-steps') {
     return `⚠ 本轮已达到 ${data.steps ?? 0} 步上限，任务可能还没完成。发送「继续」可以接着执行。`
   }
+  if (data.kind === 'compacted') {
+    const source = data.trigger === 'manual' ? '手动' : data.trigger === 'overflow' ? '溢出恢复' : '自动'
+    const before = data.before !== undefined ? formatTokens(data.before) : '?'
+    const after = data.after !== undefined ? formatTokens(data.after) : '?'
+    return `上下文已压缩（${source}）：约 ${before} → ${after} tokens。`
+  }
+  if (data.kind === 'compact-empty') {
+    return '没有可压缩的历史，或压缩未产生明显收益。'
+  }
   return '⚠ 本轮已结束'
+}
+
+function formatTokens(tokens: number) {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1).replace(/\.0$/, '')}k`
+  return `${Math.round(tokens)}`
 }
 
 export default ChatService

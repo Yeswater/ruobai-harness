@@ -131,4 +131,33 @@ describe('openai adapter', () => {
     await provider.dispose()
     await llm.dispose()
   })
+
+  it('surfaces a structured context overflow code', async () => {
+    const server = createServer((req, res) => {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        error: { code: 'context_length_exceeded', message: 'too long' },
+      }))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    servers.push(() => new Promise<void>(resolve => server.close(() => resolve())))
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model' })
+    await provider
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+    }, 'openai')) {
+      chunks.push(chunk)
+    }
+    expect(chunks[0]).toMatchObject({ type: 'error', code: 'context_length_exceeded' })
+
+    await provider.dispose()
+    await llm.dispose()
+  })
 })

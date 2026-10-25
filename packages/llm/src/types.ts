@@ -77,7 +77,7 @@ export type StreamChunk =
   | { type: 'text-delta'; text: string }
   | { type: 'tool-call'; id: string; name: string; arguments: string }
   | { type: 'done'; reason?: StopReason; usage?: Usage }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; code?: string }
 
 /** A provider turns a model request into a chunk stream. */
 export interface LlmProvider {

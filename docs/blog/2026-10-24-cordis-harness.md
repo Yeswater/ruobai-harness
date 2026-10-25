@@ -181,7 +181,7 @@ MCP 也按同一原则拆开：`mcp` 只负责连接与工具代理（stdio JSON
 - `ui-slots`：与框架无关的 slot 注册表，UI 在侧栏底部、顶栏、详情面板预留挂载点。
 - `client-api`：客户端插件拿到的运行时类型（React、createElement、slots）。
 - `client-modules`：扫描 loader 条目里 `package.json` 的 `rbu.client`，用 esbuild 打成 ESM，注入 host React shim，通过 `/plugins/<id>/client.js` 下发；UI 在运行时加载并执行。
-- `plugin-welcome`：示例双端插件，往两个 slot 注册卡片和徽标。
+- `client-modules/tests/fixtures/client-fixture`：仅用于测试的双端插件样例，验证客户端 half 的发现与打包。
 
 这样“插件”不只属于后端：一个包可以同时有服务端 half 和浏览器 half。
 

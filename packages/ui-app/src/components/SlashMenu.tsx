@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { SkillSummary } from '../api.ts'
 import {
-  BotIcon, FolderPlusIcon, ShieldIcon, SlidersIcon, SparkIcon, StopIcon,
+  ArchiveIcon, BotIcon, FolderPlusIcon, ShieldIcon, SlidersIcon, SparkIcon, StopIcon,
 } from './Icons.tsx'
 import { ComposerMenuList, type ComposerMenuItem } from './ComposerMenuList.tsx'
 
@@ -21,6 +21,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: 'goal', name: 'goal', description: '切换到 Goal 模式（自主推进）', icon: <BotIcon size={15} /> },
   { id: 'model', name: 'model', description: '选择本会话的模型', icon: <SlidersIcon size={15} /> },
   { id: 'permission', name: 'permission', description: '切换会话权限模式', icon: <ShieldIcon size={15} /> },
+  { id: 'compact', name: 'compact', description: '压缩当前上下文，可接着输入关注点', icon: <ArchiveIcon size={15} /> },
   { id: 'new', name: 'new', description: '新建会话', icon: <FolderPlusIcon size={15} /> },
   { id: 'stop', name: 'stop', description: '停止当前回合', icon: <StopIcon size={14} /> },
 ]

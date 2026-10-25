@@ -51,6 +51,8 @@ export interface Harness {
 export interface HarnessOptions {
   delay?: number
   web?: Partial<WebConfig>
+  /** Extra context-service config (retention budgets, pruning, ...). */
+  context?: Record<string, unknown>
 }
 
 /**
@@ -111,6 +113,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     compactAt: 1_000_000,
     globalRoot: protocolHome,
     instructionsTtlMs: 0,
+    ...options.context,
   }))
   await mount(ctx.plugin(ApprovalService))
   await mount(ctx.plugin(PermissionService))

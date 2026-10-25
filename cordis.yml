@@ -176,24 +176,3 @@
 # declares `rbu.client`, bundled with esbuild and loaded by the UI at runtime.
 - id: client-modules
   name: '@ruobai/client-modules'
-
-- id: welcome
-  name: '@ruobai/plugin-welcome'
-
-- id: examples
-  name: '@ruobai/cordis-plugin-group'
-  group: true
-  config:
-    - id: hello
-      name: '@ruobai/plugin-hello'
-      config:
-        target: ruobai
-
-    - id: counter
-      name: '@ruobai/plugin-counter'
-      config:
-        initial: 0
-
-    # Stays PENDING until both `counter` and `timer` exist.
-    - id: counter-view
-      name: '@ruobai/plugin-counter-view'

@@ -254,6 +254,12 @@ export function useHarness() {
     void refreshSettings()
   }, [refreshSettings])
 
+  const refreshContext = useCallback(() => {
+    const id = activeRef.current
+    if (!id) return
+    void api.getContext(id).then(setContextInfo).catch(() => undefined)
+  }, [])
+
   useEffect(() => {
     if (!activeId) {
       setContextInfo(null)
@@ -424,6 +430,7 @@ export function useHarness() {
     defaultMode,
     models,
     contextInfo,
+    refreshContext,
     commandPrefix,
     refreshSettings,
     approvals,

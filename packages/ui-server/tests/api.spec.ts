@@ -302,6 +302,61 @@ describe('ui server', () => {
     expect(invalid.status).toBe(400)
   })
 
+  it('exposes the trajectory and compacts on demand', async () => {
+    const harness = await createHarness({ context: { retainTokens: 40, keepRecent: 3 } })
+    harnesses.push(harness)
+    const { ctx } = harness
+    ctx.effect(() => ctx.llm.register({
+      name: 'scripted',
+      models: ['scripted-1'],
+      async *stream(request) {
+        const system = request.messages[0]?.role === 'system'
+          ? request.messages[0].content.map(part => part.type === 'text' ? part.text : '').join('')
+          : ''
+        const summary = system.includes('compaction engine')
+        yield { type: 'text-delta' as const, text: summary ? '## Summary\n- compacted' : 'ok' }
+        yield { type: 'done' as const, reason: 'stop' as const }
+      },
+    }))
+    await ctx.settings.update({ llm: { activeProvider: 'scripted', activeModel: 'scripted-1' } })
+
+    const session = ctx.chat.create(undefined, 'agent')
+    for (let index = 0; index < 10; index += 1) {
+      ctx.sessions.append(session.id, 'message/user', {
+        id: `seed-${index}`,
+        text: `requirement ${index} ${'x'.repeat(300)}`,
+        at: index,
+      })
+    }
+    const base = ctx.web.url
+
+    const before = await (await fetch(`${base}/api/sessions/${session.id}/trajectory`)).json() as {
+      events: Array<{ type: string; data?: { text?: string } }>
+    }
+    expect(before.events.some(event => event.type === 'message/user')).toBe(true)
+    expect(before.events.find(event => event.type === 'message/user')?.data?.text)
+      .toContain('requirement 0')
+
+    const compacted = await fetch(`${base}/api/sessions/${session.id}/compact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(compacted.status).toBe(200)
+    const result = await compacted.json() as {
+      compacted: boolean
+      info?: { before: number; after: number }
+    }
+    expect(result.compacted).toBe(true)
+    expect(result.info!.after).toBeLessThan(result.info!.before)
+
+    const after = await (await fetch(`${base}/api/sessions/${session.id}/trajectory`)).json() as {
+      events: Array<{ type: string; data?: { text?: string } }>
+    }
+    const summary = after.events.find(event => event.type === 'context/summary')
+    expect(summary?.data?.text).toContain('## Summary')
+  })
+
   it('exposes runtime state and an SSE stream', async () => {
     const { ctx } = await setup()
 
