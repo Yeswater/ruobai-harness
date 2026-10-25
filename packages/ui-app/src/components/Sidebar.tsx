@@ -359,6 +359,24 @@ export function Sidebar(props: SidebarProps) {
     <>
       <aside className={`sidebar ${props.open ? 'open' : ''}`}>
         <div className="sidebar-head">
+          <div className="sidebar-brand-row">
+            <div className="brand" title="RuoBai Harness">
+              <span className="brand-mark" aria-hidden="true">R</span>
+              <span className="brand-text">
+                <span className="brand-name">RuoBai</span>
+                <span className="brand-sub">Harness</span>
+              </span>
+            </div>
+            <button
+              className="icon-btn subtle sidebar-collapse"
+              onClick={props.onToggleCollapse}
+              aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+              title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+            >
+              <PanelLeftIcon />
+            </button>
+          </div>
+
           {searchOpen
             ? (
               <div className="session-search inline">
@@ -388,7 +406,7 @@ export function Sidebar(props: SidebarProps) {
               </div>
             )
             : (
-              <>
+              <div className="sidebar-title-row">
                 <h2 className="workspace-title">工作区</h2>
                 <div className="workspace-actions">
                   <button className="icon-btn subtle" onClick={() => setSearchOpen(true)} aria-label="搜索会话">
@@ -401,16 +419,8 @@ export function Sidebar(props: SidebarProps) {
                   <button className="icon-btn subtle" onClick={props.onCreate} aria-label="添加工作区">
                     <FolderPlusIcon />
                   </button>
-                  <button
-                    className="icon-btn subtle sidebar-collapse"
-                    onClick={props.onToggleCollapse}
-                    aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
-                    title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
-                  >
-                    <PanelLeftIcon />
-                  </button>
                 </div>
-              </>
+              </div>
             )}
         </div>
 

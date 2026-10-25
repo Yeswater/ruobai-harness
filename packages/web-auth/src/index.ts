@@ -93,7 +93,7 @@ function checkOrigin(req: IncomingMessage, res: ServerResponse) {
 
 function loginPage() {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>ruobai harness</title>
+<html lang="en"><head><meta charset="utf-8"><title>RuoBai Harness</title>
 <style>
   body{margin:0;height:100vh;display:grid;place-items:center;background:#f6f4ef;color:#24221f;font-family:system-ui,sans-serif}
   form{display:flex;flex-direction:column;gap:10px;width:280px;padding:24px;border:1px solid #ded8ce;border-radius:14px;background:#fbfaf7}
@@ -102,7 +102,7 @@ function loginPage() {
   button{background:#c2603d;color:#fff;border:0;cursor:pointer}
 </style></head><body>
 <form method="get">
-  <h1>ruobai harness</h1>
+  <h1>RuoBai Harness</h1>
   <input name="token" type="password" placeholder="access token" autofocus>
   <button>Continue</button>
 </form>
