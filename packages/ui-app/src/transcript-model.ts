@@ -1,10 +1,16 @@
 import type { ChatMessage, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
 import { isRunning } from './tool-summary.ts'
 
-/** One line inside a folded process group. */
+/**
+ * One line inside a folded process group.
+ *
+ * `pending` is resolved here rather than in the view: whether a row is still
+ * working depends on its own timestamps *and* on the step that produced it, and
+ * only this module knows both.
+ */
 export type ProcessItem =
-  | { kind: 'reasoning'; key: string; block: ReasoningBlock }
-  | { kind: 'tool'; key: string; block: ToolBlock }
+  | { kind: 'reasoning'; key: string; block: ReasoningBlock; pending: boolean }
+  | { kind: 'tool'; key: string; block: ToolBlock; pending: boolean }
 
 export type PlanItem =
   | { kind: 'user'; key: string; message: ChatMessage }
@@ -62,9 +68,16 @@ export function buildPlan(messages: ChatMessage[]): PlanItem[] {
         groupKey = message.id + (block.type === 'tool' ? `-${block.callId ?? index}` : `-${index}`)
       }
       const key = `${message.id}-${index}`
+      // A settled step is finished even when the log has no timestamps for it
+      // (sessions written before timing was recorded). Reading `finishedAt`
+      // alone left every old thought row stuck on "思考中".
+      const settled = message.status !== 'streaming'
+      const pending = settled
+        ? false
+        : block.type === 'reasoning' ? block.finishedAt === undefined : isRunning(block)
       group.push(block.type === 'reasoning'
-        ? { kind: 'reasoning', key, block }
-        : { kind: 'tool', key, block })
+        ? { kind: 'reasoning', key, block, pending }
+        : { kind: 'tool', key, block, pending })
     })
   }
   flush()
@@ -86,7 +99,14 @@ function bounds(items: ProcessItem[]) {
 
 /** Whether the group still has work in flight. */
 export function isGroupRunning(items: ProcessItem[]) {
-  return items.some(item => (item.kind === 'tool' ? isRunning(item.block) : item.block.finishedAt === undefined))
+  return items.some(item => item.pending)
+}
+
+/** Elapsed time of one row, or undefined when it has no recorded span. */
+export function itemDuration(item: ProcessItem): number | undefined {
+  const { startedAt, finishedAt } = item.block
+  if (startedAt === undefined || finishedAt === undefined || finishedAt < startedAt) return undefined
+  return finishedAt - startedAt
 }
 
 /** Elapsed wall time of a finished group, or undefined while it has no span. */

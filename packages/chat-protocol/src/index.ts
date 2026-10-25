@@ -10,6 +10,10 @@ export type ChatRole = 'user' | 'assistant' | 'tool'
 export interface TextBlock {
   type: 'text'
   text: string
+  /** When the first delta of this paragraph arrived (epoch ms). */
+  startedAt?: number
+  /** When the paragraph stopped growing. */
+  finishedAt?: number
 }
 
 /** Provider-reported chain of thought, shown folded above the answer. */

@@ -78,9 +78,17 @@ export class ChatService extends Service {
       const session = this.ensure(id)
       const message = session.messages.find(item => item.id === messageId)
       if (!message) return
+      const now = Date.now()
+      // Prose starting means the thought that preceded it is over: stamp it
+      // now instead of waiting for the step to settle, otherwise the row keeps
+      // reading "思考中" while the answer is already streaming.
+      closeReasoning(message.blocks, now)
       const last = message.blocks.at(-1)
-      if (!last || last.type !== 'text') message.blocks.push({ type: 'text', text: delta })
-      else last.text += delta
+      if (!last || last.type !== 'text') message.blocks.push({ type: 'text', text: delta, startedAt: now })
+      else {
+        last.text += delta
+        last.startedAt ??= now
+      }
       this.ctx.emit('chat/event', { type: 'message-delta', sessionId: id, messageId, delta })
     })
 
@@ -89,9 +97,14 @@ export class ChatService extends Service {
       const session = this.ensure(id)
       const message = session.messages.find(item => item.id === messageId)
       if (!message) return
+      const now = Date.now()
       const last = message.blocks.at(-1)
-      if (!last || last.type !== 'reasoning') message.blocks.push({ type: 'reasoning', text: delta })
-      else last.text += delta
+      if (!last || last.type !== 'reasoning') {
+        message.blocks.push({ type: 'reasoning', text: delta, startedAt: now })
+      } else {
+        last.text += delta
+        last.startedAt ??= now
+      }
       this.ctx.emit('chat/event', { type: 'message-reasoning', sessionId: id, messageId, delta })
     })
 
@@ -356,8 +369,11 @@ export class ChatService extends Service {
       }
     } else if (event.type === 'message/assistant') {
       session.stats = foldStats(session.stats, event.data)
-      const blocks = blocksOf(event.data.parts as ContentPart[], event.data.timing, event.ts)
       const existing = session.messages.find(message => message.id === event.data.id)
+      const blocks = blocksOf(event.data.parts as ContentPart[], event.data.timing, event.ts)
+      // The live stream already stamped when thinking ended; the settled step
+      // only knows when the whole step ended, so keep the earlier reading.
+      mergeTiming(blocks, existing?.blocks ?? [])
       if (existing) {
         existing.blocks = blocks
         existing.status = 'done'
@@ -437,6 +453,32 @@ export class ChatService extends Service {
     if (meta) session.updatedAt = meta.updatedAt
     this.ctx.emit('chat/event', { type: 'session-updated', session })
   }
+}
+
+/** Stamp the trailing thought block as finished, if it is still open. */
+function closeReasoning(blocks: ChatBlock[], at: number) {
+  const last = blocks.at(-1)
+  if (last?.type !== 'reasoning') return
+  last.finishedAt ??= at
+}
+
+/** Keep the earliest known timestamp of two blocks of the same kind. */
+function keepEarlier(current: number | undefined, fallback: number | undefined) {
+  if (current === undefined) return fallback
+  if (fallback === undefined) return current
+  return Math.min(current, fallback)
+}
+
+/** Fold live-stream timestamps into the settled blocks, which lack them. */
+function mergeTiming(blocks: ChatBlock[], previous: ChatBlock[]) {
+  blocks.forEach((block, index) => {
+    const before = previous[index]
+    if (!before || before.type !== block.type) return
+    if (block.type !== 'text' && block.type !== 'reasoning' && block.type !== 'tool') return
+    if (before.type !== 'text' && before.type !== 'reasoning' && before.type !== 'tool') return
+    block.startedAt = keepEarlier(block.startedAt, before.startedAt)
+    block.finishedAt = keepEarlier(block.finishedAt, before.finishedAt)
+  })
 }
 
 /** One step's persisted billing and timing, as written by the agent. */

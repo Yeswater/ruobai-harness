@@ -65,19 +65,28 @@ describe('transcript plan', () => {
 })
 
 describe('process group state', () => {
-  it('is running while a call has no result', () => {
-    // No finishedAt and no output: still in flight.
-    expect(isGroupRunning([{
-      kind: 'tool', key: 'a', block: call('bash', { output: '', finishedAt: undefined }),
-    }])).toBe(true)
-    expect(isGroupRunning([{ kind: 'tool', key: 'a', block: call('bash') }])).toBe(false)
-    expect(isGroupRunning([{ kind: 'reasoning', key: 'b', block: thought('想') as never }])).toBe(true)
+  it('marks only unsettled rows as pending', () => {
+    const plan = buildPlan([
+      message(
+        'assistant',
+        [thought('先看看', { startedAt: 0 }), call('bash', { output: '', finishedAt: undefined })],
+        'streaming',
+      ),
+    ])
+    const group = plan[0]
+    expect(group?.kind === 'process' && group.items.map(item => item.pending)).toEqual([true, true])
+    expect(group && isGroupRunning(group.kind === 'process' ? group.items : [])).toBe(true)
   })
 
-  it('treats an empty result as finished when the timestamp says so', () => {
-    expect(isGroupRunning([{
-      kind: 'tool', key: 'a', block: call('bash', { output: '', finishedAt: 2_000 }),
-    }])).toBe(false)
+  it('never leaves a finished step pending, even without timestamps', () => {
+    // The reported bug: a settled message whose log has no finishedAt used to
+    // render every thought row as "思考中" forever.
+    const plan = buildPlan([
+      message('assistant', [thought('想完了'), call('bash', { finishedAt: undefined })]),
+    ])
+    const group = plan[0]
+    expect(group?.kind === 'process' && group.items.map(item => item.pending)).toEqual([false, false])
+    expect(group && isGroupRunning(group.kind === 'process' ? group.items : [])).toBe(false)
   })
 
   it('spans the earliest start to the latest end', () => {

@@ -86,6 +86,39 @@ describe('chat bridge', () => {
     expect(deltas.length).toBeGreaterThan(0)
   })
 
+  it('closes the thought as soon as prose starts streaming', async () => {
+    const ctx = await setup()
+    const session = ctx.chat.create('reasoning-timing')
+    // Capture the projection while the step is still live: this is the state
+    // that used to read "思考中" until the whole turn ended.
+    const live = new Promise<ChatSession>((resolve) => {
+      ctx.on('chat/event', (event) => {
+        if (event.type === 'message-delta') resolve(ctx.chat.get(session.id)!)
+      })
+    })
+    const done = nextDone(ctx)
+
+    ctx.chat.send(session.id, '看一下文件')
+    const midTurn = await live
+    const reasoning = midTurn.messages
+      .flatMap(message => message.blocks)
+      .find(block => block.type === 'reasoning')
+    expect(reasoning?.type).toBe('reasoning')
+    if (reasoning?.type === 'reasoning') {
+      expect(reasoning.startedAt).toBeTypeOf('number')
+      expect(reasoning.finishedAt).toBeTypeOf('number')
+    }
+
+    // And the settled step keeps that earlier boundary instead of widening it.
+    const final = await done
+    const settled = final.messages
+      .flatMap(message => message.blocks)
+      .find(block => block.type === 'reasoning')
+    if (settled?.type === 'reasoning' && reasoning?.type === 'reasoning') {
+      expect(settled.finishedAt).toBe(reasoning.finishedAt)
+    }
+  })
+
   it('stops a running turn', async () => {
     const ctx = await setup(15)
     const session = ctx.chat.create('stop')

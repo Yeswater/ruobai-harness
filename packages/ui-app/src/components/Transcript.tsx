@@ -6,9 +6,9 @@ import { BrainIcon, CheckIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Ic
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
-import { describeTool, isRunning as isToolRunning, toolDetail } from '../tool-summary.ts'
+import { toolDetail } from '../tool-summary.ts'
 import {
-  buildPlan, groupSummary, isGroupRunning, type ProcessItem,
+  buildPlan, formatDuration, groupSummary, isGroupRunning, itemDuration, type ProcessItem,
 } from '../transcript-model.ts'
 
 interface TranscriptProps {
@@ -217,8 +217,8 @@ function ProcessGroup({ items, streaming }: { items: ProcessItem[]; streaming: b
         ? (
           <div className="process-body">
             {items.map(item => item.kind === 'reasoning'
-              ? <ThoughtRow key={item.key} block={item.block} />
-              : <ToolRow key={item.key} block={item.block} />)}
+              ? <ThoughtRow key={item.key} block={item.block} pending={item.pending} />
+              : <ToolRow key={item.key} block={item.block} pending={item.pending} />)}
           </div>
         )
         : null}
@@ -226,10 +226,12 @@ function ProcessGroup({ items, streaming }: { items: ProcessItem[]; streaming: b
   )
 }
 
-function duration(block: { startedAt?: number; finishedAt?: number }) {
-  if (block.startedAt === undefined || block.finishedAt === undefined) return ''
-  const seconds = Math.round((block.finishedAt - block.startedAt) / 1000)
-  return seconds >= 1 ? `${seconds}s` : ''
+/** Row-level elapsed label: `1.2s`, `12s`, `1m30s`. */
+function durationLabel(ms: number | undefined) {
+  if (ms === undefined || ms < 1000) return ''
+  const seconds = ms / 1000
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  return formatDuration(ms)
 }
 
 function firstLine(text: string, limit = 110) {
@@ -237,10 +239,9 @@ function firstLine(text: string, limit = 110) {
   return line.length > limit ? `${line.slice(0, limit - 1)}…` : line
 }
 
-function ThoughtRow({ block }: { block: ReasoningBlock }) {
+function ThoughtRow({ block, pending }: { block: ReasoningBlock; pending: boolean }) {
   const [open, setOpen] = useState(false)
-  const live = block.finishedAt === undefined
-  const elapsed = duration(block)
+  const elapsed = durationLabel(itemDuration({ kind: 'reasoning', key: '', block, pending }))
 
   return (
     <div className={`process-row ${open ? 'expanded' : ''}`}>
@@ -254,7 +255,7 @@ function ThoughtRow({ block }: { block: ReasoningBlock }) {
         <span className="process-row-label">思考</span>
         <span className="process-row-sep">·</span>
         <span className="process-row-text">{open ? '' : firstLine(block.text)}</span>
-        {live ? <span className="process-row-state">思考中</span> : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
+        {pending ? <span className="process-row-state">思考中</span> : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
       </button>
       {open
         ? <div className="process-row-body prose">{block.text}</div>
@@ -263,11 +264,10 @@ function ThoughtRow({ block }: { block: ReasoningBlock }) {
   )
 }
 
-function ToolRow({ block }: { block: ToolBlock }) {
+function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
   const [open, setOpen] = useState(false)
   const detail = toolDetail(block)
-  const running = isToolRunning(block)
-  const elapsed = running ? '' : duration(block)
+  const elapsed = durationLabel(itemDuration({ kind: 'tool', key: '', block, pending }))
 
   return (
     <div className={`process-row ${open ? 'expanded' : ''} ${block.isError ? 'failed' : ''}`}>
@@ -281,7 +281,7 @@ function ToolRow({ block }: { block: ToolBlock }) {
         <span className="process-row-label">{detail.row}</span>
         {detail.summary ? <span className="process-row-sep">·</span> : null}
         <span className="process-row-text">{detail.summary}</span>
-        {running
+        {pending
           ? <span className="process-row-state">运行中</span>
           : block.isError
             ? <span className="process-row-state failed">失败</span>
@@ -293,8 +293,7 @@ function ToolRow({ block }: { block: ToolBlock }) {
             {detail.command
               ? <pre className="tool-command">$ {detail.command}</pre>
               : detail.path ? <div className="tool-path">{detail.path}</div> : null}
-            <pre className="tool-output">{block.output || (block.isError ? 'failed' : 'running…')}</pre>
-            <div className="process-row-hint">{describeTool(block)}</div>
+            <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
           </div>
         )
         : null}
