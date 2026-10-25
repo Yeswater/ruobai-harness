@@ -9,7 +9,10 @@ import { renderOutput, scrubbedEnv, type ShellRunResult, type ShellRunSpec } fro
 import type { Exemption } from '@ruobai/sandbox'
 
 export interface Config {
-  /** `auto` escalates relaxable denials; `never` only reports them. */
+  /**
+   * Default escalation mode. A session can override it from the status panel;
+   * `never` still reports denials to the model, it only skips the prompt.
+   */
   escalate?: 'auto' | 'never'
 }
 
@@ -81,8 +84,10 @@ export default class SandboxedShell {
         policy,
         // Sandboxed commands get the same scrubbed environment as direct ones:
         // Seatbelt does not restrict `env`, so the harness token would
-        // otherwise be readable via `echo $RBU_TOKEN`.
-        env: scrubbedEnv(),
+        // otherwise be readable via `echo $RBU_TOKEN`. The marker lets a
+        // confined process know it cannot, for example, signal its own process
+        // group — that permission belongs to the harness, not to the sandbox.
+        env: { ...scrubbedEnv(), RBU_SANDBOX_ACTIVE: '1' },
         timeoutMs: spec.timeoutMs,
         maxOutputBytes: spec.maxOutputBytes,
         signal: spec.signal,
@@ -127,7 +132,10 @@ export default class SandboxedShell {
         // this block keeps the model from retrying the same path forever.
         const denial = first.denials[0]
         const escalation = ctx.get('escalation', false) as EscalationService | undefined
-        if (escalate === 'never' || !escalation) {
+        // The session switch lives on the escalation service, so the panel and
+        // the executor can never disagree about whether escalation is on.
+        const mode = escalation?.modeFor(spec.sessionId) ?? escalate
+        if (mode === 'never' || !escalation) {
           return {
             ...base,
             content: `${base.content}\n${renderDenials(first.denials)}`,

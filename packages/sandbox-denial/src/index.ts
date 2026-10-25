@@ -53,6 +53,8 @@ export interface Config {
   repeatThreshold?: number
   /** How long raw native records are kept for attribution. */
   logWindowMs?: number
+  /** How many denials to keep for the status panel. Defaults to 50. */
+  historyLimit?: number
 }
 
 const NETWORK_TOOLS = /^(curl|wget|nc|ncat|telnet|ssh|scp|sftp|ping|dig|host|nslookup)$/
@@ -178,9 +180,12 @@ export class DenialService extends Service {
 
   private readonly fingerprints = new Map<string, { count: number; firstAt: number; generation: number }>()
   private readonly records: Array<RawDenialRecord & { generation: number }> = []
+  /** Bounded history for the UI. Kept separate from `records`, whose TTL is
+   *  tuned for attribution (seconds), not for display (minutes). */
+  private readonly history: Denial[] = []
   private generation = 0
   private sweep: ReturnType<typeof setInterval> | undefined
-  private readonly config: Required<Config>
+  private readonly config: Required<Config> & { historyLimit: number }
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'denial')
@@ -188,6 +193,7 @@ export class DenialService extends Service {
       repeatWindowMs: config.repeatWindowMs ?? 300_000,
       repeatThreshold: config.repeatThreshold ?? 2,
       logWindowMs: config.logWindowMs ?? 15_000,
+      historyLimit: config.historyLimit ?? 50,
     }
     ctx.effect(() => {
       this.sweep = setInterval(() => this.evict(), Math.min(this.config.repeatWindowMs, 60_000))
@@ -199,6 +205,7 @@ export class DenialService extends Service {
         // inheriting stale repeat counters (which would reject escalations).
         this.fingerprints.clear()
         this.records.length = 0
+        this.history.length = 0
         this.generation++
       }
     }, 'sandbox-denial.dispose')
@@ -302,6 +309,7 @@ export class DenialService extends Service {
 
     for (const denial of denials) {
       const entry = this.record(denial.fingerprint)
+      this.pushHistory(denial)
       this.ctx.emit('sandbox/denied', denial)
       if (denial.repeated >= this.config.repeatThreshold) {
         this.ctx.emit('sandbox/denial-repeated', denial)
@@ -316,10 +324,29 @@ export class DenialService extends Service {
     return Boolean(entry && entry.count >= this.config.repeatThreshold)
   }
 
+  /**
+   * Most recent denials, newest first.
+   *
+   * Read-only projection for the status panel: it answers "what did the
+   * sandbox actually block", which is the question a user has when a command
+   * fails for reasons the model cannot explain.
+   */
+  recent(limit = this.config.historyLimit): Denial[] {
+    return this.history.slice(-Math.max(1, limit)).reverse()
+  }
+
+  /** Counts per kind, for the summary line. */
+  counts(): Record<string, number> {
+    const out: Record<string, number> = {}
+    for (const denial of this.history) out[denial.kind] = (out[denial.kind] ?? 0) + 1
+    return out
+  }
+
   /** Test/diagnostic hook: forget all repeat counters. */
   reset(): void {
     this.fingerprints.clear()
     this.records.length = 0
+    this.history.length = 0
     this.generation++
   }
 
@@ -373,6 +400,14 @@ export class DenialService extends Service {
       return policy?.guardFor(target, access)
     } catch {
       return undefined
+    }
+  }
+
+  /** Appends to the display history, dropping the oldest beyond the limit. */
+  private pushHistory(denial: Denial) {
+    this.history.push(denial)
+    if (this.history.length > this.config.historyLimit) {
+      this.history.splice(0, this.history.length - this.config.historyLimit)
     }
   }
 

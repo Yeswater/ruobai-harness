@@ -128,3 +128,51 @@ Seatbelt 只看得到子进程，`tool-fs` 全部运行在宿主进程内。之�
   - `curl 127.0.0.1:4310` → exit 7，`network-outbound`，仅诊断、不升级。
 
 **结论：M1 的沙箱组合在真实 Seatbelt 下可用，工具链（git / tsc / vitest / npx）不再被沙箱切断。**
+
+### F.8 A28：网络过滤器只接受 `*` / `localhost`（A26 的“解析成 IP”修法本身不可用）
+
+重启后 registry 仍不可达。原判断是“域名规则永不匹配”，实测比这更严重——以下四种写法**都会让 `sandbox-exec` 在应用 profile 时直接拒绝**：
+
+```
+(remote ip "registry.npmmirror.com:443")
+(remote ip "122.190.12.50:443")
+(remote ip "127.0.0.1:443")
+(remote tcp "122.190.12.50:443")
+```
+
+```
+sandbox-exec: host must be * or localhost in network address
+/dev/fd/3:160:26: (remote ip "122.190.12.50:443")     # exit 65
+```
+
+也就是说，把域名解析成 A 记录不仅没有修好，反而让**每一条命令都起不来**。只有 `*` 和 `localhost` 能被接受：
+
+| 规则 | 结果 |
+|---|---|
+| `(remote ip "*:443")` / `(remote tcp "*:443")` | ✅ 应用成功；`curl https://…` 通，`:80` 被拒 |
+| `(remote ip "localhost:443")` | ✅ 应用成功 |
+| 任意域名 / 任意 IP | ❌ `host must be * or localhost`，exit 65 |
+
+另外，**沙箱内的 DNS 是独立的一次 `network-outbound`**：解析走 `/private/var/run/mDNSResponder` 这个 unix socket。只放行 `*:443` 时 `curl https://example.com` 仍然 exit 6（无法解析）；补上
+
+```
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+```
+
+后才返回 200。
+
+修复：
+
+1. 删除 `resolveNetRules()` / `dns.resolve4`（它解决的是不存在的“匹配”问题）；
+2. `compileProfile` 只接受 `*` 与 `localhost`；其余条目产出 warning 并**跳过**（fail-closed、但 profile 仍可运行），全部被跳过时显式 `(deny network*)`；
+3. 只要有任意 TCP 规则生效，就同时放行 mDNSResponder 的 unix socket，否则域名解析必然失败；
+4. `cordis.yml` 用 `host: '*'` + `port: 443`：这是这台 macOS 上**能表达的最窄授权**（按端口而非按主机）。注释里写明原因，依赖装完后改回 `deny`。
+
+验证（真实 Seatbelt）：
+
+- `curl https://example.com/` → `200`，exit 0；
+- `curl http://example.com/` → exit 7，`network-outbound` 拒绝（端口 80 未被授权）；
+- `echo clean` → 0 denial；
+- `compile.spec.ts` 24 例覆盖：域名/IP 被跳过并告警、`*`/`localhost` 生效、mDNS socket 随之生成。
+
+教训：**先测“这条规则能不能被这台 OS 应用”，再谈它匹配什么。** 一个自检只跑 `echo` 的 sandbox，无法发现网络规则会让整份 profile 失效。

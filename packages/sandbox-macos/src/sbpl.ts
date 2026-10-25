@@ -51,6 +51,20 @@ export function exempted(guard: PathGuard, relax: readonly Exemption[] = []): bo
   )
 }
 
+/**
+ * Whether Seatbelt can enforce an allowlist host.
+ *
+ * Measured on macOS 26.6.2: `remote ip`/`remote tcp` accept **only** `*` or
+ * `localhost`. Any other host — a domain or a numeric address — makes
+ * `sandbox-exec` reject the whole profile at apply time with
+ * `host must be * or localhost in network address` (exit 65), so the command
+ * never starts. Per-host allowlisting therefore cannot be expressed here; the
+ * narrowest usable grant is `*` scoped by port (appendix A28).
+ */
+export function isSupportedNetHost(host: string): boolean {
+  return host === '*' || host === 'localhost'
+}
+
 /** Keeps the first grant per path; read and write lists overlap by design. */
 function dedupeGrants(grants: readonly PathGrant[]): PathGrant[] {
   const seen = new Set<string>()
@@ -241,9 +255,28 @@ export function compileProfile(
   } else {
     const rules: readonly NetRule[] = policy.net.allow
     if (!rules.length) warnings.push('allowlist mode with no rules behaves like deny')
-    const allowed = rules.map(rule => `(allow network-outbound (remote ip ${quote(`${rule.host}:${rule.port ?? 443}`)}))`)
-    if (!allowed.length) lines.push('(deny network*)')
-    else lines.push(...allowed)
+    let enforced = 0
+    for (const rule of rules) {
+      if (!isSupportedNetHost(rule.host)) {
+        // Fail closed: skipping the rule denies the traffic instead of
+        // producing a profile that no command can even run under (A28).
+        warnings.push(
+          `allowlist entry "${rule.host}" cannot be enforced: Seatbelt accepts only "*" or "localhost"; `
+          + 'the rule was skipped (use host "*" with a port to opt into a port-only grant)',
+        )
+        continue
+      }
+      lines.push(`(allow network-outbound (remote tcp ${quote(`${rule.host}:${rule.port ?? 443}`)}))`)
+      enforced += 1
+    }
+    if (enforced) {
+      // Name resolution talks to mDNSResponder over a unix socket, which is a
+      // network-outbound operation of its own. Without it every hostname fails
+      // to resolve even though the TCP rule is present (A28).
+      lines.push(`(allow network-outbound (literal ${quote('/private/var/run/mDNSResponder')}))`)
+    } else {
+      lines.push('(deny network*)')
+    }
   }
 
   lines.push('', ';; control plane')

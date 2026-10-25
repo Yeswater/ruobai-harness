@@ -8,3 +8,4 @@ coverage/
 .claude/settings.local.json
 .sessions/
 .ruobai/
+/.idea/

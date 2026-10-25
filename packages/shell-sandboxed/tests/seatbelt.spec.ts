@@ -21,6 +21,26 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
 })
 
+/**
+ * Whether this process can spawn `sandbox-exec` at all.
+ *
+ * Seatbelt cannot be nested: applying a profile from inside an existing one
+ * fails with `sandbox_apply: Operation not permitted`. This suite therefore
+ * cannot run inside the harness' own sandbox, which is exactly why the
+ * provider's self-check reports `NestedSandboxError` instead of pretending.
+ */
+async function canNestSandboxExec(): Promise<boolean> {
+  const { spawnSync } = await import('node:child_process')
+  const probe = spawnSync('/usr/bin/sandbox-exec', ['-p', '(version 1)(allow default)', '/usr/bin/true'], {
+    stdio: 'pipe',
+    timeout: 5_000,
+  })
+  return probe.status === 0
+}
+
+const nested = await canNestSandboxExec()
+// "skipNested" is only informational: describe.skipIf already carries it.
+
 interface SetupOptions {
   selfCheck?: boolean
   withApproval?: boolean
@@ -56,7 +76,12 @@ async function setup(options: SetupOptions = {}) {
   if (options.withApproval !== false) {
     approval = ctx.plugin(ApprovalService)
     await approval
-    escalation = ctx.plugin(EscalationService, { maxAttempts: 2 })
+    escalation = ctx.plugin(EscalationService, {
+      maxAttempts: 2,
+      // With the service mounted it owns the default; `escalate` is the
+      // executor's fallback for deployments without one.
+      defaultMode: options.escalate ?? 'auto',
+    })
     await escalation
   }
   const sandboxedShell = ctx.plugin(SandboxedShell, { escalate: options.escalate ?? 'auto' })
@@ -94,7 +119,7 @@ function run(ctx: Context, command: string, cwd: string, sessionId = 's1') {
   })
 }
 
-describe.skipIf(!darwin)('seatbelt provider', () => {
+describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
   it('is available after the self-check and reports a profile digest', async () => {
     const { ctx } = await setup()
     const provider = ctx.sandbox.provider('darwin')
@@ -158,7 +183,7 @@ describe.skipIf(!darwin)('seatbelt provider', () => {
   })
 })
 
-describe.skipIf(!darwin)('sandbox → denial → approval → retry', () => {
+describe.skipIf(!darwin || !nested)('sandbox → denial → approval → retry', () => {
   it('escalates a guarded read and retries once after approval', async () => {
     const { ctx, root, seen } = await setup({ selfCheck: false, decide: 'allow' })
     const secretDir = join(root, 'secrets')
@@ -238,7 +263,7 @@ describe.skipIf(!darwin)('sandbox → denial → approval → retry', () => {
   })
 })
 
-describe.skipIf(!darwin)('threat model regressions', () => {
+describe.skipIf(!darwin || !nested)('threat model regressions', () => {
   it('blocks writing the harness settings that hold bypassApprovals', async () => {
     const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
     await mkdir(join(root, '.ruobai'), { recursive: true })
@@ -270,7 +295,7 @@ describe.skipIf(!darwin)('threat model regressions', () => {
   })
 })
 
-describe.skipIf(!darwin)('lifecycle', () => {
+describe.skipIf(!darwin || !nested)('lifecycle', () => {
   it('reclaims the run and leaves no sandbox-exec behind', async () => {
     const { ctx, root } = await setup({ selfCheck: false })
     await run(ctx, 'echo done', root)
@@ -313,7 +338,7 @@ describe.skipIf(!darwin)('lifecycle', () => {
   })
 })
 
-describe.skipIf(!darwin)('toolchain and environment', () => {
+describe.skipIf(!darwin || !nested)('toolchain and environment', () => {
   it('runs a real toolchain command: pipelines, forks and git', async () => {
     const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
     // Before the process-fork fix this failed with
@@ -370,7 +395,7 @@ describe.skipIf(!darwin)('toolchain and environment', () => {
   })
 })
 
-describe.skipIf(!darwin)('hot unload', () => {
+describe.skipIf(!darwin || !nested)('hot unload', () => {
   it('kills the process group before dispose() resolves', async () => {
     const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
     // A long-running command keeps a shell alive inside sandbox-exec.

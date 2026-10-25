@@ -53,8 +53,18 @@
     network:
       # Network is off by default: the harness itself (LLM, MCP, A2A, web) does
       # not go through the shell sandbox, so closing it costs no functionality.
-      mode: deny
-      allow: []
+      #
+      # The only reason this is not `deny` right now is dependency installs:
+      # `pnpm install` fetches tarballs. macOS Seatbelt only accepts `*` or
+      # `localhost` as a network host — a domain or an address literal makes
+      # `sandbox-exec` reject the whole profile (exit 65), so per-host
+      # allowlisting is not expressible here (appendix A28). `*` scoped to 443
+      # is the narrowest grant that works. Set `mode: deny` once dependencies
+      # are installed.
+      mode: allowlist
+      allow:
+        - host: '*'
+          port: 443
     limits:
       timeoutMs: 120000
       maxOutputBytes: 32768
@@ -92,6 +102,11 @@
   name: '@ruobai/shell-sandboxed'
   config:
     escalate: auto
+
+# Status panel: sandbox state, guard list, denial timeline, session switch.
+# Served over HTTP by the harness process (never a file the agent can write).
+- id: sandbox-web
+  name: '@ruobai/sandbox-web'
 
 # Tool registry and the workspace tools (writes and shell require approval).
 - id: tools

@@ -56,6 +56,7 @@
     "@ruobai/sandbox-macos": "workspace:*",
     "@ruobai/sandbox-native-log": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/sandbox-web": "workspace:*",
     "@ruobai/session": "workspace:*",
     "@ruobai/session-jsonl": "workspace:*",
     "@ruobai/settings": "workspace:*",

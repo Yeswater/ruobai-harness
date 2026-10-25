@@ -13,6 +13,12 @@ export interface Config {
   retrySafeCommands?: string[]
   /** Total attempts per run, including the first. */
   maxAttempts?: number
+  /**
+   * Mode for sessions without a switch. The executor's own default only applies
+   * when no escalation service is mounted; with one, this is the single source
+   * of truth the status panel and the executor both read.
+   */
+  defaultMode?: 'auto' | 'never'
 }
 
 export interface EscalationPlan {
@@ -65,6 +71,14 @@ export class EscalationService extends Service {
   private readonly config: Required<Config>
   /** `always` grants: per session, in memory only, dropped with the fiber. */
   private readonly grants = new Map<string, { exemption?: Exemption; retry: 'safe' | 'unsafe' }>()
+  /**
+   * Per-session escalation switch, set from the status panel.
+   *
+   * Lives in the plugin's effect scope (cleared on unload) because a module
+   * level map would survive a hot reload and silently keep a weakened
+   * sandbox — the drift documented in §5.4.
+   */
+  private readonly modes = new Map<string, 'auto' | 'never'>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'escalation')
@@ -73,11 +87,13 @@ export class EscalationService extends Service {
       neverRelaxable: config.neverRelaxable ?? [...ABSOLUTELY_NOT_RELAXABLE],
       retrySafeCommands: config.retrySafeCommands ?? ['cat', 'ls', 'head', 'tail', 'wc', 'grep', 'git', 'node'],
       maxAttempts: config.maxAttempts ?? 2,
+      defaultMode: config.defaultMode ?? 'auto',
     }
     ctx.effect(() => () => {
       // Session grants must not survive a reload, otherwise a reload silently
       // widens the boundary.
       this.grants.clear()
+      this.modes.clear()
     }, 'sandbox-escalation.dispose')
   }
 
@@ -169,6 +185,73 @@ export class EscalationService extends Service {
   /** Number of session grants, for tests and the UI. */
   grantCount(): number {
     return this.grants.size
+  }
+
+  /**
+   * Session grants, newest first.
+   *
+   * These are in-memory only and die with the fiber, so the panel must show
+   * them as "this session" rather than as saved policy.
+   */
+  listGrants(): Array<{ key: string; exemption?: Exemption; retry: 'safe' | 'unsafe' }> {
+    return [...this.grants.entries()]
+      .map(([key, grant]) => ({ key, exemption: grant.exemption, retry: grant.retry }))
+      .reverse()
+  }
+
+  /** Drops every session grant; used by the panel's "revoke" action. */
+  clearGrants(): number {
+    const count = this.grants.size
+    this.grants.clear()
+    return count
+  }
+
+  /**
+   * Effective escalation mode for a session.
+   *
+   * `never` still reports denials to the model — it only stops them from
+   * turning into approval prompts. There is deliberately no third mode that
+   * disables the sandbox itself.
+   */
+  modeFor(sessionId?: string): 'auto' | 'never' {
+    if (!sessionId) return this.config.defaultMode
+    return this.modes.get(sessionId) ?? this.config.defaultMode
+  }
+
+  /** Sets the per-session switch; returns the previous value. */
+  setMode(sessionId: string, mode: 'auto' | 'never'): 'auto' | 'never' {
+    const previous = this.modeFor(sessionId)
+    this.modes.set(sessionId, mode)
+    return previous
+  }
+
+  /** Number of live switches, for tests. */
+  activeModes(): number {
+    return this.modes.size
+  }
+
+  /** Whether a kind can ever be relaxed, for the panel's legend. */
+  relaxability(): Array<{ kind: DenialKind; relaxable: boolean; reason: string }> {
+    const kinds: DenialKind[] = [
+      'fs-read-guarded',
+      'fs-write-guarded',
+      'fs-write-outside',
+      'network-outbound',
+      'process-exec',
+      'process-control',
+      'mach-lookup',
+      'appleevent',
+      'unknown',
+    ]
+    return kinds.map((kind) => {
+      if (ABSOLUTELY_NOT_RELAXABLE.includes(kind) || this.config.neverRelaxable.includes(kind)) {
+        return { kind, relaxable: false, reason: '永不放宽：需要独立的网络/进程授权流程' }
+      }
+      if (!this.config.relaxable.includes(kind)) {
+        return { kind, relaxable: false, reason: '不在可放宽白名单内' }
+      }
+      return { kind, relaxable: true, reason: '可单次放宽' }
+    })
   }
 
   private grantKey(denial: Denial) {

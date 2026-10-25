@@ -362,14 +362,41 @@ describe('ui server', () => {
     const session = ctx.chat.create(undefined, 'agent')
     const base = ctx.web.url
     const json = { 'Content-Type': 'application/json' }
-    const send = (text: string) => fetch(`${base}/api/sessions/${session.id}/messages`, {
-      method: 'POST',
-      headers: json,
-      body: JSON.stringify({ text }),
-    })
-    const settle = async () => {
-      for (let attempt = 0; attempt < 200; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 20))
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    const send = async (text: string) => {
+      // The turn's `finally` and the chat projection do not settle in the same
+      // tick, so a second prompt can still hit "session is already running".
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const response = await fetch(`${base}/api/sessions/${session.id}/messages`, {
+          method: 'POST',
+          headers: json,
+          body: JSON.stringify({ text }),
+        })
+        if (response.ok) return
+        const body = await response.json().catch(() => ({})) as { error?: string }
+        if (!String(body.error ?? '').includes('already running')) {
+          throw new Error(`send failed: ${response.status} ${body.error ?? ''}`)
+        }
+        await sleep(50)
+      }
+      throw new Error('session stayed busy')
+    }
+    // `send` resolves before the turn actually starts streaming, so waiting on
+    // `streaming === false` can return too early under parallel test load. Wait
+    // for the log itself to show both turns and both snapshots.
+    const waitFor = async (ready: (events: Array<{ type: string }>) => boolean) => {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        await sleep(20)
+        const body = await (await fetch(`${base}/api/sessions/${session.id}/trajectory`)).json() as {
+          events: Array<{ type: string; data?: Record<string, unknown> }>
+        }
+        if (ready(body.events)) return body.events
+      }
+      throw new Error('expected turns never reached the session log')
+    }
+    const waitIdle = async () => {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        await sleep(20)
         const body = await (await fetch(`${base}/api/sessions/${session.id}`)).json() as { session: ChatSession }
         if (!body.session.streaming) return
       }
@@ -377,13 +404,15 @@ describe('ui server', () => {
     }
 
     await send('第一轮')
-    await settle()
+    await waitFor(events => events.filter(event => event.type === 'context/snapshot').length === 1)
+    // The snapshot is written before streaming, so wait for the turn to end
+    // before asking for the next one.
+    await waitIdle()
     await send('第二轮，继续')
-    await settle()
-
-    const trajectory = await (await fetch(`${base}/api/sessions/${session.id}/trajectory`)).json() as {
-      events: Array<{ type: string; data?: Record<string, unknown> }>
-    }
+    const events = await waitFor(list =>
+      list.filter(event => event.type === 'message/user').length === 2
+      && list.filter(event => event.type === 'context/snapshot').length === 2)
+    const trajectory = { events }
     const turns = trajectory.events.filter(event => event.type === 'message/user')
     expect(turns.map(event => event.data?.text)).toEqual(['第一轮', '第二轮，继续'])
     const snapshots = trajectory.events.filter(event => event.type === 'context/snapshot')

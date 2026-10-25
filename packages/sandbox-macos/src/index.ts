@@ -236,7 +236,7 @@ export class SeatbeltProvider implements SandboxProvider {
     }
   }
 
-  compile(policy: SandboxPolicy, relax: readonly Exemption[] = []): Promise<PreparedPolicy> {
+  async compile(policy: SandboxPolicy, relax: readonly Exemption[] = []): Promise<PreparedPolicy> {
     const key = `${policy.version}:${JSON.stringify(relax ?? [])}`
     const cached = this.cache.get(key)
     if (cached && cached.digest) return Promise.resolve(cached)
@@ -272,14 +272,13 @@ export class SeatbeltProvider implements SandboxProvider {
       return entry
     })
     const compiled = compileProfile(resolvePolicyPaths(policy), resolvedRelax, options)
-    for (const warning of compiled.warnings) {
-      // Warnings are diagnostic only; they never relax the profile.
-      void warning
-    }
-    const prepared: PreparedPolicy = { text: compiled.text, digest: compiled.digest, warnings: compiled.warnings }
+    // Warnings are diagnostic only; they never relax the profile. They ride
+    // along on the prepared policy so the caller can surface them.
+    const warnings = [...compiled.warnings]
+    const prepared: PreparedPolicy = { text: compiled.text, digest: compiled.digest, warnings }
     this.cache.set(key, prepared)
     this.lastDigest = prepared.digest
-    return Promise.resolve(prepared)
+    return prepared
   }
 
   async execute(spec: SandboxSpec, prepared: PreparedPolicy): Promise<SandboxRunResult> {

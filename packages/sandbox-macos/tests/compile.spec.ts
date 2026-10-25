@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SandboxPolicy } from '@ruobai/sandbox'
-import { compileProfile, globSource, guardFilter, quote } from '../src/sbpl.ts'
+import { compileProfile, globSource, guardFilter, isSupportedNetHost, quote } from '../src/sbpl.ts'
 
 function policy(overrides: Partial<SandboxPolicy['fs']> = {}, net: SandboxPolicy['net'] = { mode: 'deny', allow: [] }): SandboxPolicy {
   return {
@@ -32,6 +32,19 @@ describe('sbpl quoting', () => {
     expect(source.endsWith('$')).toBe(true)
     expect(new RegExp(source).test('/ws/a/b/.env.local')).toBe(true)
     expect(new RegExp(source).test('/ws/.env')).toBe(false)
+  })
+})
+
+describe('isSupportedNetHost', () => {
+  it('accepts only the wildcard and localhost', () => {
+    expect(isSupportedNetHost('*')).toBe(true)
+    expect(isSupportedNetHost('localhost')).toBe(true)
+  })
+
+  it('rejects hostnames and address literals, which sandbox-exec refuses', () => {
+    // Both abort profile application with exit 65 on macOS 26.6.2 (A28).
+    expect(isSupportedNetHost('registry.npmjs.org')).toBe(false)
+    expect(isSupportedNetHost('104.16.0.1')).toBe(false)
   })
 })
 
@@ -130,10 +143,10 @@ describe('compileProfile', () => {
     expect(occurrences).toBe(3)
   })
 
-  it('denies all networking by default and never allows loopback in allowlist mode', () => {
+  it('denies all networking by default and compiles a port-scoped allowlist', () => {
     expect(compileProfile(policy()).text).toContain('(deny network*)')
-    const allowlist = compileProfile(policy({}, { mode: 'allowlist', allow: [{ host: 'registry.npmjs.org', port: 443 }] }))
-    expect(allowlist.text).toContain('(allow network-outbound (remote ip "registry.npmjs.org:443"))')
+    const allowlist = compileProfile(policy({}, { mode: 'allowlist', allow: [{ host: '*', port: 443 }] }))
+    expect(allowlist.text).toContain('(allow network-outbound (remote tcp "*:443"))')
     expect(allowlist.text).not.toContain('127.0.0.1')
   })
 
@@ -141,6 +154,41 @@ describe('compileProfile', () => {
     const compiled = compileProfile(policy({}, { mode: 'allowlist', allow: [] }))
     expect(compiled.warnings.join(' ')).toMatch(/no rules/)
     expect(compiled.text).toContain('(deny network*)')
+  })
+
+  it('skips an entry Seatbelt cannot enforce instead of breaking every command', () => {
+    // A domain or an address literal makes sandbox-exec reject the whole
+    // profile (`host must be * or localhost`, exit 65), so it is dropped and
+    // the run stays denied rather than unrunnable (A28).
+    const compiled = compileProfile(policy({}, {
+      mode: 'allowlist',
+      allow: [{ host: 'registry.npmjs.org', port: 443 }, { host: '104.16.0.1', port: 443 }],
+    }))
+    expect(compiled.warnings.join(' ')).toContain('cannot be enforced')
+    expect(compiled.text).not.toContain('registry.npmjs.org')
+    expect(compiled.text).not.toContain('104.16.0.1')
+    expect(compiled.text).toContain('(deny network*)')
+    expect(compiled.text).not.toContain('/private/var/run/mDNSResponder')
+  })
+
+  it('allows DNS through mDNSResponder when a network rule is enforced', () => {
+    const compiled = compileProfile(policy({}, {
+      mode: 'allowlist',
+      allow: [{ host: '*', port: 443 }],
+    }))
+    expect(compiled.warnings).toEqual([])
+    expect(compiled.text).toContain('(allow network-outbound (remote tcp "*:443"))')
+    // Name resolution is a unix-socket network operation of its own.
+    expect(compiled.text).toContain('(allow network-outbound (literal "/private/var/run/mDNSResponder"))')
+  })
+
+  it('accepts localhost as an enforceable host', () => {
+    const compiled = compileProfile(policy({}, {
+      mode: 'allowlist',
+      allow: [{ host: 'localhost', port: 8080 }],
+    }))
+    expect(compiled.warnings).toEqual([])
+    expect(compiled.text).toContain('(allow network-outbound (remote tcp "localhost:8080"))')
   })
 
   it('denies automation and process control', () => {

@@ -128,6 +128,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:packages/sandbox-policy
+      '@ruobai/sandbox-web':
+        specifier: workspace:*
+        version: link:packages/sandbox-web
       '@ruobai/session':
         specifier: workspace:*
         version: link:packages/session
@@ -581,10 +584,6 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
-    devDependencies:
-      '@ruobai/sandbox-policy':
-        specifier: workspace:*
-        version: link:../sandbox-policy
 
   packages/sandbox-denial:
     dependencies:
@@ -654,6 +653,34 @@ importers:
       '@ruobai/sandbox':
         specifier: workspace:*
         version: link:../sandbox
+
+  packages/sandbox-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/sandbox-denial':
+        specifier: workspace:*
+        version: link:../sandbox-denial
+      '@ruobai/sandbox-escalation':
+        specifier: workspace:*
+        version: link:../sandbox-escalation
+      '@ruobai/sandbox-policy':
+        specifier: workspace:*
+        version: link:../sandbox-policy
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+    devDependencies:
+      '@ruobai/sandbox-macos':
+        specifier: workspace:*
+        version: link:../sandbox-macos
+      '@ruobai/shell':
+        specifier: workspace:*
+        version: link:../shell
 
   packages/session:
     dependencies:

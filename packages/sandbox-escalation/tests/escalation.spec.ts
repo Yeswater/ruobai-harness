@@ -25,7 +25,7 @@ function denial(overrides: Partial<Denial> = {}): Denial {
   }
 }
 
-async function setup(root = '/Users/x/ws') {
+async function setup(root = '/Users/x/ws', defaultMode: 'auto' | 'never' = 'auto') {
   const ctx = new Context()
   const approval = ctx.plugin(ApprovalService)
   await approval
@@ -33,7 +33,7 @@ async function setup(root = '/Users/x/ws') {
   await policy
   const denial = ctx.plugin(DenialService)
   await denial
-  const escalation = ctx.plugin(EscalationService, {})
+  const escalation = ctx.plugin(EscalationService, { defaultMode })
   await escalation
   return {
     ctx,
@@ -96,6 +96,15 @@ describe('escalation exemptions', () => {
     const { escalation, dispose } = await setup()
     const plan = escalation.plan(denial({ confidence: 'low', command: 'cat notes.txt' }), 1)
     expect(plan.retry).toBe('unsafe')
+    await dispose()
+  })
+
+  it('uses its configured default mode for sessions without a switch', async () => {
+    const { escalation, dispose } = await setup('/Users/x/ws', 'never')
+    expect(escalation.modeFor('s1')).toBe('never')
+    expect(escalation.modeFor()).toBe('never')
+    expect(escalation.setMode('s1', 'auto')).toBe('never')
+    expect(escalation.modeFor('s1')).toBe('auto')
     await dispose()
   })
 

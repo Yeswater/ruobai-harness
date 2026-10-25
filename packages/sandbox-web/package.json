@@ -1,0 +1,24 @@
+{
+  "name": "@ruobai/sandbox-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "rbu": {
+    "client": "./client/index.jsx"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/sandbox": "workspace:*",
+    "@ruobai/sandbox-denial": "workspace:*",
+    "@ruobai/sandbox-escalation": "workspace:*",
+    "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/web-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@ruobai/sandbox-macos": "workspace:*",
+    "@ruobai/shell": "workspace:*"
+  }
+}
