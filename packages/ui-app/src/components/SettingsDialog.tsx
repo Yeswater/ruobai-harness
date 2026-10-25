@@ -9,6 +9,7 @@ import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
 import { PermissionsSettings } from './PermissionsSettings.tsx'
 import { ProtocolsSettings } from './ProtocolsSettings.tsx'
 import { Select } from './Select.tsx'
+import { Slot } from './Slot.tsx'
 import { TokenAmountInput } from './TokenAmountInput.tsx'
 
 interface SettingsDialogProps {
@@ -21,7 +22,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'protocols'
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols'
 
 const NAV_GROUPS: Array<{
   label: string
@@ -40,6 +41,7 @@ const NAV_GROUPS: Array<{
   {
     label: '这台电脑',
     items: [
+      { id: 'sandbox', label: '沙箱', icon: <MonitorIcon size={15} />, keywords: '沙箱 守卫 拒绝 升级 seatbelt 审批' },
       { id: 'runtime', label: '内置插件', icon: <PuzzleIcon size={15} />, keywords: '插件 服务 地址' },
     ],
   },
@@ -775,6 +777,10 @@ export function SettingsDialog({
           <ProtocolsSettings sessionId={sessionId} />
         ) : tab === 'permissions' ? (
           <PermissionsSettings />
+        ) : tab === 'sandbox' ? (
+          <div className="settings-page-body scroll">
+            <Slot name="settings.sandbox" props={{ sessionId }} />
+          </div>
         ) : (
           <div className="settings-page-body scroll plugins-page">
             <div className="plugin-search">

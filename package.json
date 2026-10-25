@@ -70,6 +70,8 @@
     "@ruobai/tool-fs": "workspace:*",
     "@ruobai/tool-task": "workspace:*",
     "@ruobai/tools": "workspace:*",
+    "@ruobai/trajectory": "workspace:*",
+    "@ruobai/trajectory-web": "workspace:*",
     "@ruobai/ui-server": "workspace:*",
     "@ruobai/web-auth": "workspace:*",
     "@ruobai/web-server": "workspace:*",

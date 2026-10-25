@@ -1,13 +1,55 @@
 /**
  * Sandbox status panel (client half).
  *
- * `React` is injected by the host runtime (classic JSX runtime), so this file
- * uses JSX without importing anything. Mounted into `header.actions`.
- *
- * Read-only except for the per-session escalation switch: policy editing is
- * intentionally absent — a guard or network change is a reviewed file edit,
- * not a click (see docs/sandbox-macos.md §7).
+ * Rendered in two host slots: Settings → 沙箱 (full) and the Context view's
+ * right column (compact). Policy stays read-only; only the per-session
+ * escalation switch is interactive (see docs/sandbox-macos.md §7).
  */
+
+const STYLES = `
+.sandbox-card { display: flex; flex-direction: column; gap: 2px; }
+.sandbox-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sandbox-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.sandbox-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.sandbox-dot.ok { background: var(--ok); }
+.sandbox-card h4 { margin: 12px 0 4px; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.sandbox-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 5px 0; }
+.sandbox-mono { font-family: var(--mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.sandbox-hint { color: var(--faint); font-size: 11px; }
+.sandbox-danger { color: var(--danger); font-size: 11.5px; margin: 6px 0; }
+.sandbox-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; }
+.sandbox-link:hover { text-decoration: underline; }
+.sandbox-btn {
+  height: 24px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.sandbox-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.sandbox-btn:disabled { opacity: .45; cursor: not-allowed; }
+.sandbox-btn-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
+.sandbox-btn-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.sandbox-guards, .sandbox-denials { list-style: none; margin: 4px 0 0; padding: 0; }
+.sandbox-guards li {
+  display: grid; grid-template-columns: 92px 38px minmax(0, 1fr); gap: 8px; align-items: baseline;
+  padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.sandbox-guards li:first-child, .sandbox-denials li:first-child { border-top: 0; }
+.sandbox-guards code { font-family: var(--mono); font-size: 11px; color: var(--text); overflow-wrap: anywhere; }
+.sandbox-guards li > span:nth-child(2) { font-size: 10.5px; color: var(--muted); }
+.sandbox-denials li { padding: 5px 0; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.sandbox-denials code { font-family: var(--mono); font-size: 11px; }
+.sandbox-details > summary { cursor: pointer; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.sandbox-details > summary:hover { color: var(--text); }
+`
+
+function ensureStyles() {
+  if (typeof document === 'undefined') return
+  if (document.getElementById('sandbox-panel-styles')) return
+  const style = document.createElement('style')
+  style.id = 'sandbox-panel-styles'
+  style.textContent = STYLES
+  document.head.appendChild(style)
+}
+ensureStyles()
 
 async function getJson(url) {
   const response = await fetch(url, { headers: { accept: 'application/json' } })
@@ -28,19 +70,19 @@ async function patchJson(url, payload) {
 }
 
 const KIND_LABEL = {
-  'fs-read-guarded': '读守卫文件',
-  'fs-write-guarded': '写守卫文件',
+  'fs-read-guarded': '读守卫',
+  'fs-write-guarded': '写守卫',
   'fs-write-outside': '越界写',
-  'network-outbound': '出站网络',
-  'process-exec': '进程执行',
-  'process-control': '进程控制',
-  'mach-lookup': 'mach 服务',
+  'network-outbound': '网络',
+  'process-exec': '执行',
+  'process-control': '进程',
+  'mach-lookup': '服务',
   appleevent: '自动化',
-  unknown: '未识别',
+  unknown: '未知',
 }
 
-function shortDigest(digest) {
-  return digest ? `${digest.slice(0, 10)}…` : 'n/a'
+function shortDigest(value) {
+  return value ? `${String(value).slice(0, 8)}…` : '—'
 }
 
 function relative(ts) {
@@ -50,12 +92,45 @@ function relative(ts) {
   return `${Math.round(seconds / 3600)}h 前`
 }
 
+function GuardList(props) {
+  const { guards, limit } = props
+  const shown = limit ? guards.slice(0, limit) : guards
+  return (
+    <ul className="sandbox-guards">
+      {shown.map((guard) => (
+        <li key={guard.id}>
+          <code>{guard.id}</code>
+          <span>{guard.access === 'read' ? '禁读' : '禁写'}</span>
+          <span className="sandbox-mono">{guard.path}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function DenialList(props) {
+  const { denials } = props
+  if (!denials.length) return <p className="sandbox-hint">暂无</p>
+  return (
+    <ul className="sandbox-denials">
+      {denials.map((entry) => (
+        <li key={entry.id}>
+          <div className="sandbox-line">
+            <code>{KIND_LABEL[entry.kind] || entry.kind}</code>
+            <span className="sandbox-hint">{relative(entry.at)} · {entry.confidence}</span>
+          </div>
+          {entry.target ? <div className="sandbox-mono">{entry.target}</div> : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function SandboxPanel(props) {
   const { useCallback, useEffect, useState } = React
-  // Injected by the host `Slot`; without it the switch has no session to bind to.
-  const sessionId = (props && props.sessionId) || ''
+  const sessionId = props.sessionId || ''
+  const compact = props.variant === 'context'
   const sessionQuery = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
-  const [open, setOpen] = useState(false)
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
 
@@ -95,106 +170,101 @@ function SandboxPanel(props) {
   }, [load])
 
   const active = Boolean(status && status.active)
-  const label = error ? '沙箱 ?' : active ? '沙箱 生效' : status ? '沙箱 未生效' : '沙箱 …'
+  const recent = status ? (compact ? status.denials.recent.slice(0, 3) : status.denials.recent) : []
+  const guardLimit = compact ? 6 : undefined
 
   return (
-    <div className="sandbox-root">
-      <button
-        type="button"
-        className={active ? 'sandbox-chip sandbox-chip-ok' : 'sandbox-chip sandbox-chip-danger'}
-        onClick={() => setOpen(value => !value)}
-        title={status?.provider?.profileDigest ?? ''}
-      >
-        {label}
-        {status ? ` · ${status.guards.length} 守卫 · ${status.denials.total} 拒绝` : ''}
-      </button>
-      {open ? (
-        <div className="sandbox-drawer">
-          <header className="sandbox-drawer-head">
-            <strong>macOS 沙箱</strong>
-            <button type="button" className="sandbox-link" onClick={() => setOpen(false)}>关闭</button>
-          </header>
-          {error ? <p className="sandbox-danger">状态不可用：{error}</p> : null}
-          {status ? (
-            <>
-              <p className="sandbox-line">
-                <code>{status.provider?.id ?? 'no provider'}</code>
-                <span className="sandbox-mono" title={status.provider?.profileDigest}>
-                  profile {shortDigest(status.provider?.profileDigest)}
-                </span>
-                <span>网络 {status.policy.network.mode}</span>
-              </p>
-              {!active ? (
+    <div className="sandbox-card">
+      {error ? <p className="sandbox-danger">状态不可用：{error}</p> : null}
+      {!status ? <p className="sandbox-hint">读取中…</p> : null}
+      {status
+        ? (
+          <>
+            <div className="sandbox-card-head">
+              <span className="sandbox-status">
+                <span className={active ? 'sandbox-dot ok' : 'sandbox-dot'} />
+                {active ? '生效' : '未生效'}
+                {' · '}{status.guards.length} 守卫
+                {' · '}{status.denials.total} 拒绝
+              </span>
+              <span className="sandbox-mono" title={status.provider?.profileDigest}>
+                {status.provider?.id ?? 'no provider'}
+              </span>
+            </div>
+            <p className="sandbox-line">
+              <span className="sandbox-mono">profile {shortDigest(status.provider?.profileDigest)}</span>
+              <span>网络 {status.policy.network.mode}</span>
+            </p>
+            {!active
+              ? (
                 <p className="sandbox-danger">
                   没有可用后端，命令会被拒绝（fail-closed）。请检查 @ruobai/sandbox-macos。
                 </p>
-              ) : null}
+              )
+              : null}
 
-              <h4>本会话升级策略</h4>
-              <p className="sandbox-line">
-                <button
-                  type="button"
-                  className={status.escalation.mode === 'auto' ? 'sandbox-btn sandbox-btn-on' : 'sandbox-btn'}
-                  disabled={!sessionId}
-                  onClick={() => setMode('auto')}
-                >升级审批</button>
-                <button
-                  type="button"
-                  className={status.escalation.mode === 'never' ? 'sandbox-btn sandbox-btn-warn' : 'sandbox-btn'}
-                  disabled={!sessionId}
-                  onClick={() => setMode('never')}
-                >只报告</button>
-                <span className="sandbox-hint">
-                  {sessionId ? '仅本会话，不写设置；沙箱本身始终生效' : '打开一个会话后可按会话切换'}
-                </span>
-              </p>
+            <h4>本会话升级策略</h4>
+            <p className="sandbox-line">
+              <button
+                type="button"
+                className={status.escalation.mode === 'auto' ? 'sandbox-btn sandbox-btn-on' : 'sandbox-btn'}
+                disabled={!sessionId}
+                onClick={() => setMode('auto')}
+              >升级审批</button>
+              <button
+                type="button"
+                className={status.escalation.mode === 'never' ? 'sandbox-btn sandbox-btn-warn' : 'sandbox-btn'}
+                disabled={!sessionId}
+                onClick={() => setMode('never')}
+              >只报告</button>
+              <span className="sandbox-hint">
+                {sessionId ? '仅本会话，不写设置；沙箱本身始终生效' : '打开一个会话后可按会话切换'}
+              </span>
+            </p>
 
-              {status.escalation.sessionGrants.length ? (
+            {status.escalation.sessionGrants.length
+              ? (
                 <p className="sandbox-line">
                   已授权 {status.escalation.sessionGrants.length} 项
                   <button type="button" className="sandbox-link" onClick={revoke}>全部撤销</button>
                 </p>
-              ) : null}
+              )
+              : null}
 
-              <h4>守卫（{status.guards.length}）</h4>
-              <ul className="sandbox-guards">
-                {status.guards.map(guard => (
-                  <li key={guard.id}>
-                    <code>{guard.id}</code>
-                    <span>{guard.access === 'read' ? '禁读' : '禁写'}</span>
-                    <span className="sandbox-mono">{guard.path}</span>
-                  </li>
-                ))}
-              </ul>
+            <h4>守卫（{status.guards.length}）</h4>
+            {compact
+              ? (
+                <details className="sandbox-details">
+                  <summary>展开守卫清单</summary>
+                  <GuardList guards={status.guards} />
+                </details>
+              )
+              : <GuardList guards={status.guards} limit={guardLimit} />}
 
-              <h4>拒绝记录（{status.denials.total}）</h4>
-              {status.denials.recent.length === 0 ? <p className="sandbox-hint">暂无</p> : (
-                <ul className="sandbox-denials">
-                  {status.denials.recent.map(entry => (
-                    <li key={entry.id}>
-                      <div>
-                        <strong>{KIND_LABEL[entry.kind] ?? entry.kind}</strong>
-                        {entry.guard ? <code>{entry.guard}</code> : null}
-                        {entry.repeated > 1 ? <span>×{entry.repeated}</span> : null}
-                        <span className="sandbox-hint">{relative(entry.at)} · {entry.confidence}</span>
-                      </div>
-                      {entry.target ? <div className="sandbox-mono">{entry.target}</div> : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : <p className="sandbox-hint">读取中…</p>}
-        </div>
-      ) : null}
+            <h4>拒绝记录（{status.denials.total}）</h4>
+            <DenialList denials={recent} />
+          </>
+        )
+        : null}
     </div>
   )
 }
 
+function SettingsSandbox(props) {
+  return <SandboxPanel {...props} variant="settings" />
+}
+
+function ContextSandbox(props) {
+  return <SandboxPanel {...props} variant="context" />
+}
+
 export default function register(api) {
-  api.slots.register('header.actions', {
-    id: 'sandbox.chip',
-    order: 20,
-    component: SandboxPanel,
+  api.slots.register('settings.sandbox', {
+    id: 'sandbox.settings',
+    component: SettingsSandbox,
+  })
+  api.slots.register('context.sandbox', {
+    id: 'sandbox.context',
+    component: ContextSandbox,
   })
 }

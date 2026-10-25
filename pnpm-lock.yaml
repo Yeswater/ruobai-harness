@@ -170,6 +170,12 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:packages/tools
+      '@ruobai/trajectory':
+        specifier: workspace:*
+        version: link:packages/trajectory
+      '@ruobai/trajectory-web':
+        specifier: workspace:*
+        version: link:packages/trajectory-web
       '@ruobai/ui-server':
         specifier: workspace:*
         version: link:packages/ui-server
@@ -855,6 +861,30 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+
+  packages/trajectory:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/trajectory-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/trajectory':
+        specifier: workspace:*
+        version: link:../trajectory
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/ui-app:
     dependencies:

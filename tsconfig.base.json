@@ -23,6 +23,7 @@
       "@ruobai/cordis-plugin-timer": ["./vendor/timer/src/index.ts"],
       "@ruobai/cordis-plugin-logger-console": ["./vendor/logger-console/src/index.ts"],
       "@ruobai/git/types": ["./packages/git/src/types.ts"],
+      "@ruobai/trajectory/types": ["./packages/trajectory/src/types.ts"],
       "@ruobai/*": ["./packages/*/src/index.ts"]
     }
   }

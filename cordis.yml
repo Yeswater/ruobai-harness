@@ -158,6 +158,19 @@
     compactAt: !!js "Number(process.env.RBU_COMPACT_AT ?? 48000)"
 
 # Agent modes: each is a separate plugin and can be removed independently.
+# Trajectory projections: turns, records, timings and token totals folded from
+# the session log. The web half serves snapshots and live frames.
+- id: trajectory
+  name: '@ruobai/trajectory'
+  config:
+    namespace: trajectory
+
+- id: trajectory-web
+  name: '@ruobai/trajectory-web'
+  config:
+    pageTurns: 25
+    frameIntervalMs: 50
+
 - id: modes
   name: '@ruobai/modes'
 

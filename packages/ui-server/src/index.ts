@@ -33,6 +33,11 @@ export class UiApi extends Service {
     ctx.on('approval/resolved', resolution => this.sse.broadcast('approval', { kind: 'resolved', resolution }))
   }
 
+  /** Fan a plugin-owned event out to every live SSE client. */
+  broadcast(channel: string, data: unknown) {
+    this.sse.broadcast(channel, data)
+  }
+
   async *[Service.init]() {
     yield this.ctx.web.register({
       prefix: '/api',

@@ -7,6 +7,7 @@ import { CompactionReview, PrunedEntry } from './ContextDetails.tsx'
 import { ContextCard, formatTokens } from './ContextCard.tsx'
 import { EnvironmentCard } from './EnvironmentCard.tsx'
 import { ArchiveIcon } from './Icons.tsx'
+import { Slot } from './Slot.tsx'
 
 interface ContextViewProps {
   session: ChatSession | null
@@ -291,6 +292,16 @@ export function ContextView({ session, context, onRefresh }: ContextViewProps) {
         </div>
 
         <aside className="context-col context-side">
+          <section className="context-section">
+            <header className="context-section-head">
+              <div>
+                <h2>沙箱</h2>
+                <p>本会话的 Seatbelt 边界、守卫与升级策略。</p>
+              </div>
+            </header>
+            <Slot name="context.sandbox" props={{ sessionId }} />
+          </section>
+
           <section className="context-section">
             <header className="context-section-head">
               <div>

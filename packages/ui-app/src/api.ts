@@ -4,6 +4,7 @@ import type {
 import type {
   GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitInfo, GitLogResult,
 } from '@ruobai/git/types'
+import type { TrajectoryFrame, TrajectorySnapshot } from '@ruobai/trajectory/types'
 
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
@@ -371,6 +372,8 @@ export interface CompactionResult {
   }
 }
 
+export type { TrajectoryFrame, TrajectorySnapshot }
+
 export type {
   GitBranch, GitChange, GitCommit, GitCommitDetail, GitCommitFile, GitCommitResult, GitDiffResult,
   GitInfo, GitLogResult,
@@ -503,6 +506,16 @@ export const api = {
     (await request<{ events: TrajectoryEvent[] }>(
       `/api/sessions/${encodeURIComponent(id)}/trajectory`,
     )).events,
+
+  getTrajectorySnapshot: async (id: string, options: { tail?: number; before?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (options.tail !== undefined) query.set('tail', String(options.tail))
+    if (options.before !== undefined) query.set('before', String(options.before))
+    const suffix = query.size ? `?${query.toString()}` : ''
+    return (await request<{ snapshot: TrajectorySnapshot }>(
+      `/api/trajectory/sessions/${encodeURIComponent(id)}${suffix}`,
+    )).snapshot
+  },
 
   compactSession: async (id: string) =>
     request<CompactionResult>(`/api/sessions/${encodeURIComponent(id)}/compact`, {

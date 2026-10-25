@@ -36,6 +36,8 @@ import ToolRegistry from '@ruobai/tools'
 import BashTools from '@ruobai/tool-bash'
 import FsTools from '@ruobai/tool-fs'
 import ToolTask from '@ruobai/tool-task'
+import Trajectory from '@ruobai/trajectory'
+import TrajectoryWeb from '@ruobai/trajectory-web'
 import UiApi from '@ruobai/ui-server'
 import WebServer, { type Config as WebConfig } from '@ruobai/web-server'
 import WebWs from '@ruobai/web-ws'
@@ -129,6 +131,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(LlmCatalog))
 
   await mount(ctx.plugin(WebServer, { port: 0, host: '127.0.0.1', ...options.web }))
+  await mount(ctx.plugin(Trajectory))
+  await mount(ctx.plugin(TrajectoryWeb))
   await mount(ctx.plugin(UiApi))
   await mount(ctx.plugin(WorkspaceWeb))
   await mount(ctx.plugin(GitWeb))
