@@ -149,3 +149,20 @@ Seatbelt  ● 生效中   darwin-seatbelt   profile 1bb9edd9…   网络 deny   
 - `packages/sandbox-web/client/index.jsx` 用 esbuild 经典 JSX runtime 打包通过（7.9 KB）
 
 运行中的 4400 进程仍是旧代码（`/api/sandbox/status` 返回 404），重启后即可看到面板。
+
+### 8.5 Preview 实测（4400）
+
+把 4400 交给 preview 托管后，用真实浏览器完成验收，并发现第四个缺陷：
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 面板的「升级审批 / 只报告」点击后不生效，接口查询仍是 `auto`（写到了空 sessionId） | 宿主 `Slot` 渲染客户端组件时不传任何 props，`window.__RBU__` 也只有 React/slots，客户端插件拿不到当前会话 | `Slot` 增加 `props` 转发；`header.actions` 传入 `{ sessionId }`；面板的 `GET /status` 与 `PATCH /session` 都带上该 sessionId，未打开会话时按钮禁用并提示 |
+
+实测记录：
+
+- 标题栏 chip：`沙箱 生效 · 14 守卫 · 0 拒绝`，profile digest 正确；
+- 抽屉面板：provider、网络模式、14 条守卫、本会话策略、拒绝记录均可读；
+- 面板切「只报告」→ `GET /api/sandbox/session?sessionId=<当前会话>` 立即变为 `never`；切回「升级审批」→ `auto`；空 sessionId 不受影响；
+- 轨迹：新建临时会话跑两轮，依次出现
+  `用户/上下文/助手` × 2，展开上下文可见「模型 / 模式 / 权限、消息数、工具数、系统提示字符数、估算 tokens、第 N 轮、本轮输入」；「上下文」筛选只剩两条快照；验证后会话已删除；
+- 标签栏的「会话 / 轨迹 / 上下文」行高与间距加大后，视觉间距正常。

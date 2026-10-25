@@ -52,19 +52,22 @@ function relative(ts) {
 
 function SandboxPanel(props) {
   const { useCallback, useEffect, useState } = React
+  // Injected by the host `Slot`; without it the switch has no session to bind to.
+  const sessionId = (props && props.sessionId) || ''
+  const sessionQuery = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
     try {
-      const body = await getJson('/api/sandbox/status')
+      const body = await getJson(`/api/sandbox/status${sessionQuery}`)
       setStatus(body.status)
       setError(null)
     } catch (err) {
       setError(err.message)
     }
-  }, [])
+  }, [sessionQuery])
 
   useEffect(() => {
     load()
@@ -73,13 +76,14 @@ function SandboxPanel(props) {
   }, [load])
 
   const setMode = useCallback(async (mode) => {
+    if (!sessionId) return
     try {
-      await patchJson('/api/sandbox/session', { mode })
+      await patchJson(`/api/sandbox/session${sessionQuery}`, { mode })
       await load()
     } catch (err) {
       setError(err.message)
     }
-  }, [load])
+  }, [load, sessionId, sessionQuery])
 
   const revoke = useCallback(async () => {
     try {
@@ -131,14 +135,18 @@ function SandboxPanel(props) {
                 <button
                   type="button"
                   className={status.escalation.mode === 'auto' ? 'sandbox-btn sandbox-btn-on' : 'sandbox-btn'}
+                  disabled={!sessionId}
                   onClick={() => setMode('auto')}
                 >升级审批</button>
                 <button
                   type="button"
                   className={status.escalation.mode === 'never' ? 'sandbox-btn sandbox-btn-warn' : 'sandbox-btn'}
+                  disabled={!sessionId}
                   onClick={() => setMode('never')}
                 >只报告</button>
-                <span className="sandbox-hint">仅本会话，不写设置；沙箱本身始终生效</span>
+                <span className="sandbox-hint">
+                  {sessionId ? '仅本会话，不写设置；沙箱本身始终生效' : '打开一个会话后可按会话切换'}
+                </span>
               </p>
 
               {status.escalation.sessionGrants.length ? (

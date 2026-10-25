@@ -364,7 +364,7 @@ export function App() {
 
           <div className="main-head-right">
             <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
-            <Slot name="header.actions" />
+            <Slot name="header.actions" props={{ sessionId: harness.session?.id }} />
             <div className="main-tools" role="toolbar" aria-label="面板">
               <button
                 className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
