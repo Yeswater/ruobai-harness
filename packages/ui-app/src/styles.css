@@ -757,7 +757,27 @@ button {
 .process-body {
   display: flex;
   flex-direction: column;
-  padding: 2px 0 4px 2px;
+  margin-left: 5px;
+  padding: 2px 0 4px 10px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.process-body .process-row + .process-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.process-text {
+  padding: 6px 0 2px;
+}
+
+.process-segment-body {
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.process-row.segment > .process-row-head .process-row-label {
+  color: var(--muted);
 }
 
 .process-row {
@@ -781,6 +801,19 @@ button {
 
 .process-row-head:hover {
   color: var(--text);
+}
+
+.process-row-chevron {
+  flex: none;
+  margin-left: auto;
+  align-self: center;
+  color: var(--faint);
+  transform: rotate(-90deg);
+  transition: transform .15s;
+}
+
+.process-row.expanded .process-row-chevron {
+  transform: rotate(0deg);
 }
 
 .process-row-head > svg {

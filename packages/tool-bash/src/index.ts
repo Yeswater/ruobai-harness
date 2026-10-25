@@ -70,6 +70,10 @@ function bashTool(ctx: Context, fallbackRoot: string, config: ResolvedConfig): T
       type: 'object',
       properties: {
         command: { type: 'string', description: 'Shell command to execute.' },
+        description: {
+          type: 'string',
+          description: 'Short action title shown in the transcript, e.g. "查看过程组样式" (max 8 words).',
+        },
         cwd: { type: 'string', description: 'Directory relative to the workspace root. Defaults to the root.' },
         timeoutMs: { type: 'number', description: `Timeout in milliseconds (max ${config.maxTimeoutMs}).` },
       },

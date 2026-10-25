@@ -45,6 +45,41 @@ function firstLine(text: string, limit = 80) {
   return line.length > limit ? `${line.slice(0, limit - 1)}…` : line
 }
 
+function basename(path: string) {
+  return path.split('/').filter(Boolean).pop() ?? path
+}
+
+/** Last two segments keep same-named files distinguishable without the full path. */
+function shortPath(path: string) {
+  return path.split('/').filter(Boolean).slice(-2).join('/') || path
+}
+
+/** A Claude Code-style short title for a shell command. */
+export function describeCommand(command: string): string {
+  // Common shape: `cd <dir> && grep …`. The leading cd is navigation, not the
+  // action the row is about.
+  const normalized = command.trim().replace(/^(?:cd\s+\S+\s*&&\s*)+/, '')
+  const words = normalized.split(/\s+/)
+  const head = basename(words[0] ?? '')
+  const restWords = words.slice(1)
+  const rest = restWords
+  const value = (index: number) => rest[index]?.replace(/^['"]|['"]$/g, '') ?? ''
+  const firstValue = rest.find(word => !word.startsWith('-'))
+  if (/^(grep|rg|ag)$/.test(head)) return firstValue ? `搜索 "${firstValue}"` : '搜索'
+  if (/^(find|fd)$/.test(head)) return '查找文件'
+  if (/^(ls|tree)$/.test(head)) return '查看目录'
+  if (/^(sed|cat|head|tail|less|nl|bat|wc)$/.test(head)) {
+    const file = [...rest].reverse().find(word => !word.startsWith('-') && !word.startsWith('+'))
+    return file ? `查看 ${basename(file.replace(/^['"]|['"]$/g, ''))}` : '查看文件'
+  }
+  if (/^(pnpm|npm|npx|yarn|bun)$/.test(head)) return `运行 ${[head, value(0)].filter(Boolean).join(' ')}`
+  if (head === 'node') return `运行 node ${value(0)}`
+  if (head === 'git') return `运行 git ${value(0)}`
+  if (/^(curl|wget)$/.test(head)) return `请求 ${firstValue ?? ''}`.trim()
+  if (/^(echo|printf)$/.test(head)) return '输出文本'
+  return '运行命令'
+}
+
 function pathOf(input: Record<string, unknown> | undefined) {
   const value = input?.path ?? input?.file_path ?? input?.file ?? input?.target
   return typeof value === 'string' ? value : undefined
@@ -53,6 +88,8 @@ function pathOf(input: Record<string, unknown> | undefined) {
 export interface ToolDetail {
   /** Verb shown before the dot in a folded row ("运行命令"). */
   row: string
+  /** Short action title, e.g. `搜索 "process"` or `查看 Transcript.tsx`. */
+  title: string
   /** Gist shown after the dot. */
   summary: string
   /** Shell command, shown on its own line above the output. */
@@ -70,20 +107,36 @@ export function toolDetail(block: ToolBlock): ToolDetail {
 
   if (name === 'bash' || name === 'run_command' || name === 'shell') {
     const raw = input?.command ?? input?.cmd
-    if (typeof raw !== 'string') return { row: '运行命令', summary: '' }
+    if (typeof raw !== 'string') return { row: '运行命令', title: '运行命令', summary: '' }
+    // Claude Code asks the model for a short action title; use it when present
+    // and fall back to a verb derived from the command.
+    const described = typeof input?.description === 'string' ? firstLine(input.description, 48) : ''
     // The full command is shown in the body; the row only needs its gist.
-    return { row: '运行命令', summary: firstLine(raw, 90), command: raw }
+    return { row: '运行命令', title: described || describeCommand(raw), summary: firstLine(raw, 90), command: raw }
   }
   if (name === 'task' || name === 'delegate') {
     const prompt = input?.prompt ?? input?.description ?? input?.task
     return {
       row: '调用子智能体',
+      title: '委派子任务',
       summary: typeof prompt === 'string' ? firstLine(prompt, 60) : '',
     }
   }
-  if (path) return { row, summary: path }
-  if (name === 'goal_complete') return { row: '完成任务', summary: '' }
-  return { row: block.name, summary: '' }
+  const pattern = input?.pattern ?? input?.query ?? input?.glob
+  if (pattern && row === '搜索') {
+    return { row, title: `搜索 ${firstLine(String(pattern), 48)}`, summary: path ?? '' }
+  }
+  if (path) {
+    const base = shortPath(path)
+    const verb = row === '读取文件' ? '查看'
+      : row === '创建文件' ? '创建'
+        : row === '编辑文件' ? '编辑'
+          : row === '查看目录' ? '查看目录'
+            : row
+    return { row, title: `${verb} ${base}`, summary: path }
+  }
+  if (name === 'goal_complete') return { row: '完成任务', title: '完成任务', summary: '' }
+  return { row: block.name, title: block.name, summary: '' }
 }
 
 export interface ToolEdit {

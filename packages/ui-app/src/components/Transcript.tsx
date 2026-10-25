@@ -11,6 +11,7 @@ import { addedLines, diffLines } from '../tool-diff.ts'
 import {
   buildPlan, formatDuration, groupSummary, isGroupRunning, itemDuration, shouldGroupRun,
   type ProcessItem,
+  type StepItem,
 } from '../transcript-model.ts'
 
 interface TranscriptProps {
@@ -34,7 +35,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   const lastMessageRef = useRef<string | null>(null)
   const [atBottom, setAtBottom] = useState(true)
   const messages = session?.messages ?? []
-  const plan = useMemo(() => buildPlan(messages), [messages])
+  const plan = useMemo(() => buildPlan(messages, Boolean(session?.streaming)), [messages, session?.streaming])
 
   const last = messages.at(-1)
   const lastBlock = last?.blocks.at(-1)
@@ -192,6 +193,56 @@ function UserMessage({ message }: { message: ChatMessage }) {
  * collapses to `已完成，用时 1分30秒`. A click pins the state until the next
  * action starts, so reading a finished run does not fight the auto-fold.
  */
+function StepRow({ item }: { item: StepItem }) {
+  if (item.kind === 'reasoning') return <ThoughtRow block={item.block} pending={item.pending} />
+  if (item.kind === 'text') return <TextRow text={item.text} />
+  return <ToolRow block={item.block} pending={item.pending} />
+}
+
+/**
+ * One prose-led section of a finished turn.
+ *
+ * This is the fold the user asked for on top of the turn summary: the turn
+ * opens into its paragraphs, and each paragraph keeps the steps it introduced.
+ * Opening a section shows the prose and those steps; opening a step shows the
+ * command and its output.
+ */
+function SegmentRow({ text, items }: { text?: string; items: StepItem[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={`process-row segment ${open ? 'expanded' : ''}`}>
+      <button
+        type="button"
+        className="process-row-head"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+      >
+        <span className="process-row-label">{text ? '正文' : '过程'}</span>
+        <span className="process-row-text">
+          {open ? '' : text ? firstLine(text) : `${items.length} 步`}
+        </span>
+        <span className="process-row-chevron"><ChevronDownIcon size={12} /></span>
+      </button>
+      {open
+        ? (
+          <>
+            {text
+              ? (
+                <div className="process-row-body prose markdown">
+                  <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+                </div>
+              )
+              : null}
+            <div className="process-segment-body">
+              {items.map(item => <StepRow key={item.key} item={item} />)}
+            </div>
+          </>
+        )
+        : null}
+    </div>
+  )
+}
+
 function ProcessGroup({ items, placeholder, streaming, active }: {
   items: ProcessItem[]
   placeholder?: boolean
@@ -235,9 +286,9 @@ function ProcessGroup({ items, placeholder, streaming, active }: {
       {open
         ? (
           <div className="process-body">
-            {items.map(item => item.kind === 'reasoning'
-              ? <ThoughtRow key={item.key} block={item.block} pending={item.pending} />
-              : <ToolRow key={item.key} block={item.block} pending={item.pending} />)}
+            {items.map(item => item.kind === 'segment'
+              ? <SegmentRow key={item.key} text={item.text} items={item.items} />
+              : <StepRow key={item.key} item={item} />)}
             {placeholder && !items.length
               ? <div className="process-row waiting"><span className="caret" /> 思考中…</div>
               : null}
@@ -261,6 +312,37 @@ function firstLine(text: string, limit = 110) {
   return line.length > limit ? `${line.slice(0, limit - 1)}…` : line
 }
 
+/**
+ * Prose folded into a finished turn.
+ *
+ * The group's open state is the middle level: rows stay collapsed and show a
+ * one-line title. Clicking this row is the third level and reveals the text.
+ */
+function TextRow({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={`process-row ${open ? 'expanded' : ''}`}>
+      <button
+        type="button"
+        className="process-row-head"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+      >
+        <span className="process-row-label">正文</span>
+        <span className="process-row-text">{open ? '' : firstLine(text)}</span>
+        <span className="process-row-chevron"><ChevronDownIcon size={12} /></span>
+      </button>
+      {open
+        ? (
+          <div className="process-row-body prose markdown">
+            <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+          </div>
+        )
+        : null}
+    </div>
+  )
+}
+
 function ThoughtRow({ block, pending }: { block: ReasoningBlock; pending: boolean }) {
   const [open, setOpen] = useState(false)
   const elapsed = durationLabel(itemDuration({ kind: 'reasoning', key: '', block, pending }))
@@ -278,6 +360,7 @@ function ThoughtRow({ block, pending }: { block: ReasoningBlock; pending: boolea
         <span className="process-row-sep">·</span>
         <span className="process-row-text">{open ? '' : firstLine(block.text)}</span>
         {pending ? <span className="process-row-state">思考中</span> : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
+        <span className="process-row-chevron"><ChevronDownIcon size={12} /></span>
       </button>
       {open
         ? <div className="process-row-body prose">{block.text}</div>
@@ -301,14 +384,16 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
         onClick={() => setOpen(current => !current)}
       >
         <ToolIcon size={12} />
-        <span className="process-row-label">{detail.row}</span>
-        {detail.summary ? <span className="process-row-sep">·</span> : null}
-        <span className="process-row-text">{detail.summary}</span>
+        <span className="process-row-label">{detail.title}</span>
+        {detail.summary && detail.title === '运行命令'
+          ? <span className="process-row-text">{detail.summary}</span>
+          : null}
         {pending
           ? <span className="process-row-state">运行中</span>
           : block.isError
             ? <span className="process-row-state failed">失败</span>
             : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
+        <span className="process-row-chevron"><ChevronDownIcon size={12} /></span>
       </button>
       {open
         ? (

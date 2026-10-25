@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatBlock, ChatMessage } from '@ruobai/chat-protocol'
 import {
-  buildPlan, formatDuration, groupDuration, groupSummary, isGroupRunning, shouldGroupRun,
+  buildPlan, formatDuration, groupDuration, groupSummary, isGroupRunning, processSteps, shouldGroupRun,
 } from '../src/transcript-model.ts'
 
 let counter = 0
@@ -35,17 +35,46 @@ describe('transcript plan', () => {
       message('assistant', [thought('先看看'), call('bash')]),
       message('assistant', [call('read_file'), text('done')]),
     ])
+    // Work folds; the turn's final paragraph stays visible.
     expect(plan.map(item => item.kind)).toEqual(['user', 'process', 'text'])
     const group = plan[1]
-    expect(group?.kind === 'process' && group.items.map(item => item.kind))
+    expect(group?.kind === 'process' && processSteps(group.items).map(item => item.kind))
       .toEqual(['reasoning', 'tool', 'tool'])
   })
 
-  it('always keeps prose visible, splitting the group around it', () => {
+  it('keeps a live turn split around prose', () => {
     const plan = buildPlan([
       message('assistant', [call('bash'), text('中间结论'), call('bash')]),
-    ])
+    ], true)
     expect(plan.map(item => item.kind)).toEqual(['process', 'text', 'process'])
+  })
+
+  it('folds a finished turn into one summary group at the first process position', () => {
+    const plan = buildPlan([
+      message('user', [text('go')]),
+      message('assistant', [call('bash'), text('中间结论'), call('bash')]),
+      message('assistant', [text('最后结论')]),
+    ])
+    expect(plan.map(item => item.kind)).toEqual(['user', 'process', 'text'])
+    const group = plan[1]
+    // The middle paragraph starts its own section; the last one is the answer.
+    expect(group?.kind === 'process' && group.items.map(item => item.kind)).toEqual(['segment', 'segment'])
+    const sections = group?.kind === 'process' ? group.items : []
+    expect(sections[0]?.kind === 'segment' && sections[0].items.map(item => item.kind)).toEqual(['tool'])
+    expect(sections[1]?.kind === 'segment' && sections[1].text).toBe('中间结论')
+    expect(group?.kind === 'process' && groupSummary(group.items)).toBe('2 条命令 · 已完成，用时 2 秒')
+  })
+
+  it('merges earlier finished turns while the current one runs', () => {
+    const plan = buildPlan([
+      message('user', [text('one')]),
+      message('assistant', [call('bash'), text('done one')]),
+      message('user', [text('two')]),
+      message('assistant', [call('bash'), text('中间'), call('bash')], 'streaming'),
+    ], true)
+    // Turn one folds work and keeps its final paragraph; turn two stays split.
+    expect(plan.map(item => item.kind))
+      .toEqual(['user', 'process', 'text', 'user', 'process', 'text', 'process'])
   })
 
   it('marks the last paragraph of a streaming step', () => {
@@ -63,7 +92,7 @@ describe('transcript plan', () => {
     ])
     expect(plan.map(item => item.kind)).toEqual(['process'])
     const group = plan[0]
-    expect(group?.kind === 'process' && group.items).toHaveLength(2)
+    expect(group?.kind === 'process' && processSteps(group.items)).toHaveLength(2)
     expect(group?.kind === 'process' && Boolean(group.placeholder)).toBe(false)
   })
 
@@ -78,7 +107,7 @@ describe('transcript plan', () => {
     const plan = buildPlan([
       message('assistant', [call('bash'), text('中间结论')]),
       message('assistant', [], 'streaming'),
-    ])
+    ], true)
     expect(plan.map(item => item.kind)).toEqual(['process', 'text', 'process'])
     expect(plan[2]).toMatchObject({ kind: 'process', placeholder: true })
   })
@@ -104,7 +133,8 @@ describe('process group state', () => {
       ),
     ])
     const group = plan[0]
-    expect(group?.kind === 'process' && group.items.map(item => item.pending)).toEqual([true, true])
+    const steps = group?.kind === 'process' ? processSteps(group.items) : []
+    expect(steps.map(item => item.kind !== 'text' && item.pending)).toEqual([true, true])
     expect(group && isGroupRunning(group.kind === 'process' ? group.items : [])).toBe(true)
   })
 
@@ -115,7 +145,8 @@ describe('process group state', () => {
       message('assistant', [thought('想完了'), call('bash', { finishedAt: undefined })]),
     ])
     const group = plan[0]
-    expect(group?.kind === 'process' && group.items.map(item => item.pending)).toEqual([false, false])
+    const steps = group?.kind === 'process' ? processSteps(group.items) : []
+    expect(steps.map(item => item.kind !== 'text' && item.pending)).toEqual([false, false])
     expect(group && isGroupRunning(group.kind === 'process' ? group.items : [])).toBe(false)
   })
 
@@ -149,14 +180,22 @@ describe('process group state', () => {
     const items = [
       { kind: 'tool' as const, key: 'a', block: call('bash', { startedAt: 0, finishedAt: 90_000 }) as never },
     ]
-    expect(groupSummary(items)).toBe('已完成，用时 1分30秒')
+    expect(groupSummary(items)).toBe('1 条命令 · 已完成，用时 1分30秒')
   })
 
   it('counts failures in the summary', () => {
     const items = [
       { kind: 'tool' as const, key: 'a', block: call('bash', { startedAt: 0, finishedAt: 2_000, isError: true }) as never },
     ]
-    expect(groupSummary(items)).toBe('已完成，用时 2 秒（1 个失败）')
+    expect(groupSummary(items)).toBe('1 条命令 · 已完成，用时 2 秒（1 个失败）')
+  })
+
+  it('separates shell commands from other tools in the summary', () => {
+    const items = [
+      { kind: 'tool' as const, key: 'a', block: call('bash', { startedAt: 0, finishedAt: 2_000 }) as never },
+      { kind: 'tool' as const, key: 'b', block: call('read_file', { startedAt: 2_000, finishedAt: 4_000 }) as never },
+    ]
+    expect(groupSummary(items)).toBe('1 条命令 · 1 个工具 · 已完成，用时 4 秒')
   })
 
   it('says 已完成 without a span', () => {
@@ -168,10 +207,10 @@ describe('process group state', () => {
   it('drops a sub-second span instead of printing 用时 0 秒', () => {
     expect(groupSummary([
       { kind: 'tool', key: 'a', block: call('bash', { startedAt: 1_000, finishedAt: 1_200 }) as never },
-    ])).toBe('已完成')
+    ])).toBe('1 条命令 · 已完成')
     expect(groupSummary([
       { kind: 'tool', key: 'a', block: call('bash', { startedAt: 1_000, finishedAt: 1_600 }) as never },
-    ])).toBe('已完成，用时 1 秒')
+    ])).toBe('1 条命令 · 已完成，用时 1 秒')
   })
 })
 

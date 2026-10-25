@@ -8,9 +8,16 @@ import { isRunning } from './tool-summary.ts'
  * working depends on its own timestamps *and* on the step that produced it, and
  * only this module knows both.
  */
-export type ProcessItem =
+export type StepItem =
   | { kind: 'reasoning'; key: string; block: ReasoningBlock; pending: boolean }
   | { kind: 'tool'; key: string; block: ToolBlock; pending: boolean }
+  /** Prose folded into a finished turn's single summary row. */
+  | { kind: 'text'; key: string; text: string }
+
+export type ProcessItem =
+  | StepItem
+  /** One prose-led section inside a finished turn: the steps that followed it. */
+  | { kind: 'segment'; key: string; text?: string; items: StepItem[] }
 
 export type PlanItem =
   | { kind: 'user'; key: string; message: ChatMessage }
@@ -34,7 +41,7 @@ export type PlanItem =
  * starting its own row: a separate "思考中…" row next to a finished group made
  * the transcript flicker between two states on every tool round trip.
  */
-export function buildPlan(messages: ChatMessage[]): PlanItem[] {
+export function buildPlan(messages: ChatMessage[], turnStreaming = false): PlanItem[] {
   const plan: PlanItem[] = []
   let group: ProcessItem[] = []
   /** Key of the open group; set once so a placeholder can grow into a full group. */
@@ -105,14 +112,102 @@ export function buildPlan(messages: ChatMessage[]): PlanItem[] {
     })
   }
   flush()
-  return plan
+  return mergeFinishedTurns(plan, turnStreaming)
+}
+
+/**
+ * One finished turn shows one process group.
+ *
+ * While a turn runs, its groups stay split by prose so progress remains
+ * visible. Once it settles, every thought and call from that turn folds into
+ * a single summary row (`已完成，用时 …`), placed where the turn's first
+ * process group started. Earlier turns merge even while a later turn is live.
+ */
+function mergeFinishedTurns(plan: PlanItem[], streaming: boolean): PlanItem[] {
+  const merged: PlanItem[] = []
+  let index = 0
+  while (index < plan.length) {
+    const head = plan[index]!
+    if (head.kind === 'user') {
+      merged.push(head)
+      index += 1
+      continue
+    }
+    const segment: PlanItem[] = []
+    while (index < plan.length && plan[index]!.kind !== 'user') {
+      segment.push(plan[index]!)
+      index += 1
+    }
+    const live = streaming && index >= plan.length
+    const groups = segment.filter(item => item.kind === 'process')
+    // A plain answer with no tools keeps its prose visible: there is no run to
+    // summarize, and hiding it would turn every reply into a click.
+    if (live || !groups.length) {
+      merged.push(...segment)
+      continue
+    }
+    // The turn's final paragraph is the answer: it stays outside the group so
+    // the transcript still reads like a message. Everything before it folds.
+    const last = segment.at(-1)
+    const finalText = last?.kind === 'text' ? last : undefined
+    // Fold once more by prose: each paragraph and the steps it introduced form
+    // one collapsible section. Steps before the first paragraph get a lead
+    // section so nothing is lost.
+    const items: ProcessItem[] = []
+    let current: Extract<ProcessItem, { kind: 'segment' }> | undefined
+    let seq = 0
+    const segmentFor = (text?: string) => {
+      current = {
+        kind: 'segment',
+        key: text !== undefined ? `segment:${seq}` : `segment:lead`,
+        ...(text !== undefined ? { text } : {}),
+        items: [],
+      }
+      seq += 1
+      items.push(current)
+      return current
+    }
+    for (const item of segment) {
+      if (item === finalText) continue
+      const steps: StepItem[] = item.kind === 'process'
+        ? item.items.filter((step): step is StepItem => step.kind !== 'segment')
+        : item.kind === 'text' ? [item] : []
+      for (const step of steps) {
+        if (step.kind === 'text') {
+          segmentFor(step.text)
+          continue
+        }
+        ;(current ?? segmentFor()).items.push(step)
+      }
+    }
+    const placeholder = groups.some(item => item.kind === 'process' && item.placeholder)
+    merged.push({
+      kind: 'process',
+      key: segment.find(item => item.kind === 'process')!.key,
+      items,
+      ...(items.length ? {} : { placeholder }),
+    })
+    if (finalText) merged.push(finalText)
+  }
+  return merged
+}
+
+/** Segments nest steps; duration and counts always apply to the leaves. */
+export function processSteps(items: ProcessItem[]): StepItem[] {
+  const out: StepItem[] = []
+  for (const item of items) {
+    if (item.kind === 'segment') out.push(...item.items)
+    else out.push(item)
+  }
+  return out
 }
 
 /** A tool row and a thought row both carry a start and an end. */
 function bounds(items: ProcessItem[]) {
   let start: number | undefined
   let end: number | undefined
-  for (const item of items) {
+  for (const item of processSteps(items)) {
+    if (item.kind === 'text') continue
     const from = item.block.startedAt
     // An interrupted action may never get a finish stamp; its start still
     // bounds the group instead of leaving the whole row without a duration.
@@ -125,7 +220,7 @@ function bounds(items: ProcessItem[]) {
 
 /** Whether the group still has work in flight. */
 export function isGroupRunning(items: ProcessItem[]) {
-  return items.some(item => item.pending)
+  return processSteps(items).some(item => item.kind !== 'text' && item.pending)
 }
 
 /**
@@ -148,6 +243,7 @@ export function shouldGroupRun(options: {
 
 /** Elapsed time of one row, or undefined when it has no recorded span. */
 export function itemDuration(item: ProcessItem): number | undefined {
+  if (item.kind === 'text' || item.kind === 'segment') return undefined
   const { startedAt, finishedAt } = item.block
   if (startedAt === undefined || finishedAt === undefined || finishedAt < startedAt) return undefined
   return finishedAt - startedAt
@@ -178,9 +274,20 @@ export function formatDuration(ms: number): string {
  */
 export function groupSummary(items: ProcessItem[]): string {
   const duration = groupDuration(items)
-  const failures = items.filter(item => item.kind === 'tool' && item.block.isError).length
+  const leaves = processSteps(items)
+  const failures = leaves.filter(item => item.kind === 'tool' && item.block.isError).length
+  const tools = leaves.filter((item): item is Extract<ProcessItem, { kind: 'tool' }> => item.kind === 'tool')
+  const commands = tools.filter(item => COMMAND_TOOLS.has(item.block.name.toLowerCase())).length
+  const others = tools.length - commands
+  const counts = [
+    commands ? `${commands} 条命令` : '',
+    others ? `${others} 个工具` : '',
+  ].filter(Boolean).join(' · ')
   const done = duration === undefined || duration < 500
     ? '已完成'
     : `已完成，用时 ${formatDuration(duration)}`
-  return failures ? `${done}（${failures} 个失败）` : done
+  return [counts, done].filter(Boolean).join(' · ') + (failures ? `（${failures} 个失败）` : '')
 }
+
+/** Tools whose row is a shell command rather than an action on a path. */
+const COMMAND_TOOLS = new Set(['bash', 'run_command', 'shell', 'execute_command'])

@@ -20,6 +20,14 @@ describe('tool detail', () => {
     expect(detail.command).toContain('head -40')
   })
 
+  it('uses the model-provided action title when the tool carries one', () => {
+    const detail = toolDetail(tool('bash', {
+      command: 'grep -n "process" packages/ui-app/src/styles.css',
+      description: '查看过程组样式',
+    }))
+    expect(detail.title).toBe('查看过程组样式')
+  })
+
   it('splits file rows into verb and path', () => {
     expect(describeTool(tool('read_file', { path: 'src/App.tsx' }))).toBe('读取文件 src/App.tsx')
     expect(describeTool(tool('write_file', { path: 'src/new.ts', content: 'x' }))).toBe('创建文件 src/new.ts')
