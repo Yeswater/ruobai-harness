@@ -335,6 +335,20 @@ export interface TrajectoryEvent {
     kind?: string
     steps?: number
     source?: { kind?: string; name?: string }
+    // context/snapshot: what the turn's first request was assembled from.
+    workspace?: string
+    provider?: string
+    model?: string
+    mode?: string
+    permission?: string
+    messages?: number
+    tools?: number
+    turns?: number
+    systemChars?: number
+    estimatedTokens?: number
+    summaryUpToSeq?: number
+    memoryUpToSeq?: number
+    focus?: string
     [key: string]: unknown
   }
 }

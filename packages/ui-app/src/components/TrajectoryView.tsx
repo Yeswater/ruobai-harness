@@ -4,6 +4,7 @@ import { api, type TrajectoryEvent } from '../api.ts'
 import { BranchIcon, ChevronRightIcon, SearchIcon } from './Icons.tsx'
 import {
   TRAJECTORY_LANES, eventKind, eventLabel, eventLane, eventPreview, eventText,
+  isContextEvent, opensTurn,
 } from './trajectory-helpers.ts'
 
 type Filter = 'all' | 'tools' | 'context'
@@ -26,10 +27,6 @@ function isToolEvent(event: TrajectoryEvent) {
       && Boolean(event.data?.parts?.some(part => part.type === 'tool-call')))
 }
 
-function isContextEvent(event: TrajectoryEvent) {
-  return event.type === 'context/summary' || event.type === 'context/memory'
-}
-
 function shortTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
@@ -45,7 +42,7 @@ function annotate(events: TrajectoryEvent[]) {
   let turn = 0
   const titles = new Map<number, string>()
   const rows: Annotated[] = events.map((event) => {
-    if (event.type === 'message/user') {
+    if (opensTurn(event)) {
       turn += 1
       const text = (event.data?.text ?? '').replace(/\s+/g, ' ').trim()
       titles.set(turn, text.slice(0, 80))
@@ -177,7 +174,6 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
     return rows.filter(({ event }) => {
       if (!event.data) return false
       if (event.type === 'session/title' || event.type === 'session/meta') return false
-      if (event.type === 'message/user' && event.data.source?.kind === 'skill') return false
       if (filter === 'tools' && !isToolEvent(event)) return false
       if (filter === 'context' && !isContextEvent(event)) return false
       if (!needle) return true

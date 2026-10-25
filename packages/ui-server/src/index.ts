@@ -491,6 +491,27 @@ function trajectoryEvent(event: { seq: number; ts: number; type: string; data: a
       }
     case 'context/memory':
       return { ...base, data: { upToSeq: data.upToSeq, text: clip(data.text, 4_000), at: data.at } }
+    case 'context/snapshot':
+      return {
+        ...base,
+        data: {
+          at: data.at,
+          step: data.step,
+          workspace: data.workspace,
+          provider: data.provider,
+          model: data.model,
+          mode: data.mode,
+          permission: data.permission,
+          messages: data.messages,
+          tools: data.tools,
+          turns: data.turns,
+          systemChars: data.systemChars,
+          estimatedTokens: data.estimatedTokens,
+          ...(data.summaryUpToSeq !== undefined ? { summaryUpToSeq: data.summaryUpToSeq } : {}),
+          ...(data.memoryUpToSeq !== undefined ? { memoryUpToSeq: data.memoryUpToSeq } : {}),
+          focus: clip(data.focus, 400),
+        },
+      }
     case 'turn/error':
       return { ...base, data: { message: clip(data.message, 4_000) } }
     case 'turn/notice':

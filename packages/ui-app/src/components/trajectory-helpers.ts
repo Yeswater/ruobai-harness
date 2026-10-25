@@ -24,19 +24,46 @@ export function eventLane(event: TrajectoryEvent): TrajectoryLane {
 }
 
 export function eventKind(event: TrajectoryEvent) {
-  if (event.type === 'message/user') return 'user'
+  if (event.type === 'message/user') {
+    // A skill body is injected context, not something the user typed.
+    return event.data?.source?.kind === 'skill' ? 'context' : 'user'
+  }
   if (event.type === 'message/assistant') return 'assistant'
   if (event.type === 'tool/result') return 'tool'
   if (event.type === 'turn/error') return 'error'
-  if (event.type === 'context/summary' || event.type === 'context/memory') return 'context'
+  if (event.type === 'context/snapshot' || event.type === 'context/summary'
+    || event.type === 'context/memory') return 'context'
   return 'notice'
+}
+
+/**
+ * Whether this event opens a user turn.
+ *
+ * Skill injections land right after the user's message and belong to the same
+ * turn; counting them separately split one turn into a phantom one.
+ */
+export function opensTurn(event: TrajectoryEvent) {
+  return event.type === 'message/user' && event.data?.source?.kind !== 'skill'
+}
+
+/** Model-facing context injected as a user-role message (e.g. a skill body). */
+export function isInjectedContext(event: TrajectoryEvent) {
+  return event.type === 'message/user' && event.data?.source?.kind === 'skill'
+}
+
+export function isContextEvent(event: TrajectoryEvent) {
+  return event.type === 'context/snapshot'
+    || event.type === 'context/summary'
+    || event.type === 'context/memory'
+    || isInjectedContext(event)
 }
 
 export function eventLabel(event: TrajectoryEvent) {
   switch (event.type) {
-    case 'message/user': return '用户'
+    case 'message/user': return event.data?.source?.kind === 'skill' ? '技能' : '用户'
     case 'message/assistant': return '助手'
     case 'tool/result': return '工具'
+    case 'context/snapshot': return '上下文'
     case 'context/summary': return '压缩'
     case 'context/memory': return '记忆'
     case 'turn/error': return '错误'
@@ -48,7 +75,10 @@ export function eventLabel(event: TrajectoryEvent) {
 export function eventPreview(event: TrajectoryEvent) {
   const data = event.data
   if (event.type === 'message/user') {
-    return (data?.text ?? '').replace(/\s+/g, ' ').slice(0, 140)
+    const text = (data?.text ?? '').replace(/\s+/g, ' ').slice(0, 140)
+    return data?.source?.kind === 'skill'
+      ? [`技能 ${data.source.name ?? ''}`.trim(), text].filter(Boolean).join(' · ')
+      : text
   }
   if (event.type === 'message/assistant') {
     const parts = data?.parts ?? []
@@ -64,6 +94,15 @@ export function eventPreview(event: TrajectoryEvent) {
   }
   if (event.type === 'tool/result') {
     return `${data?.name ?? 'tool'} · ${data?.chars ?? 0} 字符${data?.isError ? ' · 失败' : ''}`
+  }
+  if (event.type === 'context/snapshot') {
+    const where = String(data?.workspace ?? '').split('/').filter(Boolean).pop()
+    return [
+      data?.mode ? `模式 ${data.mode}` : '',
+      `${Number(data?.messages ?? 0)} 条消息`,
+      formatTokens(Number(data?.estimatedTokens ?? 0)),
+      where ?? '',
+    ].filter(Boolean).join(' · ')
   }
   if (event.type === 'context/summary') {
     return `${triggerLabel(data?.trigger)} · ${formatTokens(Number(data?.before ?? 0))} → ${formatTokens(Number(data?.after ?? 0))}`
@@ -86,6 +125,19 @@ export function eventText(event: TrajectoryEvent) {
     }).filter(Boolean).join('\n\n')
   }
   if (event.type === 'tool/result') return data?.content ?? ''
+  if (event.type === 'context/snapshot') {
+    const target = [data?.provider, data?.model].filter(Boolean).join('/')
+    return [
+      [target ? `模型 ${target}` : '', data?.mode ? `模式 ${data.mode}` : '',
+        data?.permission ? `权限 ${data.permission}` : ''].filter(Boolean).join(' · '),
+      data?.workspace ? `工作区 ${data.workspace}` : '',
+      `${Number(data?.messages ?? 0)} 条消息 · ${Number(data?.tools ?? 0)} 个工具 · 系统提示 ${Number(data?.systemChars ?? 0).toLocaleString()} 字符`,
+      `估算 ${formatTokens(Number(data?.estimatedTokens ?? 0))} tokens · 第 ${Number(data?.turns ?? 0)} 轮`,
+      data?.summaryUpToSeq !== undefined ? `摘要覆盖至 #${data.summaryUpToSeq}` : '',
+      data?.memoryUpToSeq !== undefined ? `记忆覆盖至 #${data.memoryUpToSeq}` : '',
+      data?.focus ? `本轮输入：${data.focus}` : '',
+    ].filter(Boolean).join('\n')
+  }
   if (event.type === 'context/summary' || event.type === 'context/memory') return data?.text ?? ''
   if (event.type === 'turn/error') return String(data?.message ?? '')
   if (event.type === 'turn/notice') return String(data?.message ?? data?.kind ?? '')

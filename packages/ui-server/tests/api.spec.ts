@@ -357,6 +357,43 @@ describe('ui server', () => {
     expect(summary?.data?.text).toContain('## Summary')
   })
 
+  it('records a context snapshot per turn and keeps later user inputs', async () => {
+    const { ctx } = await setup()
+    const session = ctx.chat.create(undefined, 'agent')
+    const base = ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+    const send = (text: string) => fetch(`${base}/api/sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ text }),
+    })
+    const settle = async () => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 20))
+        const body = await (await fetch(`${base}/api/sessions/${session.id}`)).json() as { session: ChatSession }
+        if (!body.session.streaming) return
+      }
+      throw new Error('turn did not settle')
+    }
+
+    await send('第一轮')
+    await settle()
+    await send('第二轮，继续')
+    await settle()
+
+    const trajectory = await (await fetch(`${base}/api/sessions/${session.id}/trajectory`)).json() as {
+      events: Array<{ type: string; data?: Record<string, unknown> }>
+    }
+    const turns = trajectory.events.filter(event => event.type === 'message/user')
+    expect(turns.map(event => event.data?.text)).toEqual(['第一轮', '第二轮，继续'])
+    const snapshots = trajectory.events.filter(event => event.type === 'context/snapshot')
+    expect(snapshots).toHaveLength(2)
+    expect(snapshots[0]?.data).toMatchObject({ turns: 1, focus: '第一轮' })
+    expect(snapshots[1]?.data).toMatchObject({ turns: 2, focus: '第二轮，继续' })
+    expect(Number(snapshots[0]?.data?.messages)).toBeGreaterThan(1)
+    expect(Number(snapshots[0]?.data?.estimatedTokens)).toBeGreaterThan(0)
+  })
+
   it('exposes runtime state and an SSE stream', async () => {
     const { ctx } = await setup()
 

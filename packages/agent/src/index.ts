@@ -261,6 +261,10 @@ export class AgentService extends Service {
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
         const built = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
+        // One record per turn: what the first request of this turn was assembled
+        // from. Later steps see the same prompt unless compaction rewrote it,
+        // and those rewrites already carry their own context events.
+        if (steps === 1) this.recordContext(sessionId, built, mode)
         let reasoningContent = ''
         let textContent = ''
         const calls: ToolCallPart[] = []
@@ -447,6 +451,50 @@ export class AgentService extends Service {
       this.ctx.emit('agent/usage', sessionId, stats)
     }
     return { reason, text: lastText }
+  }
+
+  /**
+   * Persist the shape of the context this turn's model request was built from.
+   *
+   * The trajectory renders it as a 上下文 record so a session can explain what
+   * the model saw without storing (and duplicating) the prompt itself.
+   */
+  private recordContext(
+    sessionId: string,
+    built: { request: ModelRequest; estimatedTokens: number },
+    mode: ModeDefinition | undefined,
+  ) {
+    const record = this.ctx.sessions.get(sessionId)
+    if (!record) return
+    const events = record.events
+    const latest = (type: string) => [...events].reverse().find(event => event.type === type)
+    const summary = latest('context/summary')
+    const memory = latest('context/memory')
+    const lastUser = [...events].reverse().find(event =>
+      event.type === 'message/user' && event.data?.source?.kind !== 'skill')
+    const turns = events.filter(event =>
+      event.type === 'message/user' && event.data?.source?.kind !== 'skill').length
+    const system = built.request.messages[0]
+    const systemChars = system?.role === 'system'
+      ? system.content.reduce((sum, part) => sum + (part.type === 'text' ? part.text.length : 0), 0)
+      : 0
+    this.ctx.sessions.append(sessionId, 'context/snapshot', {
+      at: Date.now(),
+      step: 1,
+      workspace: record.meta.workspace,
+      provider: this.providerName(record),
+      model: this.modelFor(record),
+      mode: mode?.id ?? record.meta.mode,
+      permission: record.meta.permission,
+      messages: built.request.messages.length,
+      tools: built.request.tools?.length ?? 0,
+      turns,
+      systemChars,
+      estimatedTokens: built.estimatedTokens,
+      ...(summary?.data?.upToSeq !== undefined ? { summaryUpToSeq: summary.data.upToSeq } : {}),
+      ...(memory?.data?.upToSeq !== undefined ? { memoryUpToSeq: memory.data.upToSeq } : {}),
+      focus: String(lastUser?.data?.text ?? '').replace(/\s+/g, ' ').slice(0, 200),
+    })
   }
 
   private async request(
