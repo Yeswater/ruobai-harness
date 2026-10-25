@@ -363,12 +363,19 @@ function toMessages(event: SessionEvent): Message[] {
       mime: string
       data?: string
       text?: string
+      path?: string
     }>
     for (const attachment of attachments) {
       if (attachment.kind === 'image' && attachment.data) {
         parts.push({ type: 'image', mimeType: attachment.mime, data: attachment.data, name: attachment.name })
       } else if (attachment.kind === 'file' && attachment.text !== undefined) {
-        parts.push({ type: 'file', name: attachment.name, mimeType: attachment.mime, text: attachment.text })
+        parts.push({
+          type: 'file',
+          name: attachment.name,
+          ...(attachment.path ? { path: attachment.path } : {}),
+          mimeType: attachment.mime,
+          text: attachment.text,
+        })
       }
     }
     return parts.length ? [{ role: 'user', content: parts }] : []

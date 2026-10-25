@@ -35,6 +35,8 @@ export interface ImagePart {
 export interface FilePart {
   type: 'file'
   name: string
+  /** Workspace-relative path, when the attachment came from a file reference. */
+  path?: string
   mimeType?: string
   text: string
 }

@@ -49,7 +49,11 @@ function toOpenAiMessages(messages: Message[]) {
       for (const part of message.content) {
         if (part.type === 'text') content.push({ type: 'text', text: part.text })
         else if (part.type === 'file') {
-          content.push({ type: 'text', text: `<file name="${part.name}">\n${part.text}\n</file>` })
+          const path = part.path ? ` path="${escapeAttribute(part.path)}"` : ''
+          content.push({
+            type: 'text',
+            text: `<file name="${escapeAttribute(part.name)}"${path}>\n${part.text}\n</file>`,
+          })
         } else if (part.type === 'image') {
           content.push({
             type: 'image_url',
@@ -227,6 +231,14 @@ export class OpenAiProvider implements LlmProvider {
     }
     yield reason ?? { type: 'done', reason: calls.size ? 'tool-calls' : 'stop', usage }
   }
+}
+
+function escapeAttribute(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 /** Registers an OpenAI-compatible provider. */

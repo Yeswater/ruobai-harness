@@ -201,7 +201,15 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
     if (url.pathname === '/api/workspace/tree') {
       const depthParam = numberParam(url, 'depth')
       const depth = depthParam !== undefined && depthParam > 0 ? Math.floor(depthParam) : undefined
-      const tree = await ctx.workspace.tree(url.searchParams.get('path') ?? '.', depth, sessionId)
+      const compact = ['1', 'true', 'yes'].includes(
+        (url.searchParams.get('compact') ?? '').toLowerCase(),
+      )
+      const tree = await ctx.workspace.tree(
+        url.searchParams.get('path') ?? '.',
+        depth,
+        sessionId,
+        compact,
+      )
       sendJson(res, 200, { tree })
       return true
     }

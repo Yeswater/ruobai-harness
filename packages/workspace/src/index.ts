@@ -81,13 +81,19 @@ export class WorkspaceService extends Service {
     return { target, path: rel.split(sep).join('/') }
   }
 
-  async tree(path = '.', depth?: number, sessionId?: string): Promise<WorkspaceEntry> {
+  async tree(path = '.', depth?: number, sessionId?: string, compact = false): Promise<WorkspaceEntry> {
     const root = this.rootFor(sessionId)
     const resolved = this.resolvePath(path, root)
     const info = await stat(resolved.target).catch(() => undefined)
     if (!info) throw new WorkspaceError(404, `not found: ${String(path)}`)
     const prefix = resolved.path === '.' ? '' : resolved.path
-    return this.entry(resolved.target, prefix, info.isDirectory(), depth ?? this.config.maxDepth ?? 3)
+    return this.entry(
+      resolved.target,
+      prefix,
+      info.isDirectory(),
+      depth ?? this.config.maxDepth ?? 3,
+      compact,
+    )
   }
 
   async read(path: unknown, sessionId?: string) {
@@ -213,8 +219,15 @@ export class WorkspaceService extends Service {
     return matches
   }
 
-  private async entry(target: string, path: string, directory: boolean, depth: number): Promise<WorkspaceEntry> {
-    const name = path === '' ? '.' : path.split('/').at(-1)!
+  private async entry(
+    target: string,
+    path: string,
+    directory: boolean,
+    depth: number,
+    compact = false,
+    displayName?: string,
+  ): Promise<WorkspaceEntry> {
+    const name = displayName ?? (path === '' ? '.' : path.split('/').at(-1)!)
     if (!directory) {
       const info = await stat(target)
       return { name, path, type: 'file', size: info.size }
@@ -227,11 +240,49 @@ export class WorkspaceService extends Service {
         .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
         .slice(0, this.config.maxEntries ?? 500)
       for (const item of entries) {
-        const childPath = path ? `${path}/${item.name}` : item.name
-        children.push(await this.entry(resolve(target, item.name), childPath, item.isDirectory(), depth - 1))
+        let childPath = path ? `${path}/${item.name}` : item.name
+        let childTarget = resolve(target, item.name)
+        let childName = item.name
+        if (compact && item.isDirectory() && !item.isSymbolicLink()) {
+          const chain = await this.collapseChain(childTarget, childPath, childName, 16)
+          childTarget = chain.target
+          childPath = chain.path
+          childName = chain.name
+        }
+        children.push(await this.entry(
+          childTarget,
+          childPath,
+          item.isDirectory(),
+          depth - 1,
+          compact,
+          childName,
+        ))
       }
     }
     return { name, path: path || '.', type: 'directory', children }
+  }
+
+  /**
+   * Collapses a chain of single-child directories into one node (IDEA-style
+   * compact middle folders). The returned name keeps the joined path segments.
+   */
+  private async collapseChain(
+    target: string,
+    path: string,
+    name: string,
+    remaining: number,
+  ): Promise<{ target: string; path: string; name: string }> {
+    if (remaining <= 0) return { target, path, name }
+    const entries = (await readdir(target, { withFileTypes: true }).catch(() => []))
+      .filter(item => !IGNORED.has(item.name) && !item.isSymbolicLink())
+    const only = entries[0]
+    if (entries.length !== 1 || !only?.isDirectory()) return { target, path, name }
+    return this.collapseChain(
+      resolve(target, only.name),
+      `${path}/${only.name}`,
+      `${name}/${only.name}`,
+      remaining - 1,
+    )
   }
 }
 

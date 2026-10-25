@@ -112,7 +112,7 @@ describe('openai adapter', () => {
         content: [
           { type: 'text', text: 'look' },
           { type: 'image', mimeType: 'image/png', data: 'AAAA' },
-          { type: 'file', name: 'a.txt', mimeType: 'text/plain', text: 'hi' },
+          { type: 'file', name: 'a.txt', path: 'src/a.txt', mimeType: 'text/plain', text: 'hi' },
         ],
       }],
     }, 'openai')) {
@@ -122,7 +122,7 @@ describe('openai adapter', () => {
     const content = captured().messages[0].content
     expect(Array.isArray(content)).toBe(true)
     expect(content[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } })
-    expect(content[2].text).toContain('<file name="a.txt">')
+    expect(content[2].text).toContain('<file name="a.txt" path="src/a.txt">')
     expect(chunks.at(-1)).toMatchObject({
       type: 'done',
       usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 6 },

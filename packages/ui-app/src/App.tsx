@@ -62,7 +62,7 @@ export function App() {
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
-  const [reference, setReference] = useState<{ text: string; token: number } | null>(null)
+  const [reference, setReference] = useState<{ path: string; token: number } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('behavior')
   const openSettings = useCallback((tab: SettingsTab = 'behavior') => {
@@ -517,7 +517,7 @@ export function App() {
               setFileOpen(false)
               if (expandedPanel === 'file') setExpandedPanel(null)
             }}
-            onReferenceFile={(path) => setReference({ text: `@${path} `, token: Date.now() })}
+            onReferenceFile={(path) => setReference({ path, token: Date.now() })}
           />
         )
         : null}

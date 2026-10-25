@@ -463,10 +463,11 @@ export const api = {
       body: JSON.stringify(paths?.length ? { sessionId: id, message, paths } : { sessionId: id, message }),
     }),
 
-  getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number) => {
+  getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number, compact?: boolean) => {
     const params = new URLSearchParams({ path })
     if (sessionId) params.set('sessionId', sessionId)
     if (depth) params.set('depth', String(depth))
+    if (compact) params.set('compact', '1')
     return (await request<{ tree: WorkspaceEntry }>(`/api/workspace/tree?${params}`)).tree
   },
 

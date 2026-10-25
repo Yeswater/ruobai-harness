@@ -6011,3 +6011,64 @@ body.resizing .file-side-resizer::after {
     grid-template-columns: minmax(0, 1fr) 0px 0px 0px;
   }
 }
+
+.file-filter-toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+}
+
+.file-filter-toggle:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.file-filter-toggle.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Composer token highlighting */
+
+.composer-input {
+  position: relative;
+}
+
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  padding: 13px 15px 4px;
+  overflow: hidden;
+  color: transparent;
+  font-size: 13.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+
+.composer-input textarea {
+  position: relative;
+  z-index: 1;
+}
+
+.composer-token {
+  border-radius: 4px;
+}
+
+.composer-token.mention {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.composer-token.command {
+  background: color-mix(in srgb, #7aa2f7 22%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #7aa2f7 40%, transparent);
+}

@@ -199,6 +199,35 @@ describe('workspace web', () => {
     ])
   })
 
+  it('compacts chains of single-child directories on request', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-compact-tree-'))
+    dirs.push(dir)
+    await mkdir(join(dir, 'x', 'y', 'z'), { recursive: true })
+    await writeFile(join(dir, 'x', 'y', 'z', 'file.txt'), 'x')
+    await mkdir(join(dir, 'a', 'b', 'c'), { recursive: true })
+    await mkdir(join(dir, 'a', 'b', 'd'), { recursive: true })
+    const session = harness.ctx.sessions.create({ title: 'compact', workspace: dir })
+
+    const compact = await (await fetch(
+      `${base}/api/workspace/tree?path=.&depth=1&compact=1&sessionId=${session.id}`,
+    )).json() as { tree: { children: Array<{ name: string; path: string }> } }
+    expect(compact.tree.children.map(child => child.name)).toEqual(['a/b', 'x/y/z'])
+    expect(compact.tree.children.map(child => child.path)).toEqual(['a/b', 'x/y/z'])
+
+    const plain = await (await fetch(
+      `${base}/api/workspace/tree?path=.&depth=1&sessionId=${session.id}`,
+    )).json() as { tree: { children: Array<{ name: string }> } }
+    expect(plain.tree.children.map(child => child.name)).toEqual(['a', 'x'])
+
+    const inner = await (await fetch(
+      `${base}/api/workspace/tree?path=x/y/z&depth=1&compact=1&sessionId=${session.id}`,
+    )).json() as { tree: { children: Array<{ name: string; type: string }> } }
+    expect(inner.tree.children).toEqual([expect.objectContaining({ name: 'file.txt', type: 'file' })])
+  })
+
   it('validates open-in-editor requests before launching anything', async () => {
     const harness = await createHarness()
     harnesses.push(harness)

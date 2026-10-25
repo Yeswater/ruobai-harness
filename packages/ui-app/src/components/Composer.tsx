@@ -5,6 +5,7 @@ import {
   type SkillSummary, type WorkspaceMatch,
 } from '../api.ts'
 import { applyCompletion, detectTrigger } from '../composer-triggers.ts'
+import { tokenizeComposer } from '../composer-tokens.ts'
 import { useComposerAttachments } from '../useComposerAttachments.ts'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { ComposerPlusMenu } from './ComposerPlusMenu.tsx'
@@ -37,8 +38,8 @@ interface ComposerProps {
   onStop: () => void
   onNewSession: () => void
   onOpenConnectors: () => void
-  /** Text to append to the draft, e.g. an `@path` reference from the files panel. */
-  reference?: { text: string; token: number } | null
+  /** File reference from the files panel: insert a short token and attach its content. */
+  reference?: { path: string; token: number } | null
 }
 
 type OpenMenu = 'plus' | 'permission' | 'model' | null
@@ -65,10 +66,32 @@ export function Composer({
   const [mentionLoading, setMentionLoading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mirrorRef = useRef<HTMLDivElement>(null)
+  const handledReference = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const pendingCaret = useRef<number | null>(null)
   const attachments = useComposerAttachments(sessionId)
+  const tokens = useMemo(() => tokenizeComposer(text), [text])
+
+  const attachFile = useCallback(async (path: string, name: string) => {
+    if (!sessionId) return false
+    try {
+      const file = await api.readWorkspaceFile(path, sessionId)
+      attachments.addOne({
+        id: globalThis.crypto?.randomUUID?.() ?? `a-${Date.now()}`,
+        kind: 'file',
+        name,
+        mime: 'text/plain',
+        size: new TextEncoder().encode(file.content).length,
+        text: file.content,
+        path,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }, [sessionId, attachments.addOne])
 
   const trigger = useMemo(
     () => detectTrigger(text, caret, commandPrefix),
@@ -80,14 +103,41 @@ export function Composer({
   const pickerVisible = slashOpen || mentionOpen
   const pickerCount = slashOpen ? slashItems.length : mentionOpen ? mentionItems.length : 0
 
-  useEffect(() => {
+  const resizeText = useCallback(() => {
     const textarea = textareaRef.current
-    if (!textarea) return
+    // A hidden composer (an expanded side panel) measures zero; skip it and
+    // let the ResizeObserver recalculate once it becomes visible again.
+    if (!textarea || textarea.clientWidth === 0) return
     textarea.style.height = 'auto'
     const next = Math.min(Math.max(textarea.scrollHeight, 46), 240)
     textarea.style.height = `${next}px`
     textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden'
-  }, [text])
+  }, [])
+
+  useEffect(() => {
+    resizeText()
+  }, [text, resizeText])
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    let lastWidth = textarea.clientWidth
+    let hidden = lastWidth === 0
+    const observer = new ResizeObserver(() => {
+      const width = textarea.clientWidth
+      if (width === 0) {
+        hidden = true
+        return
+      }
+      if (hidden || width !== lastWidth) {
+        hidden = false
+        lastWidth = width
+        resizeText()
+      }
+    })
+    observer.observe(textarea)
+    return () => observer.disconnect()
+  }, [resizeText])
 
   useEffect(() => {
     const target = pendingCaret.current
@@ -100,10 +150,20 @@ export function Composer({
   }, [text])
 
   useEffect(() => {
-    if (!reference) return
+    if (!reference || handledReference.current === reference.token) return
+    handledReference.current = reference.token
+    const name = reference.path.split('/').filter(Boolean).at(-1) ?? reference.path
+    const token = `@${name} `
     setText(current => {
       const base = current.replace(/\s+$/, '')
-      return base ? `${base} ${reference.text}` : reference.text
+      return base ? `${base} ${token}` : token
+    })
+    void attachFile(reference.path, name).then((attached) => {
+      if (attached) return
+      // Binary or oversized files fall back to the full path as plain text.
+      setText(current => current.includes(token)
+        ? current.replace(token, `@${reference.path} `)
+        : current)
     })
     const frame = requestAnimationFrame(() => {
       const textarea = textareaRef.current
@@ -114,7 +174,7 @@ export function Composer({
       setCaret(end)
     })
     return () => cancelAnimationFrame(frame)
-  }, [reference])
+  }, [reference, attachFile])
 
   useEffect(() => {
     setActiveIndex(0)
@@ -213,26 +273,22 @@ export function Composer({
 
   const acceptMention = (match: WorkspaceMatch) => {
     if (!trigger) return
-    const replacement = `@${match.path}${match.type === 'directory' ? '/' : ''} `
+    const isFile = match.type === 'file'
+    // Files show their name in the draft; the attachment carries the content
+    // and the full path for the model.
+    const replacement = isFile ? `@${match.name} ` : `@${match.path}/ `
     const next = applyCompletion(text, caret, trigger, replacement)
     setText(next.text)
     setCaret(next.caret)
     setDismissed(true)
     focusAt(next.caret)
-    if (match.type !== 'file' || !sessionId) return
-    void api.readWorkspaceFile(match.path, sessionId)
-      .then((file) => {
-        attachments.addOne({
-          id: globalThis.crypto?.randomUUID?.() ?? `a-${Date.now()}`,
-          kind: 'file',
-          name: match.name,
-          mime: 'text/plain',
-          size: new TextEncoder().encode(file.content).length,
-          text: file.content,
-          path: match.path,
-        })
-      })
-      .catch(() => undefined)
+    if (!isFile) return
+    void attachFile(match.path, match.name).then((attached) => {
+      if (attached) return
+      setText(current => current.includes(replacement)
+        ? current.replace(replacement, `@${match.path} `)
+        : current)
+    })
   }
 
   const pickActive = () => {
@@ -309,21 +365,34 @@ export function Composer({
           ? <AttachmentRail attachments={attachments.attachments} onRemove={attachments.remove} />
           : null}
 
-        <textarea
-          ref={textareaRef}
-          value={text}
-          rows={2}
-          placeholder={disabled ? '正在加载会话…' : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`}
-          onChange={(event) => {
-            setText(event.target.value)
-            setCaret(event.target.selectionStart ?? 0)
-            setDismissed(false)
-          }}
-          onSelect={syncCaret}
-          onClick={syncCaret}
-          onKeyUp={syncCaret}
-          onBlur={() => setDismissed(true)}
-          onPaste={handlePaste}
+        <div className="composer-input">
+          <div className="composer-mirror" aria-hidden="true" ref={mirrorRef}>
+            {tokens.map((token, index) => token.kind === 'text'
+              ? <span key={index}>{token.text}</span>
+              : <span key={index} className={`composer-token ${token.kind}`}>{token.text}</span>)}
+            {text.endsWith('\n') ? '\n' : null}
+          </div>
+          <textarea
+            ref={textareaRef}
+            value={text}
+            rows={2}
+            placeholder={disabled ? '正在加载会话…' : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`}
+            onChange={(event) => {
+              setText(event.target.value)
+              setCaret(event.target.selectionStart ?? 0)
+              setDismissed(false)
+            }}
+            onSelect={syncCaret}
+            onClick={syncCaret}
+            onKeyUp={syncCaret}
+            onBlur={() => setDismissed(true)}
+            onPaste={handlePaste}
+            onScroll={(event) => {
+              const mirror = mirrorRef.current
+              if (!mirror) return
+              mirror.scrollTop = event.currentTarget.scrollTop
+              mirror.scrollLeft = event.currentTarget.scrollLeft
+            }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return
             if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'u') {
@@ -360,6 +429,7 @@ export function Composer({
             }
           }}
         />
+        </div>
 
         <div className="composer-bar">
           <div className="composer-left">

@@ -9,17 +9,24 @@ import { highlightLines, languageOf } from '../file-highlight.ts'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import {
-  AtIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon, EyeIcon, FolderIcon, SearchIcon, WrapTextIcon,
+  AtIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon, EyeIcon, FolderIcon, FolderTreeIcon,
+  SearchIcon, WrapTextIcon,
 } from './Icons.tsx'
 import { MarkdownPreview } from './MarkdownPreview.tsx'
 
 const MAX_LINES = 3_000
 const TREE_WIDTH_KEY = 'rbh-file-tree-width'
+const COMPACT_KEY = 'rbh-file-tree-compact'
 const DEFAULT_TREE_WIDTH = 236
 
 function loadTreeWidth() {
   const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
   return Number.isFinite(saved) && saved >= 180 && saved <= 720 ? saved : DEFAULT_TREE_WIDTH
+}
+
+/** IDEA-style compact middle directories, on unless the user turned it off. */
+function loadCompact() {
+  return localStorage.getItem(COMPACT_KEY) !== '0'
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -66,6 +73,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const [wrap, setWrap] = useState(true)
   const [markdownPreview, setMarkdownPreview] = useState(true)
   const [treeWidth, setTreeWidth] = useState(loadTreeWidth)
+  const [compact, setCompact] = useState(loadCompact)
   const [copiedPath, setCopiedPath] = useState(false)
   const [opening, setOpening] = useState(false)
   const codeRef = useRef<HTMLDivElement>(null)
@@ -80,7 +88,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     setActive(null)
     setQuery('')
     setError(null)
-    void api.getWorkspaceTree('.', sessionId, 1)
+    void api.getWorkspaceTree('.', sessionId, 1, compact)
       .then((node) => {
         if (cancelled) return
         setRoot(node)
@@ -92,6 +100,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     return () => {
       cancelled = true
     }
+    // `compact` is read on session change; toggling refreshes the tree itself.
   }, [sessionId])
 
   const loadDir = async (path: string) => {
@@ -99,12 +108,30 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     setLoadingDir(path)
     setError(null)
     try {
-      const node = await api.getWorkspaceTree(path, sessionId, 1)
+      const node = await api.getWorkspaceTree(path, sessionId, 1, compact)
       setChildren(previous => ({ ...previous, [path]: node.children ?? [] }))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setLoadingDir(null)
+    }
+  }
+
+  const toggleCompact = async () => {
+    const next = !compact
+    setCompact(next)
+    localStorage.setItem(COMPACT_KEY, next ? '1' : '0')
+    setRoot(null)
+    setChildren({})
+    setExpanded(new Set())
+    setLoadingDir(null)
+    setError(null)
+    try {
+      const node = await api.getWorkspaceTree('.', sessionId, 1, next)
+      setRoot(node)
+      setChildren({ '.': node.children ?? [] })
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
     }
   }
 
@@ -356,6 +383,16 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
           {query ? (
             <button className="file-filter-clear" onClick={() => setQuery('')} aria-label="清除筛选">×</button>
           ) : null}
+          <button
+            type="button"
+            className={`file-filter-toggle ${compact ? 'active' : ''}`}
+            onClick={() => void toggleCompact()}
+            title={compact ? '取消折叠中间目录' : '折叠中间目录（类似 IDEA 紧凑中间包）'}
+            aria-label="折叠中间目录"
+            aria-pressed={compact}
+          >
+            <FolderTreeIcon size={13} />
+          </button>
         </div>
 
         {query.trim()
