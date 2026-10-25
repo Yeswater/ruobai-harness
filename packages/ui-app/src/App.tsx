@@ -7,8 +7,8 @@ import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarS
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
-import { DetailsPanel } from './components/DetailsPanel.tsx'
-import { MenuIcon, PanelIcon, FolderIcon, SearchIcon } from './components/Icons.tsx'
+import { DetailsPanel, type PanelView } from './components/DetailsPanel.tsx'
+import { BranchIcon, FolderIcon, FolderTreeIcon, MenuIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
@@ -31,9 +31,15 @@ function loadCollapsed() {
   return localStorage.getItem(SIDEBAR_KEY) === '1'
 }
 
+function maxDetailsWidth(collapsed: boolean) {
+  const reserved = collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272
+  return Math.max(320, window.innerWidth - reserved)
+}
+
 function loadDetailsWidth() {
   const saved = Number(localStorage.getItem(DETAILS_WIDTH_KEY))
-  return Number.isFinite(saved) && saved >= 280 && saved <= 720 ? saved : DETAILS_DEFAULT_WIDTH
+  const width = Number.isFinite(saved) && saved >= 280 ? saved : DETAILS_DEFAULT_WIDTH
+  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1'))
 }
 
 export function App() {
@@ -43,9 +49,11 @@ export function App() {
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [detailsOpen, setDetailsOpen] = useState(true)
+  const [panelView, setPanelView] = useState<PanelView>('session')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
+  const [reference, setReference] = useState<{ text: string; token: number } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('behavior')
   const openSettings = useCallback((tab: SettingsTab = 'behavior') => {
@@ -76,15 +84,31 @@ export function App() {
   }, [sidebarCollapsed])
 
   const resizeDetails = useCallback((next: number) => {
-    const clamped = Math.min(720, Math.max(280, Math.round(next)))
+    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed), Math.max(280, Math.round(next)))
     setDetailsWidth(clamped)
     localStorage.setItem(DETAILS_WIDTH_KEY, String(clamped))
-  }, [])
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    const clamp = () => setDetailsWidth(current =>
+      Math.min(current, maxDetailsWidth(sidebarCollapsed)))
+    window.addEventListener('resize', clamp)
+    return () => window.removeEventListener('resize', clamp)
+  }, [sidebarCollapsed])
 
   const toggleSidebar = useCallback(() => {
     if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(current => !current)
     else setSidebarCollapsed(current => !current)
   }, [])
+
+  const showPanel = useCallback((view: PanelView) => {
+    if (detailsOpen && panelView === view) {
+      setDetailsOpen(false)
+      return
+    }
+    setPanelView(view)
+    setDetailsOpen(true)
+  }, [detailsOpen, panelView])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -139,6 +163,12 @@ export function App() {
         break
       case 'toggle-details':
         setDetailsOpen(current => !current)
+        break
+      case 'show-files':
+        showPanel('files')
+        break
+      case 'show-git':
+        showPanel('git')
         break
       case 'toggle-sidebar':
         toggleSidebar()
@@ -227,11 +257,33 @@ export function App() {
             <span>搜索</span>
             <span className="keycap">{modKeyLabel()}K</span>
           </button>
-          <button className="icon-btn" onClick={() => setDetailsOpen(current => !current)} aria-label="Toggle details">
-            <PanelIcon />
-          </button>
+          <div className="main-tools" role="toolbar" aria-label="面板">
+            <button
+              className={`icon-btn ${detailsOpen && panelView === 'files' ? 'active' : ''}`}
+              onClick={() => showPanel('files')}
+              aria-label="文件"
+              title="文件"
+            >
+              <FolderTreeIcon size={16} />
+            </button>
+            <button
+              className={`icon-btn ${detailsOpen && panelView === 'git' ? 'active' : ''}`}
+              onClick={() => showPanel('git')}
+              aria-label="Git"
+              title="Git"
+            >
+              <BranchIcon size={16} />
+            </button>
+            <button
+              className={`icon-btn ${detailsOpen && panelView === 'session' ? 'active' : ''}`}
+              onClick={() => showPanel('session')}
+              aria-label="会话"
+              title="会话"
+            >
+              <PanelIcon size={16} />
+            </button>
+          </div>
         </header>
-
         {harness.error
           ? (
             <div className="error-bar">
@@ -277,6 +329,7 @@ export function App() {
           onStop={harness.stop}
           onNewSession={() => setWorkspacePickerOpen(true)}
           onOpenConnectors={() => openSettings('mcp')}
+          reference={reference}
         />
       </main>
 
@@ -285,9 +338,11 @@ export function App() {
           <DetailsPanel
             session={harness.session}
             contextInfo={harness.contextInfo}
+            view={panelView}
             width={detailsWidth}
             onResize={resizeDetails}
             onClose={() => setDetailsOpen(false)}
+            onReferenceFile={(path) => setReference({ text: `@${path} `, token: Date.now() })}
           />
         )
         : null}

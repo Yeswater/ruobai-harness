@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -44,6 +44,14 @@ function errorText(error: unknown) {
   const output = error as { stderr?: string; stdout?: string; message?: string }
   const detail = output.stderr?.trim() || output.stdout?.trim() || output.message || 'git failed'
   return detail.split('\n')[0]!.slice(0, 300)
+}
+
+/** Absent query parameters must stay `undefined`, not become `Number(null) === 0`. */
+function numberParam(url: URL, name: string) {
+  const raw = url.searchParams.get(name)
+  if (raw === null || raw.trim() === '') return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : undefined
 }
 
 async function currentBranch(root: string) {
@@ -180,14 +188,19 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
       return true
     }
 
+    if (url.pathname === '/api/workspace/open') {
+      await openFile(ctx, req, res)
+      return true
+    }
+
     if (req.method !== 'GET') {
       sendJson(res, 405, { error: 'method not allowed' })
       return true
     }
 
     if (url.pathname === '/api/workspace/tree') {
-      const depthValue = Number(url.searchParams.get('depth'))
-      const depth = Number.isFinite(depthValue) && depthValue > 0 ? Math.floor(depthValue) : undefined
+      const depthParam = numberParam(url, 'depth')
+      const depth = depthParam !== undefined && depthParam > 0 ? Math.floor(depthParam) : undefined
       const tree = await ctx.workspace.tree(url.searchParams.get('path') ?? '.', depth, sessionId)
       sendJson(res, 200, { tree })
       return true
@@ -204,13 +217,14 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
     }
     if (url.pathname === '/api/workspace/search') {
       const query = (url.searchParams.get('q') ?? '').slice(0, 200)
-      const limitValue = Number(url.searchParams.get('limit'))
-      const files = await ctx.workspace.search(
-        query,
-        { limit: Number.isFinite(limitValue) ? limitValue : undefined },
-        sessionId,
-      )
+      const files = await ctx.workspace.search(query, { limit: numberParam(url, 'limit') }, sessionId)
       sendJson(res, 200, { files })
+      return true
+    }
+    if (url.pathname === '/api/workspace/grep') {
+      const query = (url.searchParams.get('q') ?? '').slice(0, 200)
+      const matches = await ctx.workspace.grep(query, { limit: numberParam(url, 'limit') }, sessionId)
+      sendJson(res, 200, { matches })
       return true
     }
     if (url.pathname === '/api/workspace/git') {
@@ -271,9 +285,50 @@ async function commit(ctx: Context, req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+async function openFile(ctx: Context, req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== 'POST') throw new HttpError(405, 'method not allowed')
+  const body = await readJson(req)
+  const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
+  if (!sessionId || !ctx.sessions.has(sessionId)) throw new HttpError(400, 'sessionId is required')
+  const path = typeof body.path === 'string' ? body.path : ''
+  if (!path) throw new HttpError(400, 'path is required')
+
+  const target = ctx.workspace.resolvePath(path, ctx.workspace.rootFor(sessionId)).target
+  sendJson(res, 200, { ok: true, opened: await openInEditor(target) })
+}
+
+/** Prefer an editor CLI when installed; otherwise hand the file to the OS. */
+async function openInEditor(target: string) {
+  const editors: Array<[string, string[]]> = [
+    ['code', ['-g', target]],
+    ['cursor', ['-g', target]],
+    ['zed', [target]],
+  ]
+  for (const [command, args] of editors) {
+    try {
+      await execFile(command, ['--version'], { timeout: 2_000 })
+      spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
+      return command
+    } catch {
+      // try the next editor
+    }
+  }
+  const [command, args] = process.platform === 'darwin'
+    ? ['open', ['-t', target]]
+    : process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '', target]]
+      : ['xdg-open', [target]]
+  try {
+    spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
+    return 'system'
+  } catch {
+    throw new HttpError(500, `cannot open ${target}`)
+  }
+}
+
 export default { name, inject, apply }
 
 export const meta = {
   title: '工作区接口',
-  description: '提供文件树、文件读取与 Git 状态接口。',
+  description: '提供文件树、文件读取、编辑器打开与 Git 状态接口。',
 }

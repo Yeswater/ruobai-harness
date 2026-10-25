@@ -35,6 +35,8 @@ interface ComposerProps {
   onStop: () => void
   onNewSession: () => void
   onOpenConnectors: () => void
+  /** Text to append to the draft, e.g. an `@path` reference from the files panel. */
+  reference?: { text: string; token: number } | null
 }
 
 type OpenMenu = 'plus' | 'permission' | 'model' | null
@@ -50,7 +52,7 @@ const DIRECTORY_PROPS = { webkitdirectory: '', directory: '' } as Record<string,
 export function Composer({
   disabled, streaming, sessionId, provider, model, models, modes, mode, permission,
   commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
-  onStop, onNewSession, onOpenConnectors,
+  onStop, onNewSession, onOpenConnectors, reference,
 }: ComposerProps) {
   const [text, setText] = useState('')
   const [caret, setCaret] = useState(0)
@@ -94,6 +96,23 @@ export function Composer({
     textarea.focus()
     textarea.setSelectionRange(target, target)
   }, [text])
+
+  useEffect(() => {
+    if (!reference) return
+    setText(current => {
+      const base = current.replace(/\s+$/, '')
+      return base ? `${base} ${reference.text}` : reference.text
+    })
+    const frame = requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      const end = textarea.value.length
+      textarea.setSelectionRange(end, end)
+      setCaret(end)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [reference])
 
   useEffect(() => {
     setActiveIndex(0)

@@ -9,22 +9,33 @@ import { CloseIcon } from './Icons.tsx'
 import { InfoCard } from './InfoCard.tsx'
 import { Slot } from './Slot.tsx'
 
+export type PanelView = 'session' | 'files' | 'git'
+
 interface DetailsPanelProps {
   session: ChatSession | null
   contextInfo: ContextInfo | null
+  view: PanelView
   onClose: () => void
   width: number
   onResize: (width: number) => void
+  /** Insert `@path` for the given file into the composer. */
+  onReferenceFile: (path: string) => void
 }
 
-type CardKey = 'environment' | 'context' | 'git' | 'files' | 'runtime'
+const TITLES: Record<PanelView, string> = {
+  session: '会话',
+  files: '文件',
+  git: 'Git',
+}
 
-export function DetailsPanel({ session, contextInfo, onClose, width, onResize }: DetailsPanelProps) {
+type CardKey = 'environment' | 'context' | 'runtime'
+
+export function DetailsPanel({
+  session, contextInfo, view, width, onClose, onResize, onReferenceFile,
+}: DetailsPanelProps) {
   const [open, setOpen] = useState<Record<CardKey, boolean>>({
     environment: true,
     context: true,
-    git: true,
-    files: false,
     runtime: false,
   })
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null)
@@ -46,7 +57,7 @@ export function DetailsPanel({ session, contextInfo, onClose, width, onResize }:
   }, [])
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || view === 'files') {
       setGit(null)
       return
     }
@@ -67,10 +78,10 @@ export function DetailsPanel({ session, contextInfo, onClose, width, onResize }:
       cancelled = true
       clearInterval(timer)
     }
-  }, [sessionId])
+  }, [sessionId, view])
 
   useEffect(() => {
-    if (!open.runtime) return
+    if (!open.runtime || view !== 'session') return
     let cancelled = false
     const load = async () => {
       try {
@@ -89,7 +100,7 @@ export function DetailsPanel({ session, contextInfo, onClose, width, onResize }:
       cancelled = true
       clearInterval(timer)
     }
-  }, [open.runtime])
+  }, [open.runtime, view])
 
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -107,7 +118,7 @@ export function DetailsPanel({ session, contextInfo, onClose, width, onResize }:
   }
 
   return (
-    <aside className="details" style={{ width }}>
+    <aside className={`details view-${view}`} style={{ width }}>
       <div
         className="details-resizer"
         role="separator"
@@ -117,77 +128,75 @@ export function DetailsPanel({ session, contextInfo, onClose, width, onResize }:
         onDoubleClick={() => onResize(344)}
       />
       <div className="details-head">
-        <span className="details-title">会话</span>
-        <button className="icon-btn subtle" onClick={onClose} aria-label="关闭会话栏">
+        <span className="details-title">{TITLES[view]}</span>
+        <button className="icon-btn subtle" onClick={onClose} aria-label={`关闭${TITLES[view]}栏`}>
           <CloseIcon />
         </button>
       </div>
 
-      <div className="details-scroll">
+      <div className={`details-scroll ${view === 'files' ? 'bare' : ''}`}>
         {session
-          ? (
-            <>
-              <InfoCard title="环境" open={open.environment} onToggle={() => toggle('environment')}>
-                <EnvironmentCard git={git} workspace={session.workspace} />
-                {gitError ? <div className="detail-note error">{gitError}</div> : null}
-              </InfoCard>
-
-              <InfoCard title="上下文" open={open.context} onToggle={() => toggle('context')}>
-                <ContextCard context={contextInfo} />
-              </InfoCard>
-
-              <InfoCard title="Git" open={open.git} onToggle={() => toggle('git')}>
+          ? view === 'files'
+            ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} />
+            : view === 'git'
+              ? (
                 <GitPanel
                   sessionId={session.id}
                   git={git}
                   onRefresh={() => { void loadGit(session.id) }}
                 />
-              </InfoCard>
+              )
+              : (
+                <>
+                  <InfoCard title="环境" open={open.environment} onToggle={() => toggle('environment')}>
+                    <EnvironmentCard git={git} workspace={session.workspace} />
+                    {gitError ? <div className="detail-note error">{gitError}</div> : null}
+                  </InfoCard>
 
-              <InfoCard title="文件" open={open.files} onToggle={() => toggle('files')} className="info-card-files">
-                <FileBrowser sessionId={session.id} />
-              </InfoCard>
+                  <InfoCard title="上下文" open={open.context} onToggle={() => toggle('context')}>
+                    <ContextCard context={contextInfo} />
+                  </InfoCard>
 
-              <InfoCard title="运行时" open={open.runtime} onToggle={() => toggle('runtime')}>
-                {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
-                {runtime
-                  ? (
-                    <>
-                      <div className="detail-section">会话</div>
-                      <dl className="kv">
-                        <dt>status</dt><dd>{session.streaming ? 'streaming' : 'idle'}</dd>
-                        <dt>mode</dt><dd>{session.mode ?? 'agent'}</dd>
-                        <dt>model</dt><dd>{session.model}</dd>
-                        <dt>messages</dt><dd>{session.messages.length}</dd>
-                        <dt>created</dt><dd>{new Date(session.createdAt).toLocaleString()}</dd>
-                        <dt>updated</dt><dd>{new Date(session.updatedAt).toLocaleString()}</dd>
-                        <dt>id</dt><dd className="mono ellipsis">{session.id}</dd>
-                      </dl>
-                      <div className="detail-section">Server</div>
-                      <div className="mono small">{runtime.url}</div>
-                      <div className="detail-section">Plugins</div>
-                      <div className="plugin-list">
-                        {runtime.plugins.map(plugin => (
-                          <div className="plugin" key={`${plugin.name}-${plugin.uid}`}>
-                            <span className={`status-dot ${stateClass(plugin.state)}`} />
-                            <span className="plugin-name">{plugin.name}</span>
-                            <span className={`state state-${stateClass(plugin.state)}`}>{plugin.state.toLowerCase()}</span>
-                            {plugin.services.length ? <span className="plugin-services">{plugin.services.join(', ')}</span> : null}
+                  <InfoCard title="运行时" open={open.runtime} onToggle={() => toggle('runtime')}>
+                    {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
+                    {runtime
+                      ? (
+                        <>
+                          <div className="detail-section">会话</div>
+                          <dl className="kv">
+                            <dt>status</dt><dd>{session.streaming ? 'streaming' : 'idle'}</dd>
+                            <dt>mode</dt><dd>{session.mode ?? 'agent'}</dd>
+                            <dt>model</dt><dd>{session.model}</dd>
+                            <dt>messages</dt><dd>{session.messages.length}</dd>
+                            <dt>created</dt><dd>{new Date(session.createdAt).toLocaleString()}</dd>
+                            <dt>updated</dt><dd>{new Date(session.updatedAt).toLocaleString()}</dd>
+                            <dt>id</dt><dd className="mono ellipsis">{session.id}</dd>
+                          </dl>
+                          <div className="detail-section">Server</div>
+                          <div className="mono small">{runtime.url}</div>
+                          <div className="detail-section">Plugins</div>
+                          <div className="plugin-list">
+                            {runtime.plugins.map(plugin => (
+                              <div className="plugin" key={`${plugin.name}-${plugin.uid}`}>
+                                <span className={`status-dot ${stateClass(plugin.state)}`} />
+                                <span className="plugin-name">{plugin.name}</span>
+                                <span className={`state state-${stateClass(plugin.state)}`}>{plugin.state.toLowerCase()}</span>
+                                {plugin.services.length ? <span className="plugin-services">{plugin.services.join(', ')}</span> : null}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                      <div className="detail-section">Services</div>
-                      <div className="chip-row">
-                        {runtime.services.map(service => <span className="chip" key={service}>{service}</span>)}
-                      </div>
-                    </>
-                  )
-                  : <div className="loading">loading runtime…</div>}
-              </InfoCard>
+                          <div className="detail-section">Services</div>
+                          <div className="chip-row">
+                            {runtime.services.map(service => <span className="chip" key={service}>{service}</span>)}
+                          </div>
+                        </>
+                      )
+                      : <div className="loading">loading runtime…</div>}
+                  </InfoCard>
 
-              <Slot name="details.side" />
-            </>
-          )
+                  <Slot name="details.side" />
+                </>
+              )
           : <div className="loading">no session</div>}
       </div>
     </aside>

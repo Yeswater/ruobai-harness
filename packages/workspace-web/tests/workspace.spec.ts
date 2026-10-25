@@ -177,6 +177,50 @@ describe('workspace web', () => {
     expect(after.files.map(file => file.path)).toEqual(['b.txt', 'c.txt'])
   })
 
+  it('searches file contents and skips ignored directories', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-grep-web-'))
+    dirs.push(dir)
+    await mkdir(join(dir, 'src'))
+    await mkdir(join(dir, 'node_modules'))
+    await writeFile(join(dir, 'src', 'a.ts'), 'const needle = 1\n// needle\n')
+    await writeFile(join(dir, 'node_modules', 'dep.ts'), 'needle should be ignored\n')
+
+    const session = harness.ctx.sessions.create({ title: 'grep', workspace: dir })
+    const body = await (await fetch(
+      `${base}/api/workspace/grep?q=needle&sessionId=${session.id}`,
+    )).json() as { matches: Array<{ path: string; line: number; text: string }> }
+
+    expect(body.matches).toEqual([
+      { path: 'src/a.ts', line: 1, text: 'const needle = 1' },
+      { path: 'src/a.ts', line: 2, text: '// needle' },
+    ])
+  })
+
+  it('validates open-in-editor requests before launching anything', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const session = harness.ctx.sessions.create({ title: 'open', workspace: process.cwd() })
+    const url = `${base}/api/workspace/open`
+
+    const missingPath = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id }),
+    })
+    expect(missingPath.status).toBe(400)
+
+    const escape = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, path: '../../etc/passwd' }),
+    })
+    expect(escape.status).toBe(403)
+  })
+
   it('marks a non-git workspace as unavailable', async () => {
     const harness = await createHarness()
     harnesses.push(harness)

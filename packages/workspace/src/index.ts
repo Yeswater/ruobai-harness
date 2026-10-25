@@ -20,6 +20,13 @@ export interface WorkspaceMatch {
   type: 'file' | 'directory'
 }
 
+/** One content-search hit: a file, a 1-based line, and its trimmed text. */
+export interface WorkspaceTextMatch {
+  path: string
+  line: number
+  text: string
+}
+
 export interface Config {
   root?: string
   maxBytes?: number
@@ -161,6 +168,49 @@ export class WorkspaceService extends Service {
     return matches
       .sort((a, b) => score(a) - score(b) || a.path.localeCompare(b.path))
       .slice(0, limit)
+  }
+
+  /** Bounded case-insensitive content search over workspace text files. */
+  async grep(query: string, options: { limit?: number } = {}, sessionId?: string): Promise<WorkspaceTextMatch[]> {
+    const root = this.rootFor(sessionId)
+    const term = query.trim().slice(0, 200)
+    if (!term) return []
+    const limit = Math.min(Math.max(Math.floor(options.limit ?? 50), 1), 100)
+    const needle = term.toLowerCase()
+    const matches: WorkspaceTextMatch[] = []
+    const maxFiles = 2_000
+    const maxFileBytes = 512 * 1024
+    let visited = 0
+
+    const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
+      if (visited >= maxFiles || matches.length >= limit || depth > 12) return
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+      for (const entry of entries) {
+        if (visited >= maxFiles || matches.length >= limit) return
+        if (IGNORED.has(entry.name) || entry.isSymbolicLink()) continue
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name
+        const target = resolve(dir, entry.name)
+        if (entry.isDirectory()) {
+          await walk(target, path, depth + 1)
+          continue
+        }
+        if (!entry.isFile()) continue
+        visited += 1
+        const info = await stat(target).catch(() => undefined)
+        if (!info || info.size > maxFileBytes) continue
+        const content = await readFile(target, 'utf8').catch(() => undefined)
+        if (!content || content.includes('\0')) continue
+        const lines = content.split('\n')
+        for (let index = 0; index < lines.length && matches.length < limit; index += 1) {
+          const text = lines[index]!
+          if (!text.toLowerCase().includes(needle)) continue
+          matches.push({ path, line: index + 1, text: text.trim().slice(0, 200) })
+        }
+      }
+    }
+
+    await walk(root, '', 0)
+    return matches
   }
 
   private async entry(target: string, path: string, directory: boolean, depth: number): Promise<WorkspaceEntry> {

@@ -51,6 +51,18 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     keywords: 'details panel 面板 详情 侧边栏',
   },
   {
+    id: 'show-files',
+    label: '打开文件面板',
+    description: '浏览工作区文件、预览并引用到对话',
+    keywords: 'file tree files 文件 树 浏览 预览 引用',
+  },
+  {
+    id: 'show-git',
+    label: '打开 Git 面板',
+    description: '查看改动、diff、提交与回退',
+    keywords: 'git source control 提交 改动 diff 回退',
+  },
+  {
     id: 'toggle-sidebar',
     label: '显示 / 隐藏工作区栏',
     description: '收起或展开左侧的会话列表',

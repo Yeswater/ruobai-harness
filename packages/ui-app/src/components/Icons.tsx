@@ -56,6 +56,33 @@ export function CloseIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M6 6l12 12M18 6L6 18" /></svg>
 }
 
+export function CopyIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M15 5.5A1.5 1.5 0 0 0 13.5 4h-8A1.5 1.5 0 0 0 4 5.5v8A1.5 1.5 0 0 0 5.5 15" />
+    </svg>
+  )
+}
+
+export function ExternalLinkIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M14 4h6v6M20 4l-8 8" />
+      <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+    </svg>
+  )
+}
+
+export function WrapTextIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 6h16M4 12h11a3 3 0 0 1 0 6h-4M4 18h4" />
+      <path d="M9 15l-2 3 2 3" />
+    </svg>
+  )
+}
+
 export function SearchIcon({ size }: IconProps) {
   return <svg {...base(size)}><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
 }

@@ -23,6 +23,12 @@ export interface WorkspaceMatch {
   type: 'file' | 'directory'
 }
 
+export interface WorkspaceTextMatch {
+  path: string
+  line: number
+  text: string
+}
+
 export interface RuntimeInfo {
   plugins: Array<{
     uid: number | null
@@ -431,11 +437,23 @@ export const api = {
     return (await request<{ files: WorkspaceMatch[] }>(`/api/workspace/search?${params}`)).files
   },
 
+  searchWorkspaceContent: async (query: string, sessionId?: string, limit = 50) => {
+    const params = new URLSearchParams({ q: query, limit: String(limit) })
+    if (sessionId) params.set('sessionId', sessionId)
+    return (await request<{ matches: WorkspaceTextMatch[] }>(`/api/workspace/grep?${params}`)).matches
+  },
+
   readWorkspaceFile: async (path: string, sessionId?: string) => {
     const params = new URLSearchParams({ path })
     if (sessionId) params.set('sessionId', sessionId)
     return request<{ path: string; size: number; content: string }>(`/api/workspace/file?${params}`)
   },
+
+  openWorkspaceFile: async (path: string, sessionId?: string) =>
+    request<{ ok: true; opened: string }>('/api/workspace/open', {
+      method: 'POST',
+      body: JSON.stringify({ path, sessionId }),
+    }),
 
   browseWorkspace: async (path?: string) => {
     const suffix = path ? `?path=${encodeURIComponent(path)}` : ''
