@@ -51,6 +51,13 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     keywords: 'details panel 面板 详情 侧边栏',
   },
   {
+    id: 'toggle-sidebar',
+    label: '显示 / 隐藏工作区栏',
+    description: '收起或展开左侧的会话列表',
+    keywords: 'sidebar workspace 侧栏 工作区 会话列表',
+    shortcut: 'B',
+  },
+  {
     id: 'toggle-theme',
     label: '切换主题',
     description: '在浅色与深色之间切换',

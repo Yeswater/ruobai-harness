@@ -121,6 +121,62 @@ describe('workspace web', () => {
     expect(after.files).toBe(0)
   })
 
+  it('lists working-tree files, per-file diffs and commits selected paths', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-git-files-'))
+    dirs.push(dir)
+
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' })
+    git('init')
+    git('config', 'user.name', 'Harness Test')
+    git('config', 'user.email', 'harness@example.com')
+    await writeFile(join(dir, 'a.txt'), 'one\n')
+    await writeFile(join(dir, 'b.txt'), 'one\n')
+    git('add', '-A')
+    git('commit', '-m', 'init')
+
+    await writeFile(join(dir, 'a.txt'), 'two\n')
+    await writeFile(join(dir, 'b.txt'), 'two\n')
+    await writeFile(join(dir, 'c.txt'), 'new\n')
+
+    const session = harness.ctx.sessions.create({ title: 'files', workspace: dir })
+    const listUrl = `${base}/api/workspace/git/files?sessionId=${session.id}`
+    const files = await (await fetch(listUrl)).json() as {
+      files: Array<{ path: string; status: string; staged: boolean }>
+    }
+    expect(files.files.map(file => file.path)).toEqual(['a.txt', 'b.txt', 'c.txt'])
+    expect(files.files.find(file => file.path === 'a.txt')).toMatchObject({ status: 'M', staged: false })
+    expect(files.files.find(file => file.path === 'c.txt')).toMatchObject({ status: '?' })
+
+    const tracked = await (await fetch(
+      `${base}/api/workspace/git/diff?sessionId=${session.id}&path=a.txt`,
+    )).json() as { diff: string }
+    expect(tracked.diff).toContain('+two')
+
+    const untracked = await (await fetch(
+      `${base}/api/workspace/git/diff?sessionId=${session.id}&path=c.txt`,
+    )).json() as { diff: string }
+    expect(untracked.diff).toContain('+new')
+
+    const escape = await fetch(
+      `${base}/api/workspace/git/diff?sessionId=${session.id}&path=../../etc/passwd`,
+    )
+    expect(escape.status).toBe(403)
+
+    const committed = await (await fetch(`${base}/api/workspace/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, message: 'only a', paths: ['a.txt'] }),
+    })).json() as { ok: boolean; commit: string }
+    expect(committed.ok).toBe(true)
+    expect(committed.commit).toContain('only a')
+
+    const after = await (await fetch(listUrl)).json() as { files: Array<{ path: string }> }
+    expect(after.files.map(file => file.path)).toEqual(['b.txt', 'c.txt'])
+  })
+
   it('marks a non-git workspace as unavailable', async () => {
     const harness = await createHarness()
     harnesses.push(harness)

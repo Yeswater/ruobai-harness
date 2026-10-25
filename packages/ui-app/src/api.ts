@@ -256,6 +256,15 @@ export interface GitInfo {
   files: number
   added: number
   removed: number
+  ahead?: number
+  behind?: number
+}
+
+/** One working-tree entry from `git status`. */
+export interface GitFile {
+  path: string
+  status: string
+  staged: boolean
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -393,10 +402,20 @@ export const api = {
   getGitInfo: async (id: string) =>
     request<GitInfo>(`/api/workspace/git?sessionId=${encodeURIComponent(id)}`),
 
-  commitWorkspace: async (id: string, message: string) =>
+  getGitFiles: async (id: string) =>
+    (await request<{ files: GitFile[] }>(
+      `/api/workspace/git/files?sessionId=${encodeURIComponent(id)}`,
+    )).files,
+
+  getGitDiff: async (id: string, path: string) => {
+    const params = new URLSearchParams({ sessionId: id, path })
+    return request<{ path: string; diff: string }>(`/api/workspace/git/diff?${params}`)
+  },
+
+  commitWorkspace: async (id: string, message: string, paths?: string[]) =>
     request<{ ok: true; commit: string }>('/api/workspace/commit', {
       method: 'POST',
-      body: JSON.stringify({ sessionId: id, message }),
+      body: JSON.stringify(paths?.length ? { sessionId: id, message, paths } : { sessionId: id, message }),
     }),
 
   getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number) => {

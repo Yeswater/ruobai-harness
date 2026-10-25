@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { Context } from '@ruobai/cordis'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
@@ -18,7 +19,20 @@ export interface GitInfo {
   files: number
   added: number
   removed: number
+  /** Commits ahead of the upstream branch, when one is configured. */
+  ahead?: number
+  behind?: number
 }
+
+/** One entry of `git status`, shaped for the source-control panel. */
+export interface GitFile {
+  path: string
+  /** Single-letter porcelain status: M A D R C U ? */
+  status: string
+  staged: boolean
+}
+
+const MAX_DIFF_CHARS = 200_000
 
 const run = promisify(execFile)
 
@@ -57,6 +71,74 @@ async function numstat(root: string) {
   }
 }
 
+/** Upstream divergence; omitted when the branch has no upstream. */
+async function divergence(root: string) {
+  try {
+    const output = (await git(root, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])).stdout.trim()
+    const [behind, ahead] = output.split(/\s+/).map(Number)
+    if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return {}
+    return { ahead, behind }
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * `git status --porcelain=v1 -z`: NUL-separated `XY path` records, where a
+ * rename or copy is followed by a record holding the original path.
+ */
+function parseStatus(output: string): GitFile[] {
+  const records = output.split('\0')
+  const files: GitFile[] = []
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index]
+    if (!record || record.length < 4) continue
+    const x = record[0]!
+    const y = record[1]!
+    const path = record.slice(3)
+    if (x === 'R' || x === 'C') index += 1
+    if (!path) continue
+    const staged = x !== ' ' && x !== '?'
+    const status = x === '?' ? '?' : y !== ' ' ? y : x
+    files.push({ path, status, staged })
+  }
+  files.sort((left, right) => left.path.localeCompare(right.path))
+  return files
+}
+
+async function gitFiles(root: string) {
+  const output = (await git(root, ['status', '--porcelain=v1', '-z'])).stdout
+  return parseStatus(output)
+}
+
+/**
+ * Diff of one path against HEAD. Untracked files have no HEAD entry, so they
+ * are diffed against /dev/null to still show their contents.
+ */
+async function gitFileDiff(root: string, relative: string) {
+  const target = resolve(root, relative)
+  const rel = target === root ? '' : target.slice(root.length + 1)
+  if (!rel || rel.startsWith('..')) throw new HttpError(400, `path escapes the workspace: ${relative}`)
+
+  let output = ''
+  try {
+    output = (await git(root, ['diff', 'HEAD', '--no-color', '--', rel])).stdout
+  } catch {
+    output = ''
+  }
+  if (!output.trim()) {
+    try {
+      output = (await git(root, ['diff', '--no-index', '--no-color', '--', '/dev/null', rel])).stdout
+    } catch (error) {
+      output = (error as { stdout?: string }).stdout ?? ''
+    }
+  }
+  return {
+    path: rel,
+    diff: output.length > MAX_DIFF_CHARS ? `${output.slice(0, MAX_DIFF_CHARS)}\n… 已截断` : output,
+  }
+}
+
 async function gitInfo(root: string): Promise<GitInfo> {
   const home = homedir()
   const branch = await currentBranch(root)
@@ -74,7 +156,7 @@ async function gitInfo(root: string): Promise<GitInfo> {
       if (Number.isFinite(Number(plus))) added += Number(plus)
       if (Number.isFinite(Number(minus))) removed += Number(minus)
     }
-    return { available: true, branch, workspace: root, home, files, added, removed }
+    return { available: true, branch, workspace: root, home, files, added, removed, ...await divergence(root) }
   } catch {
     return { available: true, branch, workspace: root, home, files: 0, added: 0, removed: 0 }
   }
@@ -135,6 +217,20 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
       sendJson(res, 200, await gitInfo(ctx.workspace.rootFor(sessionId)))
       return true
     }
+    if (url.pathname === '/api/workspace/git/files') {
+      const root = ctx.workspace.rootFor(sessionId)
+      const files = await gitFiles(root).catch(() => [])
+      sendJson(res, 200, { files })
+      return true
+    }
+    if (url.pathname === '/api/workspace/git/diff') {
+      const path = url.searchParams.get('path')
+      if (!path) throw new HttpError(400, 'path is required')
+      const root = ctx.workspace.rootFor(sessionId)
+      const relative = ctx.workspace.resolvePath(path, root).path
+      sendJson(res, 200, await gitFileDiff(root, relative))
+      return true
+    }
     sendJson(res, 404, { error: 'not found' })
   } catch (error) {
     const status = error instanceof WorkspaceError ? error.status : error instanceof HttpError ? error.status : 500
@@ -153,7 +249,20 @@ async function commit(ctx: Context, req: IncomingMessage, res: ServerResponse) {
   if (!message) throw new HttpError(400, 'message is required')
 
   const root = ctx.workspace.rootFor(sessionId)
+  const paths = Array.isArray(body.paths)
+    ? body.paths
+      .filter((item: unknown): item is string => typeof item === 'string' && item.length > 0)
+      .slice(0, 500)
+    : []
   try {
+    if (paths.length) {
+      const relative = paths.map(item => ctx.workspace.resolvePath(item, root).path)
+      await git(root, ['add', '-A', '--', ...relative])
+      // Committing with a pathspec leaves the user's other staged work alone.
+      const result = await git(root, ['commit', '-m', message, '--', ...relative])
+      sendJson(res, 200, { ok: true, commit: result.stdout.split('\n')[0]?.trim() ?? '' })
+      return
+    }
     await git(root, ['add', '-A'])
     const result = await git(root, ['commit', '-m', message])
     sendJson(res, 200, { ok: true, commit: result.stdout.split('\n')[0]?.trim() ?? '' })

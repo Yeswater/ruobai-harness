@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
 import type { PermissionMode, ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
-import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, modKeyLabel } from './shortcuts.ts'
+import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut, modKeyLabel } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
@@ -23,6 +23,19 @@ function initialPreference(): ThemePreference {
   return 'system'
 }
 
+const SIDEBAR_KEY = 'rbh-sidebar-collapsed'
+const DETAILS_WIDTH_KEY = 'rbh-details-width'
+const DETAILS_DEFAULT_WIDTH = 344
+
+function loadCollapsed() {
+  return localStorage.getItem(SIDEBAR_KEY) === '1'
+}
+
+function loadDetailsWidth() {
+  const saved = Number(localStorage.getItem(DETAILS_WIDTH_KEY))
+  return Number.isFinite(saved) && saved >= 280 && saved <= 720 ? saved : DETAILS_DEFAULT_WIDTH
+}
+
 export function App() {
   const harness = useHarness()
   useClientPlugins()
@@ -30,7 +43,9 @@ export function App() {
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [detailsOpen, setDetailsOpen] = useState(true)
+  const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('behavior')
   const openSettings = useCallback((tab: SettingsTab = 'behavior') => {
@@ -57,6 +72,21 @@ export function App() {
   }, [theme, preference])
 
   useEffect(() => {
+    localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0')
+  }, [sidebarCollapsed])
+
+  const resizeDetails = useCallback((next: number) => {
+    const clamped = Math.min(720, Math.max(280, Math.round(next)))
+    setDetailsWidth(clamped)
+    localStorage.setItem(DETAILS_WIDTH_KEY, String(clamped))
+  }, [])
+
+  const toggleSidebar = useCallback(() => {
+    if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(current => !current)
+    else setSidebarCollapsed(current => !current)
+  }, [])
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // ⌘K / Ctrl+K: the global search palette, toggled from anywhere.
       if (isPaletteShortcut(event)) {
@@ -75,10 +105,14 @@ export function App() {
         event.preventDefault()
         setWorkspacePickerOpen(true)
       }
+      if (isSidebarShortcut(event)) {
+        event.preventDefault()
+        toggleSidebar()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openSettings])
+  }, [openSettings, toggleSidebar])
 
   // Commands that need runtime state (nothing streaming, nothing to stop) drop out.
   const paletteCommands = useMemo(
@@ -106,6 +140,9 @@ export function App() {
       case 'toggle-details':
         setDetailsOpen(current => !current)
         break
+      case 'toggle-sidebar':
+        toggleSidebar()
+        break
       case 'toggle-theme':
         setPreference(theme === 'dark' ? 'light' : 'dark')
         break
@@ -118,11 +155,20 @@ export function App() {
   }
 
   return (
-    <div className={`app ${detailsOpen ? '' : 'details-closed'}`}>
+    <div
+      className={[
+        'app',
+        detailsOpen ? '' : 'details-closed',
+        sidebarCollapsed ? 'sidebar-collapsed' : '',
+      ].filter(Boolean).join(' ')}
+      style={{ '--details-width': `${detailsWidth}px` } as CSSProperties}
+    >
       <Sidebar
         sessions={harness.sessions}
         activeId={harness.activeId}
         open={sidebarOpen}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
         onSelect={(id) => {
           harness.select(id)
           setSidebarOpen(false)
@@ -147,7 +193,7 @@ export function App() {
 
       <main className="main">
         <header className="main-head">
-          <button className="icon-btn menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+          <button className="icon-btn menu-btn" onClick={toggleSidebar} aria-label="Toggle sidebar">
             <MenuIcon />
           </button>
           <div className="main-title">
@@ -235,7 +281,15 @@ export function App() {
       </main>
 
       {detailsOpen
-        ? <DetailsPanel session={harness.session} contextInfo={harness.contextInfo} onClose={() => setDetailsOpen(false)} />
+        ? (
+          <DetailsPanel
+            session={harness.session}
+            contextInfo={harness.contextInfo}
+            width={detailsWidth}
+            onResize={resizeDetails}
+            onClose={() => setDetailsOpen(false)}
+          />
+        )
         : null}
 
       <SettingsDialog

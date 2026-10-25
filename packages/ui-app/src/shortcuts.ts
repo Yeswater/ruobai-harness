@@ -29,6 +29,11 @@ export function isNewSessionShortcut(event: KeyLike) {
   return isPlainMod(event) && event.key.toLowerCase() === 'n'
 }
 
+/** ⌘B / Ctrl+B: collapse or reveal the workspace sidebar. */
+export function isSidebarShortcut(event: KeyLike) {
+  return isPlainMod(event) && event.key.toLowerCase() === 'b'
+}
+
 function detectPlatform(platform?: string) {
   if (platform !== undefined) return platform
   return typeof navigator === 'undefined' ? '' : navigator.platform

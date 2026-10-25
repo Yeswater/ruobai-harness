@@ -43,6 +43,11 @@ export function PanelIcon({ size }: IconProps) {
   return <svg {...base(size)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg>
 }
 
+/** Sidebar panel: the divider sits on the left, unlike PanelIcon. */
+export function PanelLeftIcon({ size }: IconProps) {
+  return <svg {...base(size)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
+}
+
 export function MenuIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
 }

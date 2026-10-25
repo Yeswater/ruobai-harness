@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
 import { api, type ContextInfo, type GitInfo, type RuntimeInfo } from '../api.ts'
-import { ChangesCard } from './ChangesCard.tsx'
-import { ChangesPanel } from './ChangesPanel.tsx'
 import { ContextCard } from './ContextCard.tsx'
 import { EnvironmentCard } from './EnvironmentCard.tsx'
 import { FileBrowser } from './FileBrowser.tsx'
+import { GitPanel } from './GitPanel.tsx'
 import { CloseIcon } from './Icons.tsx'
 import { InfoCard } from './InfoCard.tsx'
 import { Slot } from './Slot.tsx'
@@ -14,16 +13,17 @@ interface DetailsPanelProps {
   session: ChatSession | null
   contextInfo: ContextInfo | null
   onClose: () => void
+  width: number
+  onResize: (width: number) => void
 }
 
-type CardKey = 'environment' | 'context' | 'changes' | 'snapshots' | 'files' | 'runtime'
+type CardKey = 'environment' | 'context' | 'git' | 'files' | 'runtime'
 
-export function DetailsPanel({ session, contextInfo, onClose }: DetailsPanelProps) {
+export function DetailsPanel({ session, contextInfo, onClose, width, onResize }: DetailsPanelProps) {
   const [open, setOpen] = useState<Record<CardKey, boolean>>({
     environment: true,
     context: true,
-    changes: true,
-    snapshots: false,
+    git: true,
     files: false,
     runtime: false,
   })
@@ -91,8 +91,31 @@ export function DetailsPanel({ session, contextInfo, onClose }: DetailsPanelProp
     }
   }, [open.runtime])
 
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = width
+    document.body.classList.add('resizing')
+    const move = (moveEvent: PointerEvent) => onResize(startWidth - (moveEvent.clientX - startX))
+    const finish = () => {
+      document.body.classList.remove('resizing')
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+  }
+
   return (
-    <aside className="details">
+    <aside className="details" style={{ width }}>
+      <div
+        className="details-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整详情栏宽度"
+        onPointerDown={startResize}
+        onDoubleClick={() => onResize(344)}
+      />
       <div className="details-head">
         <span className="details-title">会话</span>
         <button className="icon-btn subtle" onClick={onClose} aria-label="关闭会话栏">
@@ -113,16 +136,12 @@ export function DetailsPanel({ session, contextInfo, onClose }: DetailsPanelProp
                 <ContextCard context={contextInfo} />
               </InfoCard>
 
-              <InfoCard title="更改" open={open.changes} onToggle={() => toggle('changes')}>
-                <ChangesCard
+              <InfoCard title="Git" open={open.git} onToggle={() => toggle('git')}>
+                <GitPanel
                   sessionId={session.id}
                   git={git}
                   onRefresh={() => { void loadGit(session.id) }}
                 />
-              </InfoCard>
-
-              <InfoCard title="会话快照" open={open.snapshots} onToggle={() => toggle('snapshots')}>
-                <ChangesPanel sessionId={session.id} />
               </InfoCard>
 
               <InfoCard title="文件" open={open.files} onToggle={() => toggle('files')} className="info-card-files">

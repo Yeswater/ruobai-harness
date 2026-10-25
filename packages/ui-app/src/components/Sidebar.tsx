@@ -5,7 +5,7 @@ import {
   UNGROUPED_KEY, type ManualOrder, type SidebarView,
 } from '../sidebar-model.ts'
 import {
-  ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PlusIcon, SearchIcon,
+  ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PanelLeftIcon, PlusIcon, SearchIcon,
 } from './Icons.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
 import { shortcutLabel } from '../shortcuts.ts'
@@ -14,6 +14,8 @@ interface SidebarProps {
   sessions: SessionSummary[]
   activeId: string | null
   open: boolean
+  collapsed: boolean
+  onToggleCollapse: () => void
   onSelect: (id: string) => void
   onCreate: () => void
   onCreateIn: (workspace?: string) => void
@@ -374,6 +376,14 @@ export function Sidebar(props: SidebarProps) {
                   />
                   <button className="icon-btn subtle" onClick={props.onCreate} aria-label="添加工作区">
                     <FolderPlusIcon />
+                  </button>
+                  <button
+                    className="icon-btn subtle sidebar-collapse"
+                    onClick={props.onToggleCollapse}
+                    aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+                    title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+                  >
+                    <PanelLeftIcon />
                   </button>
                 </div>
               </>
