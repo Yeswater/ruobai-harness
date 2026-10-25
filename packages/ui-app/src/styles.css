@@ -679,6 +679,63 @@ button {
   50% { opacity: 0; }
 }
 
+/* Thinking fold */
+
+.thinking {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tool-bg) 45%, transparent);
+}
+
+.thinking-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.thinking-head::after {
+  content: "›";
+  margin-left: 2px;
+  color: var(--faint);
+  font-size: 14px;
+  transition: transform .15s;
+}
+
+.thinking[open] .thinking-head::after {
+  transform: rotate(90deg);
+}
+
+.thinking-head::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.thinking-meta {
+  margin-left: auto;
+  color: var(--faint);
+}
+
+.thinking-body {
+  max-height: 280px;
+  padding: 8px 12px 10px;
+  overflow: auto;
+  border-top: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
 /* Tool card */
 
 .tool {
@@ -736,6 +793,21 @@ button {
   font-size: 10px;
   letter-spacing: .06em;
   text-transform: uppercase;
+}
+
+.tool-state.running {
+  color: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.tool-meta {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+@keyframes pulse {
+  50% { opacity: .45; }
 }
 
 .tool-output {
@@ -6308,6 +6380,24 @@ body.resizing .file-side-resizer::after {
 
 .traj-text.error {
   color: var(--danger);
+}
+
+.traj-reasoning {
+  display: flex;
+  gap: 6px;
+  padding: 6px 0 6px 8px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.traj-reasoning svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--faint);
 }
 
 .traj-chips {

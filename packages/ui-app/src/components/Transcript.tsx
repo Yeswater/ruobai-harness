@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { ChatMessage, ChatSession, ToolBlock } from '@ruobai/chat-protocol'
-import { ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
+import type { ChatMessage, ChatSession, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
+import { BrainIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
@@ -27,6 +27,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   const lastSessionRef = useRef<string | null>(null)
   const lastMessageRef = useRef<string | null>(null)
   const [atBottom, setAtBottom] = useState(true)
+  const currentTurnStart = session ? lastUserIndex(session.messages) : -1
 
   const last = session?.messages.at(-1)
   const lastBlock = last?.blocks.at(-1)
@@ -105,7 +106,15 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
             </div>
           ) : null}
 
-          {session?.messages.map(message => <Message key={message.id} message={message} />)}
+          {session?.messages.map((message, index) => (
+            <Message
+              key={message.id}
+              message={message}
+              // Thoughts stay unfolded while the turn runs; the fold closes only
+              // once the whole turn ends, so a multi-step run keeps its context.
+              activeTurn={Boolean(session.streaming) && index > currentTurnStart}
+            />
+          ))}
         </div>
 
         {!atBottom && session?.messages.length
@@ -123,7 +132,14 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   )
 }
 
-function Message({ message }: { message: ChatMessage }) {
+function lastUserIndex(messages: ChatMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'user') return index
+  }
+  return -1
+}
+
+function Message({ message, activeTurn }: { message: ChatMessage; activeTurn: boolean }) {
   const contextMenu = useContextMenu()
   const fullText = message.blocks
     .filter(block => block.type === 'text')
@@ -176,28 +192,65 @@ function Message({ message }: { message: ChatMessage }) {
             )
           }
           if (block.type === 'tool') return <ToolCard key={index} block={block} />
+          if (block.type === 'reasoning') {
+            return (
+              <ThinkingCard
+                key={index}
+                block={block}
+                expanded={activeTurn || message.status === 'streaming'}
+                live={message.status === 'streaming'}
+              />
+            )
+          }
           return null
         })}
         {message.status === 'streaming' && message.blocks.length === 0
-          ? <div className="prose thinking"><span className="caret" /> Thinking</div>
+          ? <div className="prose thinking"><span className="caret" /> 思考中…</div>
           : null}
       </div>
     </div>
   )
 }
 
+function ThinkingCard({ block, expanded, live }: { block: ReasoningBlock; expanded: boolean; live: boolean }) {
+  return (
+    <details className="thinking" open={expanded}>
+      <summary className="thinking-head">
+        <BrainIcon size={12} />
+        <span className="thinking-title">思考过程</span>
+        <span className="thinking-meta">{live ? '正在思考…' : `${block.text.length} 字`}</span>
+      </summary>
+      <div className="thinking-body">
+        {block.text}
+        {live ? <span className="caret" /> : null}
+      </div>
+    </details>
+  )
+}
+
 function ToolCard({ block }: { block: ToolBlock }) {
+  const running = !block.output && !block.isError
   return (
     <details className={`tool ${block.isError ? 'error' : ''}`}>
       <summary className="tool-head">
         <ToolIcon size={13} />
         <span className="tool-name">{block.name}</span>
         <span className="tool-input">{formatToolInput(block.input)}</span>
-        {block.isError ? <span className="tool-state">failed</span> : null}
+        {running
+          ? <span className="tool-state running">运行中</span>
+          : block.isError
+            ? <span className="tool-state">failed</span>
+            : <span className="tool-meta">{formatOutputSize(block.output)}</span>}
       </summary>
       <pre className="tool-output">{block.output || (block.isError ? 'failed' : 'running…')}</pre>
     </details>
   )
+}
+
+function formatOutputSize(output: string) {
+  if (!output) return ''
+  if (output.length < 1_000) return `${output.length} 字符`
+  return `${(output.length / 1_000).toFixed(1)}k 字符`
 }
 
 function formatToolInput(raw: string) {

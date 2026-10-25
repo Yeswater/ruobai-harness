@@ -7,6 +7,12 @@ export interface TextPart {
   text: string
 }
 
+/** Provider-reported chain of thought; shown to the user, never sent back. */
+export interface ReasoningPart {
+  type: 'reasoning'
+  text: string
+}
+
 export interface ToolCallPart {
   type: 'tool-call'
   id: string
@@ -41,7 +47,7 @@ export interface FilePart {
   text: string
 }
 
-export type ContentPart = TextPart | ToolCallPart | ToolResultPart | ImagePart | FilePart
+export type ContentPart = TextPart | ReasoningPart | ToolCallPart | ToolResultPart | ImagePart | FilePart
 
 export interface Message {
   role: Role
@@ -74,6 +80,7 @@ export interface ModelRequest {
 export type StopReason = 'stop' | 'tool-calls' | 'length' | 'aborted'
 
 export type StreamChunk =
+  | { type: 'reasoning-delta'; text: string }
   | { type: 'text-delta'; text: string }
   | { type: 'tool-call'; id: string; name: string; arguments: string }
   | { type: 'done'; reason?: StopReason; usage?: Usage }

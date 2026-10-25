@@ -70,6 +70,36 @@ describe('openai adapter', () => {
     await llm.dispose()
   })
 
+  it('maps streamed reasoning in both provider shapes', async () => {
+    const baseUrl = await mockApi([
+      'data: {"choices":[{"delta":{"reasoning_content":"先看看"}}]}\n\n',
+      'data: {"choices":[{"delta":{"reasoning":[{"text":"文件路径"}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"好的"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+      'data: [DONE]\n\n',
+    ])
+
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model' })
+    await provider
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({ messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }, 'openai')) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.filter(chunk => chunk.type === 'reasoning-delta')).toEqual([
+      { type: 'reasoning-delta', text: '先看看' },
+      { type: 'reasoning-delta', text: '文件路径' },
+    ])
+    expect(chunks).toContainEqual({ type: 'text-delta', text: '好的' })
+
+    await provider.dispose()
+    await llm.dispose()
+  })
+
   it('accumulates streamed tool calls into one chunk', async () => {
     const baseUrl = await mockApi([
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"read_file","arguments":"{\\"pa"}}]}}]}\n\n',

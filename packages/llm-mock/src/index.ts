@@ -43,6 +43,14 @@ export class MockProvider implements LlmProvider {
       if (last?.role === 'tool') {
         const result = last.content.find(part => part.type === 'tool-result')
         const summary = result?.type === 'tool-result' ? result.content.slice(0, 400) : ''
+        for (const chunk of chunks('工具已经返回结果，我来整理一下要点。')) {
+          if (request.signal?.aborted) {
+            yield { type: 'done', reason: 'aborted' }
+            return
+          }
+          yield { type: 'reasoning-delta', text: chunk }
+          await sleep(delay, request.signal)
+        }
         const reply = `工具返回了结果：\n\n${summary}\n\n这是 mock 提供方的总结。接入真实模型后，这里会由模型根据工具结果继续回答。`
         for (const chunk of chunks(reply)) {
           if (request.signal?.aborted) {
@@ -58,6 +66,14 @@ export class MockProvider implements LlmProvider {
 
       if (/文件|代码|源码|file|read|查看|list/i.test(input)) {
         const tool = /目录|list/i.test(input) ? 'list_dir' : 'read_file'
+        for (const chunk of chunks('用户想看文件，先确认一下要读取哪个路径。')) {
+          if (request.signal?.aborted) {
+            yield { type: 'done', reason: 'aborted' }
+            return
+          }
+          yield { type: 'reasoning-delta', text: chunk }
+          await sleep(delay, request.signal)
+        }
         yield { type: 'text-delta', text: '我先读取一下相关文件。' }
         await sleep(delay, request.signal)
         yield {
