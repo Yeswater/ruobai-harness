@@ -7,6 +7,7 @@ import {
 import { applyCompletion, detectTrigger } from '../composer-triggers.ts'
 import { tokenizeComposer } from '../composer-tokens.ts'
 import { useComposerAttachments } from '../useComposerAttachments.ts'
+import { clearDraft, readDraft, writeDraft } from '../composer-drafts.ts'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { ComposerPlusMenu } from './ComposerPlusMenu.tsx'
 import { MentionMenu } from './MentionMenu.tsx'
@@ -58,7 +59,7 @@ export function Composer({
   commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
   onStop, onNewSession, onOpenConnectors, reference,
 }: ComposerProps) {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => readDraft(sessionId).text)
   const [caret, setCaret] = useState(0)
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [dismissed, setDismissed] = useState(false)
@@ -73,12 +74,22 @@ export function Composer({
   const folderInputRef = useRef<HTMLInputElement>(null)
   const pendingCaret = useRef<number | null>(null)
   const attachments = useComposerAttachments(sessionId)
+  const sessionRef = useRef(sessionId)
+  const textRef = useRef(text)
+  const attachmentsRef = useRef(attachments.attachments)
+  const loadedSession = useRef(sessionId)
+  sessionRef.current = sessionId
+  textRef.current = text
+  attachmentsRef.current = attachments.attachments
   const tokens = useMemo(() => tokenizeComposer(text), [text])
 
   const attachFile = useCallback(async (path: string, name: string) => {
     if (!sessionId) return false
+    const target = sessionId
     try {
       const file = await api.readWorkspaceFile(path, sessionId)
+      // The session may change while the file is being read.
+      if (sessionRef.current !== target) return false
       attachments.addOne({
         id: globalThis.crypto?.randomUUID?.() ?? `a-${Date.now()}`,
         kind: 'file',
@@ -211,9 +222,27 @@ export function Composer({
   }, [mentionOpen, trigger?.query, sessionId])
 
   useEffect(() => {
+    // Save what belongs to the session we are leaving, then restore the draft
+    // of the one we just opened: text and attachments are per-session.
+    const previous = loadedSession.current
+    if (previous === sessionId) return
+    loadedSession.current = sessionId
+    writeDraft(previous, { text: textRef.current, attachments: attachmentsRef.current })
+    const draft = readDraft(sessionId)
+    setText(draft.text)
+    setCaret(draft.text.length)
+    attachments.replace(draft.attachments)
     setOpenMenu(null)
     setDismissed(true)
-  }, [sessionId])
+  }, [sessionId, attachments.replace])
+
+  useEffect(() => () => {
+    // Switching to another view unmounts the composer; keep the draft for later.
+    writeDraft(sessionRef.current, {
+      text: textRef.current,
+      attachments: attachmentsRef.current,
+    })
+  }, [])
 
   const syncCaret = (event: { currentTarget: HTMLTextAreaElement }) => {
     setCaret(event.currentTarget.selectionStart ?? 0)
@@ -228,6 +257,7 @@ export function Composer({
     setCaret(0)
     setDismissed(true)
     attachments.clear()
+    clearDraft(sessionId)
     setOpenMenu(null)
   }
 

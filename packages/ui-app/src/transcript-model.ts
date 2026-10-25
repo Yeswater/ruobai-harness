@@ -128,6 +128,24 @@ export function isGroupRunning(items: ProcessItem[]) {
   return items.some(item => item.pending)
 }
 
+/**
+ * Whether a process group renders open.
+ *
+ * The turn's streaming flag is the authority: a group left behind by a finished
+ * turn is never running. The newest group stays open for the whole streaming
+ * turn, because between two model steps none of its rows is pending at that
+ * exact moment but more work is still coming.
+ */
+export function shouldGroupRun(options: {
+  streaming: boolean
+  active: boolean
+  placeholder?: boolean
+  running: boolean
+}) {
+  return options.streaming
+    && (options.active || Boolean(options.placeholder) || options.running)
+}
+
 /** Elapsed time of one row, or undefined when it has no recorded span. */
 export function itemDuration(item: ProcessItem): number | undefined {
   const { startedAt, finishedAt } = item.block

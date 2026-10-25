@@ -8,7 +8,8 @@ import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
 import { toolDetail } from '../tool-summary.ts'
 import {
-  buildPlan, formatDuration, groupSummary, isGroupRunning, itemDuration, type ProcessItem,
+  buildPlan, formatDuration, groupSummary, isGroupRunning, itemDuration, shouldGroupRun,
+  type ProcessItem,
 } from '../transcript-model.ts'
 
 interface TranscriptProps {
@@ -111,7 +112,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
             </div>
           ) : null}
 
-          {plan.map((item) => {
+          {plan.map((item, index) => {
             if (item.kind === 'user') return <UserMessage key={item.key} message={item.message} />
             if (item.kind === 'text') {
               return (
@@ -129,6 +130,10 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
                 // The turn's live flag is the authority: a group left behind by a
                 // finished turn is never "running", even without timing stamps.
                 streaming={Boolean(session?.streaming)}
+                // Between two model steps the latest group has no pending row yet,
+                // but the turn still has work coming; keep it open instead of
+                // folding and re-opening the same group at every round trip.
+                active={index === plan.length - 1}
               />
             )
           })}
@@ -186,14 +191,23 @@ function UserMessage({ message }: { message: ChatMessage }) {
  * collapses to `已完成，用时 1分30秒`. A click pins the state until the next
  * action starts, so reading a finished run does not fight the auto-fold.
  */
-function ProcessGroup({ items, placeholder, streaming }: {
+function ProcessGroup({ items, placeholder, streaming, active }: {
   items: ProcessItem[]
   placeholder?: boolean
   streaming: boolean
+  /** The last group in a streaming turn still has steps ahead of it. */
+  active: boolean
 }) {
   // A step that has produced nothing yet keeps the group "running": one row,
   // one state, instead of a separate 「思考中…」 line that comes and goes.
-  const running = streaming && (placeholder || isGroupRunning(items))
+  // The newest group stays open for the whole streaming turn even between tool
+  // round trips, when none of its rows is pending at this exact moment.
+  const running = shouldGroupRun({
+    streaming,
+    active,
+    placeholder,
+    running: isGroupRunning(items),
+  })
   const [override, setOverride] = useState<boolean | null>(null)
   const open = override ?? running
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatBlock, ChatMessage } from '@ruobai/chat-protocol'
 import {
-  buildPlan, formatDuration, groupDuration, groupSummary, isGroupRunning,
+  buildPlan, formatDuration, groupDuration, groupSummary, isGroupRunning, shouldGroupRun,
 } from '../src/transcript-model.ts'
 
 let counter = 0
@@ -182,5 +182,21 @@ describe('duration format', () => {
     expect(formatDuration(90_000)).toBe('1分30秒')
     expect(formatDuration(120_000)).toBe('2分')
     expect(formatDuration(3_900_000)).toBe('1小时5分')
+  })
+})
+
+describe('process group open state', () => {
+  it('keeps the newest group open while the turn streams, even between steps', () => {
+    expect(shouldGroupRun({ streaming: true, active: true, running: false })).toBe(true)
+  })
+
+  it('still opens older groups that have a pending row', () => {
+    expect(shouldGroupRun({ streaming: true, active: false, running: true })).toBe(true)
+    expect(shouldGroupRun({ streaming: true, active: false, placeholder: true, running: false })).toBe(true)
+  })
+
+  it('folds groups left behind by a finished turn', () => {
+    expect(shouldGroupRun({ streaming: false, active: true, running: false })).toBe(false)
+    expect(shouldGroupRun({ streaming: true, active: false, running: false })).toBe(false)
   })
 })

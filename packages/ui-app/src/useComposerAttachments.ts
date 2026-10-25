@@ -3,21 +3,26 @@ import type { AttachmentMeta } from '@ruobai/chat-protocol'
 import {
   filesToAttachments, folderManifest, MAX_ATTACHMENTS, MAX_TOTAL_BYTES, totalSize,
 } from './attachments.ts'
+import { readDraft } from './composer-drafts.ts'
 
 export function useComposerAttachments(sessionId?: string) {
-  const [attachments, setAttachments] = useState<AttachmentMeta[]>([])
+  const [attachments, setAttachments] = useState<AttachmentMeta[]>(
+    () => readDraft(sessionId).attachments,
+  )
   const [error, setError] = useState<string | null>(null)
-  const latest = useRef<AttachmentMeta[]>([])
+  const latest = useRef<AttachmentMeta[]>(attachments)
+  const sessionRef = useRef(sessionId)
+  sessionRef.current = sessionId
 
   useEffect(() => {
     latest.current = attachments
   }, [attachments])
 
-  useEffect(() => {
-    latest.current = []
-    setAttachments([])
+  const replace = useCallback((next: AttachmentMeta[]) => {
+    latest.current = next
+    setAttachments(next)
     setError(null)
-  }, [sessionId])
+  }, [])
 
   const append = useCallback((next: AttachmentMeta[]) => {
     if (!next.length) return
@@ -36,10 +41,14 @@ export function useComposerAttachments(sessionId?: string) {
   }, [])
 
   const addFiles = useCallback(async (files: Iterable<File>) => {
+    const target = sessionRef.current
     try {
       const next = await filesToAttachments(files, latest.current)
+      // The session may change while a large image is being read.
+      if (sessionRef.current !== target) return
       append(next)
     } catch (caught) {
+      if (sessionRef.current !== target) return
       setError(caught instanceof Error ? caught.message : String(caught))
     }
   }, [append])
@@ -66,5 +75,5 @@ export function useComposerAttachments(sessionId?: string) {
     setAttachments([])
   }, [])
 
-  return { attachments, addFiles, addFolder, addOne, remove, clear, error, setError }
+  return { attachments, addFiles, addFolder, addOne, remove, clear, replace, error, setError }
 }
