@@ -36,6 +36,29 @@ export function languageOf(path: string) {
   return BY_EXTENSION[extension]
 }
 
+const FENCE_ALIASES: Record<string, string> = {
+  ts: 'typescript', tsx: 'typescript', typescript: 'typescript',
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', javascript: 'javascript',
+  json: 'json', jsonl: 'json',
+  css: 'css', scss: 'css', less: 'css',
+  html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml', vue: 'xml',
+  md: 'markdown', markdown: 'markdown',
+  yml: 'yaml', yaml: 'yaml',
+  sh: 'bash', shell: 'bash', bash: 'bash', zsh: 'bash',
+  py: 'python', python: 'python',
+}
+
+/** Highlight one fenced block; `undefined` for unsupported or unknown fences. */
+export function highlightCode(code: string, language?: string): string | undefined {
+  const name = language ? FENCE_ALIASES[language.toLowerCase()] ?? language.toLowerCase() : undefined
+  if (!name || !hljs.getLanguage(name)) return undefined
+  try {
+    return hljs.highlight(code, { language: name, ignoreIllegals: true }).value
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Re-open the `<span>`s that cross a line break so each line can be rendered
  * on its own (line numbers stay aligned, wrapping still works).

@@ -6,8 +6,9 @@ import { highlightLines, languageOf } from '../file-highlight.ts'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import {
-  AtIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon, FolderIcon, SearchIcon, WrapTextIcon,
+  AtIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon, EyeIcon, FolderIcon, SearchIcon, WrapTextIcon,
 } from './Icons.tsx'
+import { MarkdownPreview } from './MarkdownPreview.tsx'
 
 const MAX_LINES = 3_000
 
@@ -51,7 +52,8 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const [hits, setHits] = useState<WorkspaceTextMatch[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [wrap, setWrap] = useState(false)
+  const [wrap, setWrap] = useState(true)
+  const [markdownPreview, setMarkdownPreview] = useState(true)
   const [copiedPath, setCopiedPath] = useState(false)
   const [opening, setOpening] = useState(false)
   const codeRef = useRef<HTMLDivElement>(null)
@@ -108,6 +110,8 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     setActive(path)
     setLineTarget(line ?? null)
     setError(null)
+    // Markdown opens rendered; a content-search jump needs the source line view.
+    if (/\.(md|markdown|mdx)$/i.test(path)) setMarkdownPreview(line === undefined)
     setTabs(current => current.some(tab => tab.path === path)
       ? current
       : [...current, { path, content: '', size: 0, loading: true }])
@@ -170,6 +174,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   }, [query, sessionId])
 
   const tab = useMemo(() => tabs.find(item => item.path === active) ?? null, [tabs, active])
+  const markdown = tab ? /\.(md|markdown|mdx)$/i.test(tab.path) : false
   const visible = useMemo (
     () => (tab ? tab.content.split('\n').slice(0, MAX_LINES) : []),
     [tab],
@@ -448,6 +453,18 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                     >
                       <ExternalLinkIcon size={13} />
                     </button>
+                    {markdown
+                      ? (
+                        <button
+                          className={`icon-btn subtle ${markdownPreview ? 'active' : ''}`}
+                          title={markdownPreview ? '查看源码' : '预览 Markdown'}
+                          aria-label="Markdown 预览"
+                          onClick={() => setMarkdownPreview(value => !value)}
+                        >
+                          <EyeIcon size={13} />
+                        </button>
+                      )
+                      : null}
                     <button
                       className={`icon-btn subtle ${wrap ? 'active' : ''}`}
                       title={wrap ? '取消自动换行' : '自动换行'}
@@ -460,27 +477,38 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                 </div>
                 <div className="file-view-meta">
                   {languageLabel(tab.path)} · {formatBytes(tab.size)}
+                  {markdown && markdownPreview ? ' · 预览' : ''}
                   {copiedPath ? ' · 已复制路径' : null}
                 </div>
-                <div className={`file-code ${wrap ? 'wrap' : ''}`} ref={codeRef} onContextMenu={codeMenu}>
-                  {tab.loading
-                    ? <div className="file-hint">正在读取…</div>
-                    : visible.map((line, index) => (
-                      <div
-                        className={`code-line ${lineTarget === index + 1 ? 'line-hit' : ''}`}
-                        data-line={index + 1}
-                        key={index}
-                      >
-                        <span className="line-no">{index + 1}</span>
-                        {html
-                          ? <span className="line-text" dangerouslySetInnerHTML={{ __html: html[index] ?? '' }} />
-                          : <span className="line-text">{line || ' '}</span>}
-                      </div>
-                    ))}
-                  {totalLines > MAX_LINES
-                    ? <div className="code-more">… 还有 {totalLines - MAX_LINES} 行未显示</div>
-                    : null}
-                </div>
+                {markdown && markdownPreview
+                  ? (
+                    <div className="file-markdown" ref={codeRef} onContextMenu={codeMenu}>
+                      {tab.loading
+                        ? <div className="file-hint">正在读取…</div>
+                        : <MarkdownPreview content={tab.content} />}
+                    </div>
+                  )
+                  : (
+                    <div className={`file-code ${wrap ? 'wrap' : ''}`} ref={codeRef} onContextMenu={codeMenu}>
+                      {tab.loading
+                        ? <div className="file-hint">正在读取…</div>
+                        : visible.map((line, index) => (
+                          <div
+                            className={`code-line ${lineTarget === index + 1 ? 'line-hit' : ''}`}
+                            data-line={index + 1}
+                            key={index}
+                          >
+                            <span className="line-no">{index + 1}</span>
+                            {html
+                              ? <span className="line-text" dangerouslySetInnerHTML={{ __html: html[index] ?? '' }} />
+                              : <span className="line-text">{line || ' '}</span>}
+                          </div>
+                        ))}
+                      {totalLines > MAX_LINES
+                        ? <div className="code-more">… 还有 {totalLines - MAX_LINES} 行未显示</div>
+                        : null}
+                    </div>
+                  )}
               </>
             )
           : <div className="file-hint">选择一个文件查看内容</div>}

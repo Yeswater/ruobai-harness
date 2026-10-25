@@ -5762,3 +5762,163 @@ body.resizing .details-resizer::after {
   font-size: 10px;
   overflow-wrap: anywhere;
 }
+
+/* ===== Markdown preview + Mermaid ===== */
+
+.file-markdown {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 18px 24px;
+  overflow: auto;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.file-markdown > :first-child {
+  margin-top: 0;
+}
+
+.file-markdown h1,
+.file-markdown h2,
+.file-markdown h3,
+.file-markdown h4 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.file-markdown h1 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 19px;
+}
+
+.file-markdown h2 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 16px;
+}
+
+.file-markdown h3 {
+  font-size: 14px;
+}
+
+.file-markdown p,
+.file-markdown ul,
+.file-markdown ol,
+.file-markdown blockquote,
+.file-markdown table,
+.file-markdown pre {
+  margin: 0 0 10px;
+}
+
+.file-markdown ul,
+.file-markdown ol {
+  padding-left: 20px;
+}
+
+.file-markdown li {
+  margin: 2px 0;
+}
+
+.file-markdown a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.file-markdown a:hover {
+  text-decoration: underline;
+}
+
+.file-markdown blockquote {
+  margin-left: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.file-markdown code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.file-markdown :not(pre) > code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--tool-bg);
+}
+
+.file-markdown pre.md-code {
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--tool-bg);
+}
+
+.file-markdown pre.md-code code {
+  color: var(--text);
+}
+
+.file-markdown table {
+  display: block;
+  width: auto;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.file-markdown th,
+.file-markdown td {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.file-markdown th {
+  background: var(--tool-bg);
+  font-weight: 600;
+}
+
+.file-markdown hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.file-markdown img {
+  max-width: 100%;
+}
+
+.mermaid-block {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-loading {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.mermaid-block.error {
+  display: block;
+}
+
+.mermaid-error {
+  margin-bottom: 8px;
+  color: var(--danger);
+  font-size: 11.5px;
+}
