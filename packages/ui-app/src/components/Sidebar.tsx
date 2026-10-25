@@ -7,6 +7,7 @@ import {
 import {
   ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PanelLeftIcon, PlusIcon, SearchIcon,
 } from './Icons.tsx'
+import { useContextMenu } from './ContextMenu.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
 import { shortcutLabel } from '../shortcuts.ts'
 
@@ -84,6 +85,7 @@ export function relativeTime(timestamp: number) {
 }
 
 export function Sidebar(props: SidebarProps) {
+  const contextMenu = useContextMenu()
   const [view, setView] = useState<SidebarView>(loadView)
   const [orders, setOrders] = useState<ManualOrder>(loadOrders)
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
@@ -184,6 +186,28 @@ export function Sidebar(props: SidebarProps) {
         ].filter(Boolean).join(' ')}
         style={{ marginLeft: indent }}
         draggable={draggable && editingId !== session.id}
+        onContextMenu={(event) => {
+          if (editingId === session.id) return
+          setMenuId(null)
+          contextMenu.open(event, [
+            { label: '重命名', onSelect: () => startRename(session) },
+            {
+              label: '分叉',
+              disabled: session.streaming,
+              onSelect: () => props.onFork(session.id),
+            },
+            {
+              label: session.archived ? '取消归档' : '归档会话',
+              onSelect: () => props.onArchive(session.id, !session.archived),
+            },
+            { separator: true },
+            {
+              label: '删除',
+              danger: true,
+              onSelect: () => setPendingDelete(session),
+            },
+          ])
+        }}
         onDragStart={(event) => {
           if (!draggable) return
           dropCommitted.current = false

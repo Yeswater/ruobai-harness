@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AttachmentMeta } from '@ruobai/chat-protocol'
 import { formatBytes } from '../attachments.ts'
+import { useContextMenu } from './ContextMenu.tsx'
 import { CloseIcon, FileTextIcon } from './Icons.tsx'
 
 interface AttachmentRailProps {
@@ -9,6 +10,7 @@ interface AttachmentRailProps {
 }
 
 export function AttachmentRail({ attachments, onRemove }: AttachmentRailProps) {
+  const contextMenu = useContextMenu()
   const [preview, setPreview] = useState<AttachmentMeta | null>(null)
 
   useEffect(() => {
@@ -34,6 +36,25 @@ export function AttachmentRail({ attachments, onRemove }: AttachmentRailProps) {
               tabIndex={0}
               title={`${attachment.name} · ${formatBytes(attachment.size)} · 点击预览`}
               onClick={() => setPreview(attachment)}
+              onContextMenu={(event) => {
+                contextMenu.open(event, [
+                  { label: '预览大图', onSelect: () => setPreview(attachment) },
+                  {
+                    label: '复制文件名',
+                    onSelect: () => { void navigator.clipboard.writeText(attachment.name).catch(() => undefined) },
+                  },
+                  ...(onRemove
+                    ? [
+                        { separator: true },
+                        {
+                          label: '移除',
+                          danger: true,
+                          onSelect: () => onRemove(attachment.id),
+                        },
+                      ]
+                    : []),
+                ])
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault()
@@ -60,7 +81,29 @@ export function AttachmentRail({ attachments, onRemove }: AttachmentRailProps) {
             </div>
           )
           : (
-            <div key={attachment.id} className="attachment-chip" title={attachment.path ?? attachment.name}>
+            <div
+              key={attachment.id}
+              className="attachment-chip"
+              title={attachment.path ?? attachment.name}
+              onContextMenu={(event) => {
+                contextMenu.open(event, [
+                  {
+                    label: '复制文件名',
+                    onSelect: () => { void navigator.clipboard.writeText(attachment.name).catch(() => undefined) },
+                  },
+                  ...(onRemove
+                    ? [
+                        { separator: true },
+                        {
+                          label: '移除',
+                          danger: true,
+                          onSelect: () => onRemove(attachment.id),
+                        },
+                      ]
+                    : []),
+                ])
+              }}
+            >
               <FileTextIcon size={13} />
               <span className="attachment-name">{attachment.name}</span>
               <span className="attachment-size">{formatBytes(attachment.size)}</span>

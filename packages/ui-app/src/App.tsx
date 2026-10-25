@@ -7,6 +7,7 @@ import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarS
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
+import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
 import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
 import { SessionPanel } from './components/SessionPanel.tsx'
 import { BranchIcon, FilePanelIcon, FolderIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
@@ -47,6 +48,7 @@ function loadDetailsWidth() {
 export function App() {
   const harness = useHarness()
   useClientPlugins()
+  const contextMenu = useContextMenu()
   const [preference, setPreference] = useState<ThemePreference>(initialPreference)
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
@@ -211,6 +213,23 @@ export function App() {
         sidebarCollapsed ? 'sidebar-collapsed' : '',
       ].filter(Boolean).join(' ')}
       style={{ '--details-width': `${detailsWidth}px` } as CSSProperties}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        const target = event.target as HTMLElement
+        const editable = target.closest('input, textarea')
+        if (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) {
+          contextMenu.open(event, editableContextMenu(editable))
+          return
+        }
+        const selection = window.getSelection()?.toString().trim()
+        if (selection) {
+          contextMenu.open(event, [{
+            label: '复制',
+            shortcut: `${modKeyLabel()}C`,
+            onSelect: () => { void navigator.clipboard.writeText(selection) },
+          }])
+        }
+      }}
     >
       <Sidebar
         sessions={harness.sessions}

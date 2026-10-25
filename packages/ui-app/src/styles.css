@@ -5587,3 +5587,61 @@ body.resizing .details-resizer::after {
     grid-template-columns: minmax(0, 1fr) 0px 0px 0px;
   }
 }
+
+/* ===== App context menu ===== */
+
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 176px;
+  max-width: 280px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--tool-bg);
+}
+
+.context-menu-item:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.context-menu-item.danger {
+  color: var(--danger);
+}
+
+.context-menu-item.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.context-menu-key {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}

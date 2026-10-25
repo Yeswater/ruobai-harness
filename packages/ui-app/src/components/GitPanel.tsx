@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, type GitFile, type GitInfo, type SessionChange } from '../api.ts'
 import { BranchIcon, ChevronDownIcon } from './Icons.tsx'
+import { useContextMenu } from './ContextMenu.tsx'
 import { DiffView } from './DiffView.tsx'
 
 interface GitPanelProps {
@@ -32,6 +33,7 @@ function statusClass(status: string) {
  * session's own checkpoints share one commit/rollback surface.
  */
 export function GitPanel({ sessionId, git, onRefresh }: GitPanelProps) {
+  const contextMenu = useContextMenu()
   const [files, setFiles] = useState<GitFile[]>([])
   const [changes, setChanges] = useState<SessionChange[]>([])
   const [selected, setSelected] = useState<Record<string, boolean>>({})
@@ -203,7 +205,22 @@ export function GitPanel({ sessionId, git, onRefresh }: GitPanelProps) {
             const { added, removed } = counts(diff)
             return (
               <div className={`git-file ${open ? 'open' : ''}`} key={file.path}>
-                <div className="git-file-head">
+                <div
+                  className="git-file-head"
+                  onContextMenu={(event) => {
+                    contextMenu.open(event, [
+                      {
+                        label: open ? '收起 diff' : '查看 diff',
+                        onSelect: () => void toggleFile(file.path),
+                      },
+                      { separator: true },
+                      {
+                        label: '复制路径',
+                        onSelect: () => { void navigator.clipboard.writeText(file.path).catch(() => undefined) },
+                      },
+                    ])
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={Boolean(selected[file.path])}
@@ -267,7 +284,29 @@ export function GitPanel({ sessionId, git, onRefresh }: GitPanelProps) {
             const open = expanded === key
             const { added, removed } = counts(change.diff)
             return (
-              <div className="change-row" key={change.seq}>
+              <div
+                className="change-row"
+                key={change.seq}
+                onContextMenu={(event) => {
+                  contextMenu.open(event, [
+                    {
+                      label: open ? '收起 diff' : '查看 diff',
+                      onSelect: () => setExpanded(open ? null : key),
+                    },
+                    {
+                      label: '回退到此改动之前',
+                      danger: true,
+                      disabled: busy !== null,
+                      onSelect: () => void revert(change.seq - 1),
+                    },
+                    { separator: true },
+                    {
+                      label: '复制路径',
+                      onSelect: () => { void navigator.clipboard.writeText(change.path).catch(() => undefined) },
+                    },
+                  ])
+                }}
+              >
                 <button
                   className="change-head"
                   onClick={() => setExpanded(open ? null : key)}

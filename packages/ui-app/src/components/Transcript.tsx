@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ToolBlock } from '@ruobai/chat-protocol'
 import { ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
+import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
 
 interface TranscriptProps {
@@ -123,13 +124,35 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
 }
 
 function Message({ message }: { message: ChatMessage }) {
+  const contextMenu = useContextMenu()
+  const fullText = message.blocks
+    .filter(block => block.type === 'text')
+    .map(block => (block as { text: string }).text)
+    .join('\n')
+    .trim()
+
+  const onContextMenu = (event: ReactMouseEvent) => {
+    contextMenu.open(event, [
+      {
+        label: '复制消息',
+        disabled: !fullText,
+        onSelect: () => { void navigator.clipboard.writeText(fullText).catch(() => undefined) },
+      },
+      { separator: true },
+      {
+        label: '复制消息 ID',
+        onSelect: () => { void navigator.clipboard.writeText(message.id).catch(() => undefined) },
+      },
+    ])
+  }
+
   if (message.role === 'user') {
     const text = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
     const attachments = message.blocks
       .filter(block => block.type === 'attachment')
       .map(block => block.attachment)
     return (
-      <div className="msg user" id={`msg-${message.id}`}>
+      <div className="msg user" id={`msg-${message.id}`} onContextMenu={onContextMenu}>
         {attachments.length ? <AttachmentRail attachments={attachments} /> : null}
         {text ? <div className="bubble">{text}</div> : null}
       </div>
@@ -139,7 +162,7 @@ function Message({ message }: { message: ChatMessage }) {
   const toolOnly = message.blocks.length > 0 && message.blocks.every(block => block.type === 'tool')
 
   return (
-    <div className={`msg assistant ${toolOnly ? 'tool-only' : ''}`}>
+    <div className={`msg assistant ${toolOnly ? 'tool-only' : ''}`} onContextMenu={onContextMenu}>
       <div className="msg-body">
         {message.blocks.map((block, index) => {
           if (block.type === 'text') {

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   api, type WorkspaceEntry, type WorkspaceMatch, type WorkspaceTextMatch,
 } from '../api.ts'
 import { highlightLines, languageOf } from '../file-highlight.ts'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
+import { useContextMenu } from './ContextMenu.tsx'
 import {
   AtIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon, FolderIcon, SearchIcon, WrapTextIcon,
 } from './Icons.tsx'
@@ -37,6 +38,7 @@ interface FileBrowserProps {
 }
 
 export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
+  const contextMenu = useContextMenu()
   const [root, setRoot] = useState<WorkspaceEntry | null>(null)
   const [children, setChildren] = useState<Record<string, WorkspaceEntry[]>>({})
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['.']))
@@ -207,14 +209,77 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const openInEditor = async () => {
     if (!tab) return
     setOpening(true)
+    await openPathInEditor(tab.path)
+    setOpening(false)
+  }
+
+  const openPathInEditor = async (path: string) => {
     setError(null)
     try {
-      await api.openWorkspaceFile(tab.path, sessionId)
+      await api.openWorkspaceFile(path, sessionId)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setOpening(false)
     }
+  }
+
+  const copyText = (text: string) => {
+    void navigator.clipboard.writeText(text).catch(() => undefined)
+  }
+
+  const entryMenu = (event: ReactMouseEvent, path: string, directory: boolean) => {
+    contextMenu.open(event, directory
+      ? [
+          { label: expanded.has(path) ? '折叠目录' : '展开目录', onSelect: () => toggle(path) },
+          { separator: true },
+          { label: '复制路径', onSelect: () => copyText(path) },
+        ]
+      : [
+          { label: '打开', onSelect: () => void openFile(path) },
+          {
+            label: '引用到对话',
+            disabled: !onReference,
+            onSelect: () => onReference?.(path),
+          },
+          { separator: true },
+          { label: '复制路径', onSelect: () => copyText(path) },
+          { label: '在编辑器中打开', onSelect: () => void openPathInEditor(path) },
+        ])
+  }
+
+  const tabMenu = (event: ReactMouseEvent, path: string) => {
+    contextMenu.open(event, [
+      { label: '关闭', onSelect: () => closeTab(path) },
+      {
+        label: '关闭其他标签',
+        disabled: tabs.length < 2,
+        onSelect: () => {
+          setTabs(current => current.filter(item => item.path === path))
+          setActive(path)
+        },
+      },
+      { separator: true },
+      { label: '复制路径', onSelect: () => copyText(path) },
+    ])
+  }
+
+  const codeMenu = (event: ReactMouseEvent) => {
+    if (!tab) return
+    const selection = window.getSelection()?.toString().trim() ?? ''
+    contextMenu.open(event, [
+      {
+        label: '复制选中内容',
+        disabled: !selection,
+        onSelect: () => copyText(selection),
+      },
+      { label: '复制全部内容', onSelect: () => copyText(tab.content) },
+      { separator: true },
+      {
+        label: '引用到对话',
+        disabled: !onReference,
+        onSelect: () => onReference?.(tab.path),
+      },
+      { label: '复制路径', onSelect: () => copyText(tab.path) },
+    ])
   }
 
   const openSearchResult = (item: WorkspaceMatch) => {
@@ -257,6 +322,13 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                     key={`${hit.path}:${hit.line}`}
                     title={`${hit.path}:${hit.line}`}
                     onClick={() => void openFile(hit.path, hit.line)}
+                    onContextMenu={(event) => {
+                      contextMenu.open(event, [
+                        { label: '打开', onSelect: () => void openFile(hit.path, hit.line) },
+                        { separator: true },
+                        { label: '复制路径', onSelect: () => copyText(hit.path) },
+                      ])
+                    }}
                   >
                     <FileTypeIcon path={hit.path} />
                     <span className="file-hit-body">
@@ -273,6 +345,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                     className={`tree-row ${active === item.path ? 'active' : ''}`}
                     title={item.path}
                     onClick={() => openSearchResult(item)}
+                    onContextMenu={event => entryMenu(event, item.path, item.type === 'directory')}
                   >
                     {item.type === 'directory'
                       ? <FolderIcon size={13} />
@@ -297,6 +370,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                     loadingDir={loadingDir}
                     onToggle={toggle}
                     onOpen={path => void openFile(path)}
+                    onMenu={entryMenu}
                   />
                 )
                 : <div className="loading">loading workspace…</div>}
@@ -315,6 +389,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                   className={`file-tab ${item.path === active ? 'active' : ''}`}
                   key={item.path}
                   title={item.path}
+                  onContextMenu={event => tabMenu(event, item.path)}
                 >
                   <button className="file-tab-open" onClick={() => setActive(item.path)}>
                     <FileTypeIcon path={item.path} size={11} />
@@ -387,7 +462,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                   {languageLabel(tab.path)} · {formatBytes(tab.size)}
                   {copiedPath ? ' · 已复制路径' : null}
                 </div>
-                <div className={`file-code ${wrap ? 'wrap' : ''}`} ref={codeRef}>
+                <div className={`file-code ${wrap ? 'wrap' : ''}`} ref={codeRef} onContextMenu={codeMenu}>
                   {tab.loading
                     ? <div className="file-hint">正在读取…</div>
                     : visible.map((line, index) => (
@@ -422,10 +497,11 @@ interface TreeNodeProps {
   loadingDir: string | null
   onToggle: (path: string) => void
   onOpen: (path: string) => void
+  onMenu: (event: ReactMouseEvent, path: string, directory: boolean) => void
 }
 
 function TreeNode({
-  entry, childrenByDir, expanded, active, loadingDir, onToggle, onOpen,
+  entry, childrenByDir, expanded, active, loadingDir, onToggle, onOpen, onMenu,
 }: TreeNodeProps) {
   const directory = entry.type === 'directory'
   const open = expanded.has(entry.path)
@@ -436,6 +512,7 @@ function TreeNode({
       <button
         className={`tree-row ${active === entry.path ? 'active' : ''}`}
         onClick={() => directory ? onToggle(entry.path) : onOpen(entry.path)}
+        onContextMenu={event => onMenu(event, entry.path, directory)}
         title={entry.path}
       >
         <span className={`tree-caret ${directory ? (open ? 'open' : '') : 'leaf'}`}>
@@ -460,6 +537,7 @@ function TreeNode({
                     loadingDir={loadingDir}
                     onToggle={onToggle}
                     onOpen={onOpen}
+                    onMenu={onMenu}
                   />
                 ))
                 : <div className="tree-empty">empty</div>}
