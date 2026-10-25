@@ -318,6 +318,12 @@ export class ChatService extends Service {
 
   private apply(session: ChatSession, event: SessionEvent) {
     if (event.type === 'message/user') {
+      // Skill bodies are injected for the model only; the user's `/name` message
+      // is the visible half of the gesture.
+      if (event.data.source?.kind === 'skill') {
+        session.updatedAt = Math.max(session.updatedAt, event.ts)
+        return
+      }
       if (!session.messages.some(message => message.id === event.data.id)) {
         const blocks: ChatBlock[] = []
         if (event.data.text) blocks.push({ type: 'text', text: event.data.text })

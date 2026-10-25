@@ -9,6 +9,7 @@
   "dependencies": {
     "@ruobai/cordis": "workspace:*",
     "@ruobai/mcp": "workspace:*",
+    "@ruobai/mcp-config": "workspace:*",
     "@ruobai/settings": "workspace:*"
   }
 }

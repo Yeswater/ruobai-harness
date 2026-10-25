@@ -146,6 +146,40 @@ export class UiApi extends Service {
       return true
     }
 
+    if (pathname === '/api/protocols') {
+      if (method !== 'GET') throw new HttpError(405, 'method not allowed')
+      const sessionId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('sessionId')
+        ?? undefined
+      if (sessionId) {
+        const sessions = this.ctx.get('sessions', false) as
+          | { has(id: string): boolean }
+          | undefined
+        if (sessions && !sessions.has(sessionId)) throw new HttpError(404, 'unknown session')
+      }
+      const instructions = sessionId
+        ? await this.ctx.context.instructionInfo(sessionId)
+        : undefined
+      const skills = this.ctx.get('skills', false) as
+        | {
+          list(id?: string): Promise<unknown[]>
+          roots(id?: string): unknown[]
+        }
+        | undefined
+      const mcpConfig = this.ctx.get('mcpConfig', false) as
+        | { info(): Promise<unknown[]> }
+        | undefined
+      const a2a = this.ctx.get('a2a', false) as
+        | { info(): unknown }
+        | undefined
+      sendJson(res, 200, {
+        ...(instructions ? { instructions } : {}),
+        ...(skills ? { skills: { items: await skills.list(sessionId), roots: skills.roots(sessionId) } } : {}),
+        ...(mcpConfig ? { mcp: { files: await mcpConfig.info() } } : {}),
+        ...(a2a ? { a2a: a2a.info() } : {}),
+      })
+      return true
+    }
+
     if (pathname === '/api/approvals') {
       if (method !== 'GET') throw new HttpError(405, 'method not allowed')
       const sessionId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('sessionId') ?? undefined

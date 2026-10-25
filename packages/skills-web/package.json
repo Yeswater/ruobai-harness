@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/skills-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/skills": "workspace:*",
+    "@ruobai/web-server": "workspace:*"
+  }
+}

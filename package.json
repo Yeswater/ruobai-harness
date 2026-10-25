@@ -16,6 +16,8 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@ruobai/a2a": "workspace:*",
+    "@ruobai/a2a-web": "workspace:*",
     "@ruobai/agent": "workspace:*",
     "@ruobai/approval": "workspace:*",
     "@ruobai/chat": "workspace:*",
@@ -35,6 +37,7 @@
     "@ruobai/llm-openai": "workspace:*",
     "@ruobai/mcp": "workspace:*",
     "@ruobai/mcp-catalog": "workspace:*",
+    "@ruobai/mcp-config": "workspace:*",
     "@ruobai/mcp-web": "workspace:*",
     "@ruobai/mode-agent": "workspace:*",
     "@ruobai/mode-ask": "workspace:*",
@@ -50,6 +53,8 @@
     "@ruobai/session-jsonl": "workspace:*",
     "@ruobai/settings": "workspace:*",
     "@ruobai/settings-web": "workspace:*",
+    "@ruobai/skills": "workspace:*",
+    "@ruobai/skills-web": "workspace:*",
     "@ruobai/tool-bash": "workspace:*",
     "@ruobai/tool-fs": "workspace:*",
     "@ruobai/tool-task": "workspace:*",

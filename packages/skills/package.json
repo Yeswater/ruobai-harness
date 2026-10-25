@@ -1,0 +1,16 @@
+{
+  "name": "@ruobai/skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/tools": "workspace:*",
+    "@ruobai/workspace": "workspace:*",
+    "js-yaml": "^4.1.0"
+  }
+}

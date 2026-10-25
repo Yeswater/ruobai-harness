@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
+import type { SkillSummary } from '../api.ts'
 import {
-  BotIcon, FolderPlusIcon, ShieldIcon, SlidersIcon, StopIcon,
+  BotIcon, FolderPlusIcon, ShieldIcon, SlidersIcon, SparkIcon, StopIcon,
 } from './Icons.tsx'
 import { ComposerMenuList, type ComposerMenuItem } from './ComposerMenuList.tsx'
 
@@ -9,6 +10,8 @@ export interface SlashCommand {
   name: string
   description: string
   icon: ReactNode
+  /** Skills come from SKILL.md discovery and are sent as `/name` text. */
+  skill?: boolean
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [
@@ -22,23 +25,39 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { id: 'stop', name: 'stop', description: '停止当前回合', icon: <StopIcon size={14} /> },
 ]
 
-export function filterSlashCommands(query: string) {
+export const SKILL_PREFIX = 'skill:'
+
+function skillCommands(skills: SkillSummary[]): SlashCommand[] {
+  return skills
+    .filter(skill => skill.userInvocable)
+    .map(skill => ({
+      id: `${SKILL_PREFIX}${skill.name}`,
+      name: skill.name,
+      description: skill.source === 'global' ? `${skill.description} · 全局` : skill.description,
+      icon: <SparkIcon size={15} />,
+      skill: true,
+    }))
+}
+
+export function filterSlashCommands(query: string, skills: SkillSummary[] = []) {
   const term = query.trim().toLowerCase()
-  if (!term) return SLASH_COMMANDS
-  return SLASH_COMMANDS.filter(command =>
+  const all = [...SLASH_COMMANDS, ...skillCommands(skills)]
+  if (!term) return all
+  return all.filter(command =>
     command.name.startsWith(term)
     || command.name.includes(term)
     || command.description.toLowerCase().includes(term))
 }
 
 export function SlashMenu({
-  query, activeIndex, onPick,
+  query, activeIndex, skills = [], onPick,
 }: {
   query: string
   activeIndex: number
+  skills?: SkillSummary[]
   onPick: (id: string) => void
 }) {
-  const items: ComposerMenuItem[] = filterSlashCommands(query).map(command => ({
+  const items: ComposerMenuItem[] = filterSlashCommands(query, skills).map(command => ({
     id: command.id,
     label: `/${command.name}`,
     description: command.description,
@@ -46,7 +65,7 @@ export function SlashMenu({
   }))
   return (
     <ComposerMenuList
-      title="斜线命令"
+      title="命令与技能"
       items={items}
       activeIndex={activeIndex}
       empty="没有匹配的命令"

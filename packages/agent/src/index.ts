@@ -32,6 +32,8 @@ export interface UserMessageData {
   text: string
   at: number
   attachments?: AttachmentMeta[]
+  /** Host-side context injected for a user gesture; hidden from the transcript. */
+  source?: { kind: 'skill'; name: string; forMessageId: string }
 }
 
 export interface Config {
@@ -166,6 +168,9 @@ export class AgentService extends Service {
       const provider = this.providerName(record)
       const extra: Message[] = []
       let nudges = 0
+
+      // `/name` in the user's message loads that skill for this turn.
+      await this.injectSkillGestures(sessionId)
 
       // Summarize older history before the request is assembled.
       await this.ctx.context.maybeCompact(sessionId, {
@@ -361,6 +366,45 @@ export class AgentService extends Service {
     const configured = this.config.maxTokens
     if (configured && limit) return Math.min(configured, limit)
     return configured ?? limit
+  }
+
+  /**
+   * Turns `/name` tokens in the latest user message into persisted skill
+   * context. The event carries a `source` marker so the transcript can skip it.
+   */
+  private async injectSkillGestures(sessionId: string) {
+    const skills = this.ctx.get('skills', false) as
+      | {
+        get(name: string, sessionId?: string): Promise<{ userInvocable: boolean } | undefined>
+        render(name: string, sessionId?: string): Promise<string | undefined>
+      }
+      | undefined
+    if (!skills) return
+    const record = this.ctx.sessions.get(sessionId)
+    if (!record) return
+    const lastUser = [...record.events].reverse().find(event =>
+      event.type === 'message/user' && event.data?.source?.kind !== 'skill')
+    if (!lastUser) return
+    const text = String(lastUser.data?.text ?? '')
+    const names = [...text.matchAll(/(^|\s)\/([a-z0-9][a-z0-9-]*)/gi)]
+      .map(match => match[2]!.toLowerCase())
+    for (const name of new Set(names)) {
+      const already = record.events.some(event => event.type === 'message/user'
+        && event.data?.source?.kind === 'skill'
+        && event.data.source.name === name
+        && event.data.source.forMessageId === lastUser.data.id)
+      if (already) continue
+      const skill = await skills.get(name, sessionId)
+      if (!skill?.userInvocable) continue
+      const rendered = await skills.render(name, sessionId)
+      if (!rendered) continue
+      this.ctx.sessions.append(sessionId, 'message/user', {
+        id: randomUUID(),
+        text: rendered,
+        at: Date.now(),
+        source: { kind: 'skill', name, forMessageId: lastUser.data.id },
+      })
+    }
   }
 
   private toolsFor(sessionId: string, mode: ModeDefinition | undefined, denyTools?: string[]) {

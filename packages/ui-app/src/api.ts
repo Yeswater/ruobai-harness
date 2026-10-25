@@ -29,6 +29,45 @@ export interface WorkspaceTextMatch {
   text: string
 }
 
+/** Skill discovered from .ruobai / .claude / .agents skill roots. */
+export interface SkillSummary {
+  name: string
+  description: string
+  source: 'project' | 'global'
+  root: string
+  path: string
+  bundle: boolean
+  userInvocable: boolean
+  modelInvocable: boolean
+}
+
+export interface SkillRoot {
+  path: string
+  source: 'project' | 'global'
+}
+
+export interface ProtocolsInfo {
+  instructions?: {
+    root: string
+    files: Array<{ path: string; display: string; bytes: number }>
+    truncated: boolean
+  }
+  skills?: { items: SkillSummary[]; roots: SkillRoot[] }
+  mcp?: { files: Array<{ path: string; label: string; count: number }> }
+  a2a?: {
+    sources: string[]
+    agents: Array<{
+      id: string
+      name: string
+      url: string
+      tool: string
+      status: 'ok' | 'error' | 'disabled'
+      error?: string
+      skills: Array<{ id: string; name: string; description?: string }>
+    }>
+  }
+}
+
 export interface RuntimeInfo {
   plugins: Array<{
     uid: number | null
@@ -441,6 +480,16 @@ export const api = {
     const params = new URLSearchParams({ q: query, limit: String(limit) })
     if (sessionId) params.set('sessionId', sessionId)
     return (await request<{ matches: WorkspaceTextMatch[] }>(`/api/workspace/grep?${params}`)).matches
+  },
+
+  getSkills: async (sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return (await request<{ skills: SkillSummary[] }>(`/api/skills${suffix}`)).skills
+  },
+
+  getProtocols: async (sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<ProtocolsInfo>(`/api/protocols${suffix}`)
   },
 
   readWorkspaceFile: async (path: string, sessionId?: string) => {

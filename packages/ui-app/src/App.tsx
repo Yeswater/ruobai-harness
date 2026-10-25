@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
-import type { PermissionMode, ThemePreference } from './api.ts'
+import { api, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
 import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut, modKeyLabel } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
@@ -68,6 +68,23 @@ export function App() {
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
+  const [skills, setSkills] = useState<SkillSummary[]>([])
+
+  useEffect(() => {
+    const sessionId = harness.session?.id
+    let cancelled = false
+    const load = () => {
+      api.getSkills(sessionId)
+        .then((list) => { if (!cancelled) setSkills(list) })
+        .catch(() => { if (!cancelled) setSkills([]) })
+    }
+    load()
+    const timer = setInterval(load, 10_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [harness.session?.id])
   const pendingApprovals = harness.approvals
   // Shortcuts live outside React's render cycle; a ref keeps them current.
   const settingsOpenRef = useRef(settingsOpen)
@@ -407,6 +424,7 @@ export function App() {
           model={harness.session?.model ?? 'ruobai-chat'}
           models={harness.models}
           modes={harness.modes}
+          skills={skills}
           mode={harness.session?.mode ?? harness.defaultMode}
           permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
           commandPrefix={harness.commandPrefix}
@@ -449,6 +467,7 @@ export function App() {
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
+        sessionId={harness.session?.id}
         themePreference={preference}
         onThemeChange={setPreference}
         onSaved={() => { void harness.refreshSettings() }}

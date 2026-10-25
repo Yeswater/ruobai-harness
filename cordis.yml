@@ -128,6 +128,13 @@
 - id: workspace-web
   name: '@ruobai/workspace-web'
 
+# Agent Skills: discovers SKILL.md bundles under .ruobai/.claude/.agents.
+- id: skills
+  name: '@ruobai/skills'
+
+- id: skills-web
+  name: '@ruobai/skills-web'
+
 - id: settings
   name: '@ruobai/settings'
   config:
@@ -141,11 +148,22 @@
 - id: mcp
   name: '@ruobai/mcp'
 
+# MCP servers come from .mcp.json / .ruobai/mcp.json plus Settings → MCP.
+- id: mcp-config
+  name: '@ruobai/mcp-config'
+
 - id: mcp-catalog
   name: '@ruobai/mcp-catalog'
 
 - id: mcp-web
   name: '@ruobai/mcp-web'
+
+# Remote A2A agents from .ruobai/a2a.json; each agent becomes a2a__<id>.
+- id: a2a
+  name: '@ruobai/a2a'
+
+- id: a2a-web
+  name: '@ruobai/a2a-web'
 
 # Client-half plugins: discovered from loader entries whose package.json
 # declares `rbu.client`, bundled with esbuild and loaded by the UI at runtime.

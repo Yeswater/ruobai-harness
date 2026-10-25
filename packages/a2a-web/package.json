@@ -1,0 +1,14 @@
+{
+  "name": "@ruobai/a2a-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/a2a": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/web-server": "workspace:*"
+  }
+}

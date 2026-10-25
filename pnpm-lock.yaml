@@ -8,6 +8,12 @@ importers:
 
   .:
     devDependencies:
+      '@ruobai/a2a':
+        specifier: workspace:*
+        version: link:packages/a2a
+      '@ruobai/a2a-web':
+        specifier: workspace:*
+        version: link:packages/a2a-web
       '@ruobai/agent':
         specifier: workspace:*
         version: link:packages/agent
@@ -65,6 +71,9 @@ importers:
       '@ruobai/mcp-catalog':
         specifier: workspace:*
         version: link:packages/mcp-catalog
+      '@ruobai/mcp-config':
+        specifier: workspace:*
+        version: link:packages/mcp-config
       '@ruobai/mcp-web':
         specifier: workspace:*
         version: link:packages/mcp-web
@@ -110,6 +119,12 @@ importers:
       '@ruobai/settings-web':
         specifier: workspace:*
         version: link:packages/settings-web
+      '@ruobai/skills':
+        specifier: workspace:*
+        version: link:packages/skills
+      '@ruobai/skills-web':
+        specifier: workspace:*
+        version: link:packages/skills-web
       '@ruobai/tool-bash':
         specifier: workspace:*
         version: link:packages/tool-bash
@@ -179,6 +194,30 @@ importers:
       '@ruobai/cordis-plugin-logger-console':
         specifier: workspace:*
         version: link:../../vendor/logger-console
+
+  packages/a2a:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/a2a-web:
+    dependencies:
+      '@ruobai/a2a':
+        specifier: workspace:*
+        version: link:../a2a
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/agent:
     dependencies:
@@ -375,9 +414,24 @@ importers:
       '@ruobai/mcp':
         specifier: workspace:*
         version: link:../mcp
+      '@ruobai/mcp-config':
+        specifier: workspace:*
+        version: link:../mcp-config
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
+
+  packages/mcp-config:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
 
   packages/mcp-web:
     dependencies:
@@ -536,6 +590,39 @@ importers:
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
+  packages/skills:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@ruobai/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.3.2
+
+  packages/skills-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/skills':
+        specifier: workspace:*
+        version: link:../skills
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server

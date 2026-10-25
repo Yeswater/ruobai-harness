@@ -3,6 +3,9 @@ import z from '@ruobai/schemastery'
 import type { ContentPart, Message, ToolSchema } from '@ruobai/llm'
 import type { SessionEvent, SessionRecord } from '@ruobai/session'
 import type {} from '@ruobai/workspace'
+import {
+  globalRuobaiDir, instructionsSignature, loadInstructions, type InstructionFile,
+} from './instructions.ts'
 
 export interface Config {
   /** Estimated tokens that trigger summarization. */
@@ -11,6 +14,12 @@ export interface Config {
   keepRecent?: number
   /** Maximum characters of workspace instruction files to include. */
   maxInstructions?: number
+  /** User-global protocol directory; defaults to ~/.ruobai. */
+  globalRoot?: string
+  /** Largest instruction file read from disk. */
+  maxSourceBytes?: number
+  /** How long a rendered instruction set is reused. */
+  instructionsTtlMs?: number
 }
 
 export interface BuildOptions {
@@ -81,9 +90,18 @@ export class ContextService extends Service {
     compactAt: z.number().min(1).default(48_000),
     keepRecent: z.number().min(2).default(12),
     maxInstructions: z.number().min(0).default(16_000),
+    globalRoot: z.string(),
+    maxSourceBytes: z.number().min(1).default(1_048_576),
+    instructionsTtlMs: z.number().min(0).default(5_000),
   })
 
-  private instructions?: { at: number; text: string }
+  private instructions = new Map<string, {
+    at: number
+    signature: string
+    text: string
+    files: InstructionFile[]
+    truncated: boolean
+  }>()
   /** Inputs of the last agent build, reused to explain the context size. */
   private lastOptions = new Map<string, BuildOptions>()
 
@@ -96,11 +114,13 @@ export class ContextService extends Service {
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
     const summary = latestSummary(record)
-    const instructions = await this.workspaceInstructions()
+    const instructions = await this.workspaceInstructions(sessionId)
+    const skills = await this.skillsCatalog(sessionId)
     const system = [
       options.basePrompt,
       options.modePrompt,
       instructions,
+      skills,
       summary ? `Summary of the earlier conversation:\n${summary.text}` : undefined,
     ].filter(Boolean).join('\n\n')
 
@@ -262,28 +282,65 @@ export class ContextService extends Service {
       : undefined
   }
 
-  private async workspaceInstructions() {
-    if (this.instructions && Date.now() - this.instructions.at < 5_000) return this.instructions.text
+  private instructionRoot(sessionId: string) {
     const workspace = this.ctx.get('workspace', false) as
-      | { read(path: string): Promise<{ content: string }> }
+      | { rootFor(id?: string | null): string }
       | undefined
-    if (!workspace) return ''
+    return workspace?.rootFor(sessionId) ?? process.cwd()
+  }
 
-    const parts: string[] = []
-    for (const name of ['AGENTS.md', 'CLAUDE.md']) {
-      try {
-        const file = await workspace.read(name)
-        if (file.content.trim()) parts.push(`# ${name}\n${file.content.trim()}`)
-      } catch {
-        // missing instruction file
-      }
+  private async workspaceInstructions(sessionId: string) {
+    const root = this.instructionRoot(sessionId)
+    const config = {
+      root,
+      globalRoot: this.config.globalRoot ?? globalRuobaiDir(),
+      maxSourceBytes: this.config.maxSourceBytes,
+      maxInstructions: this.config.maxInstructions ?? 16_000,
     }
+    const cached = this.instructions.get(root)
+    const signature = await instructionsSignature(config)
+    const ttl = this.config.instructionsTtlMs ?? 5_000
+    if (cached && cached.signature === signature && Date.now() - cached.at < ttl) {
+      return cached.text
+    }
+    const result = await loadInstructions(config)
+    this.instructions.set(root, {
+      at: Date.now(),
+      signature,
+      text: result.text,
+      files: result.files,
+      truncated: result.truncated,
+    })
+    return result.text
+  }
 
-    const max = this.config.maxInstructions ?? 16_000
-    let text = parts.join('\n\n')
-    if (text.length > max) text = `${text.slice(0, max)}\n… (instructions truncated)`
-    this.instructions = { at: Date.now(), text }
-    return text
+  /** Read-only view of the instruction files merged into the system prompt. */
+  async instructionInfo(sessionId: string) {
+    await this.workspaceInstructions(sessionId)
+    const root = this.instructionRoot(sessionId)
+    const cached = this.instructions.get(root)
+    return {
+      root,
+      files: (cached?.files ?? []).map(file => ({
+        path: file.path,
+        display: file.display,
+        bytes: file.bytes,
+      })),
+      truncated: cached?.truncated ?? false,
+    }
+  }
+
+  /** Skills are optional: a missing service simply contributes nothing. */
+  private async skillsCatalog(sessionId: string) {
+    const skills = this.ctx.get('skills', false) as
+      | { catalog(sessionId?: string): Promise<string> }
+      | undefined
+    if (!skills) return ''
+    try {
+      return await skills.catalog(sessionId)
+    } catch {
+      return ''
+    }
   }
 }
 

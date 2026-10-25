@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import {
-  api, type CommandPrefix, type ContextInfo, type ModeInfo, type ModelProvider, type PermissionMode, type WorkspaceMatch,
+  api, type CommandPrefix, type ContextInfo, type ModeInfo, type ModelProvider, type PermissionMode,
+  type SkillSummary, type WorkspaceMatch,
 } from '../api.ts'
 import { applyCompletion, detectTrigger } from '../composer-triggers.ts'
 import { useComposerAttachments } from '../useComposerAttachments.ts'
@@ -11,7 +12,7 @@ import { MentionMenu } from './MentionMenu.tsx'
 import { ModelSelect } from './ModelSelect.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
 import { Select } from './Select.tsx'
-import { SlashMenu, filterSlashCommands } from './SlashMenu.tsx'
+import { SlashMenu, filterSlashCommands, SKILL_PREFIX } from './SlashMenu.tsx'
 import { StatsLine } from './StatsLine.tsx'
 import { SendIcon, StopIcon } from './Icons.tsx'
 
@@ -23,6 +24,7 @@ interface ComposerProps {
   model: string
   models: ModelProvider[]
   modes: ModeInfo[]
+  skills?: SkillSummary[]
   mode: string
   permission: PermissionMode
   commandPrefix: CommandPrefix
@@ -50,7 +52,7 @@ const FILE_ACCEPT = [
 const DIRECTORY_PROPS = { webkitdirectory: '', directory: '' } as Record<string, string>
 
 export function Composer({
-  disabled, streaming, sessionId, provider, model, models, modes, mode, permission,
+  disabled, streaming, sessionId, provider, model, models, modes, skills = [], mode, permission,
   commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
   onStop, onNewSession, onOpenConnectors, reference,
 }: ComposerProps) {
@@ -74,7 +76,7 @@ export function Composer({
   )
   const slashOpen = !dismissed && trigger?.kind === 'slash'
   const mentionOpen = !dismissed && trigger?.kind === 'mention'
-  const slashItems = slashOpen ? filterSlashCommands(trigger!.query) : []
+  const slashItems = slashOpen ? filterSlashCommands(trigger!.query, skills) : []
   const pickerVisible = slashOpen || mentionOpen
   const pickerCount = slashOpen ? slashItems.length : mentionOpen ? mentionItems.length : 0
 
@@ -175,6 +177,15 @@ export function Composer({
 
   const acceptSlash = (id: string) => {
     if (!trigger) return
+    if (id.startsWith(SKILL_PREFIX)) {
+      const name = id.slice(SKILL_PREFIX.length)
+      const next = applyCompletion(text, caret, trigger, `/${name} `)
+      setText(next.text)
+      setCaret(next.caret)
+      setDismissed(true)
+      focusAt(next.caret)
+      return
+    }
     const next = applyCompletion(text, caret, trigger, '')
     setText(next.text)
     setCaret(next.caret)
@@ -277,7 +288,7 @@ export function Composer({
           ? (
             <div className="composer-picker-wrap">
               {slashOpen
-                ? <SlashMenu query={trigger!.query} activeIndex={activeIndex} onPick={acceptSlash} />
+                ? <SlashMenu query={trigger!.query} activeIndex={activeIndex} skills={skills} onPick={acceptSlash} />
                 : (
                   <MentionMenu
                     query={trigger!.query}
