@@ -79,7 +79,11 @@ export class AgentService extends Service {
 
   static Config: z<Config> = z.object({
     systemPrompt: z.string().default(
-      'You are ruobai, a concise assistant running inside the ruobai harness. Use tools when they help, and answer in the user\'s language.',
+      'You are ruobai, a concise assistant running inside the ruobai harness. '
+        + 'Use tools when they help, and answer in the user\'s language. '
+        // Reasoning models echo the prompt's language; the UI shows the trace
+        // to a Chinese-reading user, so ask for it explicitly.
+        + 'Write your reasoning in Simplified Chinese (中文) even when the request is in another language.',
     ),
     maxTokens: z.number().min(1),
     temperature: z.number(),

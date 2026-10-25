@@ -674,14 +674,6 @@ button {
   padding-left: 0;
 }
 
-.msg.tool-only + .msg.tool-only {
-  margin-top: -14px;
-}
-
-.msg.tool-only .msg-body {
-  gap: 6px;
-}
-
 .prose {
   white-space: pre-wrap;
   font-size: 14px;
@@ -767,6 +759,87 @@ button {
   font-size: 12.5px;
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+/* Tool run: a burst of calls folded into one summary row */
+
+.tool-run {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-run-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.tool-run-head:hover {
+  color: var(--text);
+}
+
+.tool-run-head svg {
+  flex: none;
+  color: var(--faint);
+  transform: rotate(-90deg);
+  transition: transform .15s;
+}
+
+.tool-run.open .tool-run-head svg {
+  transform: rotate(0deg);
+}
+
+.tool-run-text {
+  min-width: 0;
+}
+
+.tool-run-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--tool-bg);
+}
+
+.tool-run-body .tool {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tool-run-body .tool + .tool {
+  border-top: 1px solid var(--border);
+}
+
+.tool-path {
+  padding: 6px 10px;
+  border-top: 1px dashed var(--border);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  word-break: break-all;
+}
+
+.tool-command {
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-top: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--tool-bg) 55%, var(--panel));
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* Tool card */

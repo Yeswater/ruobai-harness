@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
@@ -6,6 +6,8 @@ import { BrainIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
+import { describeToolRun, isRunning, toolDetail } from '../tool-summary.ts'
+import { buildPlan, segmentsOf } from '../transcript-model.ts'
 
 interface TranscriptProps {
   session: ChatSession | null
@@ -27,9 +29,11 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   const lastSessionRef = useRef<string | null>(null)
   const lastMessageRef = useRef<string | null>(null)
   const [atBottom, setAtBottom] = useState(true)
-  const currentTurnStart = session ? lastUserIndex(session.messages) : -1
+  const messages = session?.messages ?? []
+  const currentTurnStart = session ? lastUserIndex(messages) : -1
+  const plan = useMemo(() => buildPlan(messages), [messages])
 
-  const last = session?.messages.at(-1)
+  const last = messages.at(-1)
   const lastBlock = last?.blocks.at(-1)
   const lastText = lastBlock?.type === 'text' ? lastBlock.text.length : 0
 
@@ -45,7 +49,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
     const box = boxRef.current
     if (!box) return
     const id = session?.id ?? null
-    const lastMessage = session?.messages.at(-1)
+    const lastMessage = messages.at(-1)
     const lastId = lastMessage?.id ?? null
 
     if (id !== lastSessionRef.current) {
@@ -63,7 +67,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
 
     lastSessionRef.current = id
     lastMessageRef.current = lastId
-  }, [session?.id, session?.messages.length, lastText])
+  }, [session?.id, messages.length, lastText])
 
   useEffect(() => {
     const box = boxRef.current
@@ -91,7 +95,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
         <div className="transcript-inner" ref={innerRef}>
           {!session ? (
             <div className="loading">loading session…</div>
-          ) : session.messages.length === 0 ? (
+          ) : messages.length === 0 ? (
             <div className="empty">
               <div className="empty-mark"><SparkIcon size={26} /></div>
               <h2>从这里开始</h2>
@@ -106,18 +110,20 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
             </div>
           ) : null}
 
-          {session?.messages.map((message, index) => (
-            <Message
-              key={message.id}
-              message={message}
-              // Thoughts stay unfolded while the turn runs; the fold closes only
-              // once the whole turn ends, so a multi-step run keeps its context.
-              activeTurn={Boolean(session.streaming) && index > currentTurnStart}
-            />
-          ))}
+          {plan.map((item) => item.kind === 'run'
+            ? <ToolRun key={item.key} blocks={item.blocks} />
+            : (
+              <Message
+                key={item.key}
+                message={item.message}
+                // Thoughts stay unfolded while the turn runs; the fold closes only
+                // once the whole turn ends, so a multi-step run keeps its context.
+                activeTurn={Boolean(session?.streaming) && item.index > currentTurnStart}
+              />
+            ))}
         </div>
 
-        {!atBottom && session?.messages.length
+        {!atBottom && messages.length
           ? (
             <div className="to-bottom-slot">
               <button className="to-bottom" onClick={scrollToBottom} aria-label="回到底部" title="回到底部">
@@ -127,7 +133,7 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
           )
           : null}
       </div>
-      <TurnNav containerRef={boxRef} messages={session?.messages ?? []} />
+      <TurnNav containerRef={boxRef} messages={messages} />
     </div>
   )
 }
@@ -175,12 +181,12 @@ function Message({ message, activeTurn }: { message: ChatMessage; activeTurn: bo
     )
   }
 
-  const toolOnly = message.blocks.length > 0 && message.blocks.every(block => block.type === 'tool')
-
   return (
-    <div className={`msg assistant ${toolOnly ? 'tool-only' : ''}`} onContextMenu={onContextMenu}>
+    <div className="msg assistant" id={`msg-${message.id}`} onContextMenu={onContextMenu}>
       <div className="msg-body">
-        {message.blocks.map((block, index) => {
+        {segmentsOf(message).map((segment) => {
+          if (segment.kind === 'run') return <ToolRun key={segment.key} blocks={segment.blocks} />
+          const { block, index } = segment
           if (block.type === 'text') {
             return (
               <div className="prose markdown" key={index}>
@@ -191,7 +197,6 @@ function Message({ message, activeTurn }: { message: ChatMessage; activeTurn: bo
               </div>
             )
           }
-          if (block.type === 'tool') return <ToolCard key={index} block={block} />
           if (block.type === 'reasoning') {
             return (
               <ThinkingCard
@@ -228,20 +233,66 @@ function ThinkingCard({ block, expanded, live }: { block: ReasoningBlock; expand
   )
 }
 
+/**
+ * A burst of tool calls collapsed into one readable row. It opens itself while a
+ * call is still running and closes once the burst finishes, unless the user has
+ * taken over the toggle.
+ */
+function ToolRun({ blocks }: { blocks: ToolBlock[] }) {
+  const running = blocks.some(isRunning)
+  // `null` means "follow the run": open while something is executing, closed
+  // once the burst is over. Any click pins the state until execution resumes.
+  const [override, setOverride] = useState<boolean | null>(null)
+  const shown = override ?? running
+
+  useEffect(() => {
+    if (running) setOverride(null)
+  }, [running])
+
+  return (
+    <div className={`tool-run ${shown ? 'open' : ''}`}>
+      <button
+        type="button"
+        className="tool-run-head"
+        aria-expanded={shown}
+        onClick={() => setOverride(!shown)}
+      >
+        <span className="tool-run-text">{describeToolRun(blocks)}</span>
+        {running ? <span className="tool-state running">运行中</span> : null}
+        <ChevronDownIcon size={13} />
+      </button>
+      {shown
+        ? (
+          <div className="tool-run-body">
+            {blocks.map((block, index) => (
+              <ToolCard key={block.callId ?? index} block={block} />
+            ))}
+          </div>
+        )
+        : null}
+    </div>
+  )
+}
+
 function ToolCard({ block }: { block: ToolBlock }) {
-  const running = !block.output && !block.isError
+  const running = isRunning(block)
+  const detail = toolDetail(block)
+
   return (
     <details className={`tool ${block.isError ? 'error' : ''}`}>
       <summary className="tool-head">
         <ToolIcon size={13} />
-        <span className="tool-name">{block.name}</span>
-        <span className="tool-input">{formatToolInput(block.input)}</span>
+        <span className="tool-name">{detail.title}</span>
+        <span className="tool-input">{detail.command ? '' : formatToolInput(block.input, detail.path)}</span>
         {running
           ? <span className="tool-state running">运行中</span>
           : block.isError
             ? <span className="tool-state">failed</span>
             : <span className="tool-meta">{formatOutputSize(block.output)}</span>}
       </summary>
+      {detail.command
+        ? <pre className="tool-command">$ {detail.command}</pre>
+        : detail.path ? <div className="tool-path">{detail.path}</div> : null}
       <pre className="tool-output">{block.output || (block.isError ? 'failed' : 'running…')}</pre>
     </details>
   )
@@ -253,16 +304,18 @@ function formatOutputSize(output: string) {
   return `${(output.length / 1_000).toFixed(1)}k 字符`
 }
 
-function formatToolInput(raw: string) {
+function formatToolInput(raw: string, path?: string) {
   try {
     const value = JSON.parse(raw)
     if (value && typeof value === 'object') {
-      const parts = Object.entries(value).map(([key, item]) =>
-        `${key}: ${typeof item === 'string' ? item : JSON.stringify(item)}`)
+      const parts = Object.entries(value)
+        // The path already leads the title.
+        .filter(([key]) => key !== 'path')
+        .map(([key, item]) => `${key}: ${typeof item === 'string' ? item : JSON.stringify(item)}`)
       if (parts.length) return parts.join(' · ')
     }
   } catch {
     // fall through to the raw string
   }
-  return raw
+  return path ? '' : raw
 }
