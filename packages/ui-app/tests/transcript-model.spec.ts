@@ -53,6 +53,36 @@ describe('transcript plan', () => {
     expect(plan[0]).toMatchObject({ kind: 'text', streaming: true })
   })
 
+  it('keeps one group while a step has produced nothing yet', () => {
+    // The reported flicker: a step/start used to add a separate 「思考中…」 row
+    // next to the finished group, so the transcript jumped between two layouts
+    // on every tool round trip.
+    const plan = buildPlan([
+      message('assistant', [thought('想'), call('bash')]),
+      message('assistant', [], 'streaming'),
+    ])
+    expect(plan.map(item => item.kind)).toEqual(['process'])
+    const group = plan[0]
+    expect(group?.kind === 'process' && group.items).toHaveLength(2)
+    expect(group?.kind === 'process' && Boolean(group.placeholder)).toBe(false)
+  })
+
+  it('marks a group with no rows as a placeholder', () => {
+    const plan = buildPlan([message('assistant', [], 'streaming')])
+    expect(plan).toHaveLength(1)
+    expect(plan[0]).toMatchObject({ kind: 'process', placeholder: true })
+    expect(plan[0]?.kind === 'process' && plan[0].items).toEqual([])
+  })
+
+  it('starts a placeholder after prose instead of reusing the closed group', () => {
+    const plan = buildPlan([
+      message('assistant', [call('bash'), text('中间结论')]),
+      message('assistant', [], 'streaming'),
+    ])
+    expect(plan.map(item => item.kind)).toEqual(['process', 'text', 'process'])
+    expect(plan[2]).toMatchObject({ kind: 'process', placeholder: true })
+  })
+
   it('gives every plan item a unique key', () => {
     const plan = buildPlan([
       message('user', [text('a')]),
@@ -97,9 +127,21 @@ describe('process group state', () => {
     expect(groupDuration(items)).toBe(4_500)
   })
 
-  it('has no duration until both bounds are recorded', () => {
+  it('falls back to the start when an interrupted action never finished', () => {
+    // A stopped turn leaves actions without a finish stamp; treating that as
+    // "no duration" dropped the whole group's 用时.
+    expect(groupDuration([
+      { kind: 'tool', key: 'a', block: call('bash', { startedAt: 5_000, finishedAt: undefined }) as never },
+    ])).toBe(0)
     expect(groupDuration([
       { kind: 'tool', key: 'a', block: call('bash', { finishedAt: undefined }) as never },
+      { kind: 'tool', key: 'b', block: call('bash', { startedAt: 6_000, finishedAt: 9_000 }) as never },
+    ])).toBe(8_000)
+  })
+
+  it('has no duration without any timestamp', () => {
+    expect(groupDuration([
+      { kind: 'tool', key: 'a', block: call('bash', { startedAt: undefined, finishedAt: undefined }) as never },
     ])).toBeUndefined()
   })
 
@@ -121,6 +163,15 @@ describe('process group state', () => {
     expect(groupSummary([
       { kind: 'reasoning', key: 'a', block: thought('想') as never },
     ])).toBe('已完成')
+  })
+
+  it('drops a sub-second span instead of printing 用时 0 秒', () => {
+    expect(groupSummary([
+      { kind: 'tool', key: 'a', block: call('bash', { startedAt: 1_000, finishedAt: 1_200 }) as never },
+    ])).toBe('已完成')
+    expect(groupSummary([
+      { kind: 'tool', key: 'a', block: call('bash', { startedAt: 1_000, finishedAt: 1_600 }) as never },
+    ])).toBe('已完成，用时 1 秒')
   })
 })
 

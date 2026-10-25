@@ -121,13 +121,11 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
                 </div>
               )
             }
-            if (item.kind === 'pending') {
-              return <div className="prose thinking" key={item.key}><span className="caret" /> 思考中…</div>
-            }
             return (
               <ProcessGroup
                 key={item.key}
                 items={item.items}
+                placeholder={Boolean(item.placeholder)}
                 // The turn's live flag is the authority: a group left behind by a
                 // finished turn is never "running", even without timing stamps.
                 streaming={Boolean(session?.streaming)}
@@ -188,8 +186,14 @@ function UserMessage({ message }: { message: ChatMessage }) {
  * collapses to `已完成，用时 1分30秒`. A click pins the state until the next
  * action starts, so reading a finished run does not fight the auto-fold.
  */
-function ProcessGroup({ items, streaming }: { items: ProcessItem[]; streaming: boolean }) {
-  const running = streaming && isGroupRunning(items)
+function ProcessGroup({ items, placeholder, streaming }: {
+  items: ProcessItem[]
+  placeholder?: boolean
+  streaming: boolean
+}) {
+  // A step that has produced nothing yet keeps the group "running": one row,
+  // one state, instead of a separate 「思考中…」 line that comes and goes.
+  const running = streaming && (placeholder || isGroupRunning(items))
   const [override, setOverride] = useState<boolean | null>(null)
   const open = override ?? running
 
@@ -219,6 +223,9 @@ function ProcessGroup({ items, streaming }: { items: ProcessItem[]; streaming: b
             {items.map(item => item.kind === 'reasoning'
               ? <ThoughtRow key={item.key} block={item.block} pending={item.pending} />
               : <ToolRow key={item.key} block={item.block} pending={item.pending} />)}
+            {placeholder && !items.length
+              ? <div className="process-row waiting"><span className="caret" /> 思考中…</div>
+              : null}
           </div>
         )
         : null}

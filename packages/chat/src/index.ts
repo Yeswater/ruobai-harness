@@ -112,8 +112,12 @@ export class ChatService extends Service {
       if (!this.visible(id)) return
       const session = this.ensure(id)
       session.streaming = false
+      const endedAt = Date.now()
       for (const message of session.messages) {
         if (message.status === 'streaming') message.status = 'done'
+        // Nothing can still be running once the turn is over: an interrupted
+        // action would otherwise keep the whole group without a duration.
+        closeBlocks(message.blocks, endedAt)
       }
       this.ctx.emit('chat/event', { type: 'message-done', sessionId: id, session })
       this.touch(id, session)
@@ -452,6 +456,15 @@ export class ChatService extends Service {
     const meta = this.ctx.sessions.get(id)?.meta
     if (meta) session.updatedAt = meta.updatedAt
     this.ctx.emit('chat/event', { type: 'session-updated', session })
+  }
+}
+
+/** Stamp every open block as finished; a stopped turn has nothing in flight. */
+function closeBlocks(blocks: ChatBlock[], at: number) {
+  for (const block of blocks) {
+    if (block.type === 'reasoning' || block.type === 'tool' || block.type === 'text') {
+      block.finishedAt ??= at
+    }
   }
 }
 

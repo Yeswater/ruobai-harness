@@ -119,6 +119,26 @@ describe('chat bridge', () => {
     }
   })
 
+  it('closes every open block when the turn ends', async () => {
+    const ctx = await setup()
+    const session = ctx.chat.create('close-on-end')
+    const done = nextDone(ctx)
+    ctx.on('agent/step-start', () => ctx.chat.stop(session.id))
+
+    ctx.chat.send(session.id, '写一段很长的话')
+    const final = await done
+
+    // A stopped turn can interrupt mid-action; leaving those blocks open made
+    // the group render without a duration.
+    const blocks = final.messages.flatMap(message => message.blocks)
+    expect(blocks.length).toBeGreaterThan(0)
+    for (const block of blocks) {
+      if (block.type === 'text' || block.type === 'reasoning' || block.type === 'tool') {
+        expect(block.finishedAt).toBeTypeOf('number')
+      }
+    }
+  })
+
   it('stops a running turn', async () => {
     const ctx = await setup(15)
     const session = ctx.chat.create('stop')

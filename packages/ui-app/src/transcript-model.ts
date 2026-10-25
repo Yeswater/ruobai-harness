@@ -15,9 +15,13 @@ export type ProcessItem =
 export type PlanItem =
   | { kind: 'user'; key: string; message: ChatMessage }
   | { kind: 'text'; key: string; messageId: string; text: string; streaming: boolean }
-  | { kind: 'process'; key: string; items: ProcessItem[] }
-  /** A step that has started but produced nothing yet. */
-  | { kind: 'pending'; key: string; messageId: string }
+  | {
+    kind: 'process'
+    key: string
+    items: ProcessItem[]
+    /** A step that started but has not produced anything yet. */
+    placeholder?: boolean
+  }
 
 /**
  * Fold a transcript into renderable rows.
@@ -25,16 +29,36 @@ export type PlanItem =
  * Prose is always visible — folding it would hide the answer. Everything the
  * turn did on the way there (thinking, tool calls) collects into a process
  * group, which the view keeps open while it runs and collapses afterwards.
+ *
+ * A step that has produced nothing yet joins the *current* group instead of
+ * starting its own row: a separate "思考中…" row next to a finished group made
+ * the transcript flicker between two states on every tool round trip.
  */
 export function buildPlan(messages: ChatMessage[]): PlanItem[] {
   const plan: PlanItem[] = []
   let group: ProcessItem[] = []
+  /** Key of the open group; set once so a placeholder can grow into a full group. */
   let groupKey = ''
+  let waiting = false
+
+  const open = (key: string) => {
+    if (!groupKey) groupKey = key
+  }
 
   const flush = () => {
-    if (!group.length) return
-    plan.push({ kind: 'process', key: groupKey, items: group })
+    if (!group.length && !waiting) return
+    // A group with no rows yet is a placeholder: the step started but has not
+    // produced anything. It renders as one waiting row inside the same group,
+    // so the transcript does not flash a second row on every tool round trip.
+    plan.push({
+      kind: 'process',
+      key: groupKey,
+      items: group,
+      ...(group.length ? {} : { placeholder: true }),
+    })
     group = []
+    groupKey = ''
+    waiting = false
   }
 
   for (const message of messages) {
@@ -44,9 +68,11 @@ export function buildPlan(messages: ChatMessage[]): PlanItem[] {
       continue
     }
     if (message.role !== 'assistant') continue
-    if (message.status === 'streaming' && message.blocks.length === 0) {
-      flush()
-      plan.push({ kind: 'pending', key: `${message.id}-pending`, messageId: message.id })
+    if (message.blocks.length === 0) {
+      if (message.status === 'streaming') {
+        open(`${message.id}-pending`)
+        waiting = true
+      }
       continue
     }
 
@@ -64,9 +90,7 @@ export function buildPlan(messages: ChatMessage[]): PlanItem[] {
         return
       }
       if (block.type !== 'reasoning' && block.type !== 'tool') return
-      if (!group.length) {
-        groupKey = message.id + (block.type === 'tool' ? `-${block.callId ?? index}` : `-${index}`)
-      }
+      open(message.id + (block.type === 'tool' ? `-${block.callId ?? index}` : `-${index}`))
       const key = `${message.id}-${index}`
       // A settled step is finished even when the log has no timestamps for it
       // (sessions written before timing was recorded). Reading `finishedAt`
@@ -90,7 +114,9 @@ function bounds(items: ProcessItem[]) {
   let end: number | undefined
   for (const item of items) {
     const from = item.block.startedAt
-    const to = item.block.finishedAt
+    // An interrupted action may never get a finish stamp; its start still
+    // bounds the group instead of leaving the whole row without a duration.
+    const to = item.block.finishedAt ?? from
     if (from !== undefined && (start === undefined || from < start)) start = from
     if (to !== undefined && (end === undefined || to > end)) end = to
   }
@@ -126,10 +152,17 @@ export function formatDuration(ms: number): string {
   return `${hours}小时${minutes % 60 ? `${minutes % 60}分` : ''}`
 }
 
-/** Label of the collapse row once a group is done. */
+/**
+ * Label of the collapse row once a group is done.
+ *
+ * A span under a second carries no information ("用时 0 秒"), so it is folded
+ * into the plain label instead of being printed.
+ */
 export function groupSummary(items: ProcessItem[]): string {
   const duration = groupDuration(items)
   const failures = items.filter(item => item.kind === 'tool' && item.block.isError).length
-  const done = duration === undefined ? '已完成' : `已完成，用时 ${formatDuration(duration)}`
+  const done = duration === undefined || duration < 500
+    ? '已完成'
+    : `已完成，用时 ${formatDuration(duration)}`
   return failures ? `${done}（${failures} 个失败）` : done
 }
