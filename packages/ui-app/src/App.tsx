@@ -13,7 +13,10 @@ import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
 import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
 import { SessionPanel } from './components/SessionPanel.tsx'
-import { BranchIcon, FilePanelIcon, FolderIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
+import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
+import { ContextView } from './components/ContextView.tsx'
+import { OpenInMenu } from './components/OpenInMenu.tsx'
+import { TrajectoryView } from './components/TrajectoryView.tsx'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
@@ -21,6 +24,19 @@ import { Transcript } from './components/Transcript.tsx'
 import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
+type MainView = 'chat' | 'trajectory' | 'context'
+
+const MAIN_VIEW_KEY = 'rbh-main-view'
+const MAIN_TABS: Array<{ id: MainView; label: string }> = [
+  { id: 'chat', label: '会话' },
+  { id: 'trajectory', label: '轨迹' },
+  { id: 'context', label: '上下文' },
+]
+
+function loadMainView(): MainView {
+  const saved = localStorage.getItem(MAIN_VIEW_KEY)
+  return saved === 'trajectory' || saved === 'context' ? saved : 'chat'
+}
 
 function initialPreference(): ThemePreference {
   const saved = localStorage.getItem('rbh-theme')
@@ -73,6 +89,11 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const [skills, setSkills] = useState<SkillSummary[]>([])
+  const [mainView, setMainView] = useState<MainView>(loadMainView)
+
+  useEffect(() => {
+    localStorage.setItem(MAIN_VIEW_KEY, mainView)
+  }, [mainView])
 
   useEffect(() => {
     const sessionId = harness.session?.id
@@ -332,23 +353,20 @@ export function App() {
             </button>
             <div className="main-title">
               <h1>{harness.session?.title ?? 'New session'}</h1>
-              <div className="main-sub">
-                {harness.session?.workspace ? (
-                  <span className="workspace-chip" title={harness.session.workspace}>
-                    <FolderIcon size={11} />
-                    {nameOf(harness.session.workspace)}
-                  </span>
-                ) : null}
-                <span>
-                  {harness.session
-                    ? [
-                        `${harness.session.messages.length} messages`,
-                        harness.session.model,
-                        harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
-                      ].filter(Boolean).join(' · ')
-                    : 'loading…'}
-                </span>
-              </div>
+              <nav className="main-tabs" role="tablist" aria-label="对话视图">
+                {MAIN_TABS.map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={mainView === tab.id}
+                    className={mainView === tab.id ? 'active' : ''}
+                    onClick={() => setMainView(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
             </div>
           </div>
 
@@ -366,6 +384,7 @@ export function App() {
           </div>
 
           <div className="main-head-right">
+            <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
             <Slot name="header.actions" />
             <div className="main-tools" role="toolbar" aria-label="面板">
               <button
@@ -448,45 +467,59 @@ export function App() {
           )
           : null}
 
-        <Transcript session={harness.session} onSuggestion={harness.send} />
-
-        {pendingApprovals.length
+        {mainView === 'chat'
           ? (
-            <div className="approval-stack">
-              {pendingApprovals.map(request => (
-                <ApprovalCard
-                  key={request.id}
-                  request={request}
-                  onResolve={decision => harness.resolveApproval(request.id, decision)}
-                />
-              ))}
-            </div>
-          )
-          : null}
+            <>
+              <Transcript session={harness.session} onSuggestion={harness.send} />
 
-        <Composer
-          disabled={!harness.session}
-          streaming={harness.session?.streaming ?? false}
-          sessionId={harness.session?.id}
-          provider={harness.session?.provider}
-          model={harness.session?.model ?? 'ruobai-chat'}
-          models={harness.models}
-          modes={harness.modes}
-          skills={skills}
-          mode={harness.session?.mode ?? harness.defaultMode}
-          permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
-          commandPrefix={harness.commandPrefix}
-          contextInfo={harness.contextInfo}
-          stats={harness.session?.stats ?? null}
-          onModeChange={harness.setMode}
-          onModelChange={harness.setModel}
-          onPermissionChange={harness.setPermission}
-          onSend={harness.send}
-          onStop={harness.stop}
-          onNewSession={() => setWorkspacePickerOpen(true)}
-          onOpenConnectors={() => openSettings('mcp')}
-          reference={reference}
-        />
+              {pendingApprovals.length
+                ? (
+                  <div className="approval-stack">
+                    {pendingApprovals.map(request => (
+                      <ApprovalCard
+                        key={request.id}
+                        request={request}
+                        onResolve={decision => harness.resolveApproval(request.id, decision)}
+                      />
+                    ))}
+                  </div>
+                )
+                : null}
+
+              <Composer
+                disabled={!harness.session}
+                streaming={harness.session?.streaming ?? false}
+                sessionId={harness.session?.id}
+                provider={harness.session?.provider}
+                model={harness.session?.model ?? 'ruobai-chat'}
+                models={harness.models}
+                modes={harness.modes}
+                skills={skills}
+                mode={harness.session?.mode ?? harness.defaultMode}
+                permission={(harness.session?.permission as PermissionMode | undefined) ?? 'workspace-write'}
+                commandPrefix={harness.commandPrefix}
+                contextInfo={harness.contextInfo}
+                stats={harness.session?.stats ?? null}
+                onModeChange={harness.setMode}
+                onModelChange={harness.setModel}
+                onPermissionChange={harness.setPermission}
+                onSend={harness.send}
+                onStop={harness.stop}
+                onNewSession={() => setWorkspacePickerOpen(true)}
+                onOpenConnectors={() => openSettings('mcp')}
+                reference={reference}
+              />
+            </>
+          )
+          : mainView === 'trajectory'
+            ? <TrajectoryView session={harness.session} />
+            : (
+              <ContextView
+                session={harness.session}
+                context={harness.contextInfo}
+                onRefresh={harness.refreshContext}
+              />
+            )}
       </main>
 
       {detailsOpen
@@ -559,8 +592,4 @@ export function App() {
         : null}
     </div>
   )
-}
-
-function nameOf(path: string) {
-  return path.split('/').filter(Boolean).at(-1) ?? path
 }

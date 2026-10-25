@@ -138,7 +138,12 @@ export class OpenAiProvider implements LlmProvider {
 
     if (!response.ok || !response.body) {
       const body = await response.text().catch(() => '')
-      yield { type: 'error', message: `${response.status} ${response.statusText}: ${body.slice(0, 500)}` }
+      const code = errorCodeOf(body)
+      yield {
+        type: 'error',
+        message: `${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
+        ...(code ? { code } : {}),
+      }
       yield { type: 'done', reason: 'stop' }
       return
     }
@@ -177,6 +182,14 @@ export class OpenAiProvider implements LlmProvider {
               payload = JSON.parse(data)
             } catch {
               continue
+            }
+
+            if (payload.error) {
+              const code = errorCodeOf(payload)
+              const message = payload.error?.message ?? payload.error?.type ?? 'provider error'
+              yield { type: 'error', message: String(message), ...(code ? { code } : {}) }
+              finished = true
+              break
             }
 
             if (payload.usage) {
@@ -231,6 +244,24 @@ export class OpenAiProvider implements LlmProvider {
     }
     yield reason ?? { type: 'done', reason: calls.size ? 'tool-calls' : 'stop', usage }
   }
+}
+
+/** Provider error code from a JSON body; also accepts a raw error string. */
+function errorCodeOf(raw: unknown): string | undefined {
+  if (typeof raw === 'string') {
+    try {
+      return errorCodeOf(JSON.parse(raw))
+    } catch {
+      return undefined
+    }
+  }
+  if (!raw || typeof raw !== 'object') return undefined
+  const body = raw as {
+    error?: { code?: unknown; type?: unknown }
+    code?: unknown
+  }
+  const code = body.error?.code ?? body.error?.type ?? body.code
+  return typeof code === 'string' && code ? code : undefined
 }
 
 function escapeAttribute(value: string) {

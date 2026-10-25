@@ -52,10 +52,22 @@ export interface SelectionOptions {
 }
 
 /**
- * Provider overflow wording differs; these are the canonical fragments seen
- * across OpenAI, Anthropic, DeepSeek and OpenAI-compatible gateways.
+ * Provider overflow wording differs; prefer a structured code when the
+ * adapter supplies one, then fall back to the canonical message fragments
+ * seen across OpenAI, Anthropic, DeepSeek and OpenAI-compatible gateways.
  */
-export function isContextOverflow(message: string) {
+export function isContextOverflow(message: string, code?: string) {
+  const field = (code ?? '').toLowerCase()
+  if (field) {
+    if ([
+      'context_length_exceeded',
+      'context_window_exceeded',
+      'maximum_context_length_exceeded',
+      'prompt_too_long',
+      'string_above_max_length',
+    ].includes(field)) return true
+    if (field.includes('context') && /(length|window|overflow)/.test(field)) return true
+  }
   const text = message.toLowerCase()
   return [
     'context_length_exceeded',

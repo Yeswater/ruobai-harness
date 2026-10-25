@@ -97,14 +97,17 @@ export class LlmService extends Service {
     let content = ''
     const calls: Array<{ id: string; name: string; arguments: string }> = []
     let error: string | undefined
+    let errorCode: string | undefined
     let reason: string | undefined
     for await (const chunk of this.stream(request, providerName)) {
       if (chunk.type === 'text-delta') content += chunk.text
       else if (chunk.type === 'tool-call') calls.push({ id: chunk.id, name: chunk.name, arguments: chunk.arguments })
-      else if (chunk.type === 'error') error = chunk.message
-      else reason = chunk.reason
+      else if (chunk.type === 'error') {
+        error = chunk.message
+        errorCode = chunk.code
+      } else reason = chunk.reason
     }
-    return { content, calls, error, reason }
+    return { content, calls, error, errorCode, reason }
   }
 }
 

@@ -295,6 +295,10 @@ export interface ContextInfo {
   calibration: number
   /** Tool results pruned from the model view. */
   prunedToolResults: number
+  /** Details of the most recent pruned tool results. */
+  pruned: Array<{ seq: number; name: string; before: number; after: number }>
+  /** Rolling memory checkpoint used to skip a summarization call. */
+  memory?: { at: number; upToSeq: number; chars: number }
   compaction: {
     failures: number
     disabled: boolean
@@ -302,6 +306,69 @@ export interface ContextInfo {
     lastAt?: number
     lastBefore?: number
     lastAfter?: number
+  }
+}
+
+export interface TrajectoryPart {
+  type: string
+  text?: string
+  id?: string
+  name?: string
+  arguments?: string
+  callId?: string
+  content?: string
+  isError?: boolean
+}
+
+export interface TrajectoryEvent {
+  seq: number
+  ts: number
+  type: string
+  data?: {
+    id?: string
+    text?: string
+    at?: number
+    name?: string
+    callId?: string
+    content?: string
+    chars?: number
+    isError?: boolean
+    parts?: TrajectoryPart[]
+    attachments?: Array<{
+      id?: string
+      name?: string
+      kind?: string
+      mime?: string
+      size?: number
+      path?: string
+    }>
+    before?: number
+    after?: number
+    upToSeq?: number
+    trigger?: string
+    message?: string
+    kind?: string
+    steps?: number
+    source?: { kind?: string; name?: string }
+    [key: string]: unknown
+  }
+}
+
+export interface EditorChoice {
+  id: string
+  name: string
+  kind: 'editor' | 'folder'
+}
+
+export interface CompactionResult {
+  compacted: boolean
+  info?: {
+    sessionId: string
+    upToSeq: number
+    before: number
+    after: number
+    trigger: string
+    summaryTokens: number
   }
 }
 
@@ -456,6 +523,22 @@ export const api = {
   getContext: async (id: string) =>
     request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),
 
+  getTrajectory: async (id: string) =>
+    (await request<{ events: TrajectoryEvent[] }>(
+      `/api/sessions/${encodeURIComponent(id)}/trajectory`,
+    )).events,
+
+  compactSession: async (id: string) =>
+    request<CompactionResult>(`/api/sessions/${encodeURIComponent(id)}/compact`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  getEditors: async (sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return (await request<{ editors: EditorChoice[] }>(`/api/workspace/editors${suffix}`)).editors
+  },
+
   getGitInfo: async (id: string) =>
     request<GitInfo>(`/api/workspace/git?sessionId=${encodeURIComponent(id)}`),
 
@@ -515,6 +598,13 @@ export const api = {
     request<{ ok: true; opened: string }>('/api/workspace/open', {
       method: 'POST',
       body: JSON.stringify({ path, sessionId }),
+    }),
+
+  /** Open the session workspace root (or a path) in a detected editor. */
+  openWorkspace: async (sessionId: string, editor?: string, path?: string) =>
+    request<{ ok: true; opened: string }>('/api/workspace/open', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, ...(editor ? { editor } : {}), ...(path ? { path } : {}) }),
     }),
 
   browseWorkspace: async (path?: string) => {

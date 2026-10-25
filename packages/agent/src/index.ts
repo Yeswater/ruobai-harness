@@ -218,6 +218,7 @@ export class AgentService extends Service {
         let textContent = ''
         const calls: ToolCallPart[] = []
         let failure: string | undefined
+        let failureCode: string | undefined
         let stop: StopReason = 'stop'
         let stepInputTokens = 0
 
@@ -234,6 +235,7 @@ export class AgentService extends Service {
               calls.push({ type: 'tool-call', id: chunk.id, name: chunk.name, arguments: chunk.arguments })
             } else if (chunk.type === 'error') {
               failure = chunk.message
+              failureCode = chunk.code
             } else {
               stop = chunk.reason ?? 'stop'
               if (chunk.usage) {
@@ -253,7 +255,7 @@ export class AgentService extends Service {
         if (stepInputTokens) this.ctx.context.observeUsage(sessionId, built.estimatedTokens, stepInputTokens)
 
         if (failure) {
-          if (isContextOverflow(failure) && overflowRetries < 1) {
+          if (isContextOverflow(failure, failureCode) && overflowRetries < 1) {
             overflowRetries += 1
             const info = await this.ctx.context.forceCompact(sessionId, compactOptions())
             if (info) {

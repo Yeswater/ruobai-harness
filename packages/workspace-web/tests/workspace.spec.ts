@@ -235,19 +235,34 @@ describe('workspace web', () => {
     const session = harness.ctx.sessions.create({ title: 'open', workspace: process.cwd() })
     const url = `${base}/api/workspace/open`
 
-    const missingPath = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: session.id }),
-    })
-    expect(missingPath.status).toBe(400)
-
     const escape = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: session.id, path: '../../etc/passwd' }),
     })
     expect(escape.status).toBe(403)
+
+    const unknown = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: session.id, editor: 'not-an-editor' }),
+    })
+    expect(unknown.status).toBe(400)
+  })
+
+  it('detects editors and always offers the file manager', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const base = harness.ctx.web.url
+    const session = harness.ctx.sessions.create({ title: 'editors', workspace: process.cwd() })
+
+    const listed = await (await fetch(
+      `${base}/api/workspace/editors?sessionId=${session.id}`,
+    )).json() as { editors: Array<{ id: string; name: string; kind: string }> }
+    expect(listed.editors.length).toBeGreaterThan(0)
+    expect(listed.editors.some(editor => editor.id === 'system' && editor.kind === 'folder')).toBe(true)
+    expect(new Set(listed.editors.map(editor => editor.id)).size).toBe(listed.editors.length)
+    expect(listed.editors.every(editor => editor.name.length > 0)).toBe(true)
   })
 
   it('marks a non-git workspace as unavailable', async () => {

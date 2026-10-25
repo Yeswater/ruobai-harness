@@ -71,6 +71,7 @@ async function mountContext(config: Record<string, unknown> = {}) {
 describe('compaction helpers', () => {
   it('recognizes provider overflow wording', () => {
     expect(isContextOverflow("This model's maximum context length is 128000 tokens")).toBe(true)
+    expect(isContextOverflow('provider error', 'context_length_exceeded')).toBe(true)
     expect(isContextOverflow('context_length_exceeded')).toBe(true)
     expect(isContextOverflow('prompt is too long: 210000 tokens > 200000 maximum')).toBe(true)
     expect(isContextOverflow('request too large for this model')).toBe(true)
@@ -262,6 +263,97 @@ describe('context compaction', () => {
     expect(summaryCalls).toBe(2)
     expect(JSON.stringify(requests[1]).length).toBeLessThan(JSON.stringify(requests[0]).length)
     expect(ctx.sessions.get(session.id)!.events.some(item => item.type === 'context/summary')).toBe(true)
+  })
+
+  it('carries the previous checkpoint into the next summarization', async () => {
+    const { ctx, requests, setReply } = await mountContext({ compactAt: 100, keepRecent: 2 })
+    setReply(() => '<summary>## Checkpoint\n- keep the API stable</summary>')
+    const session = ctx.sessions.create()
+    for (let index = 0; index < 10; index += 1) {
+      ctx.sessions.append(session.id, 'message/user', {
+        id: `m${index}`,
+        text: `instruction ${index} ${'x'.repeat(300)}`,
+        at: index,
+      })
+    }
+    await ctx.context.compactNow(session.id)
+    for (let index = 10; index < 20; index += 1) {
+      ctx.sessions.append(session.id, 'message/user', {
+        id: `m${index}`,
+        text: `instruction ${index} ${'x'.repeat(300)}`,
+        at: index,
+      })
+    }
+    await ctx.context.compactNow(session.id)
+
+    const second = JSON.stringify(requests.at(-1))
+    expect(second).toContain('Previously compacted summary')
+    expect(second).toContain('keep the API stable')
+  })
+
+  it('restores recently read files after a checkpoint', async () => {
+    const { ctx } = await mountContext({ compactAt: 1_000_000 })
+    const session = ctx.sessions.create()
+    ctx.sessions.append(session.id, 'message/user', { id: 'u1', text: 'read it', at: 1 })
+    ctx.sessions.append(session.id, 'message/assistant', {
+      id: 'a1',
+      parts: [{ type: 'tool-call', id: 'c1', name: 'read_file', arguments: '{"path":"src/app.ts"}' }],
+      at: 2,
+    })
+    ctx.sessions.append(session.id, 'tool/result', {
+      callId: 'c1',
+      name: 'read_file',
+      content: 'export const answer = 42',
+      at: 3,
+    })
+    ctx.sessions.append(session.id, 'context/summary', {
+      upToSeq: 2,
+      text: 'older work summarized',
+      at: 4,
+    })
+
+    const built = await ctx.context.build(session.id)
+    expect(built.system).toContain('<restored_files')
+    expect(built.system).toContain('path="src/app.ts"')
+    expect(built.system).toContain('export const answer = 42')
+    expect(built.messages).toHaveLength(0)
+  })
+
+  it('reuses a covering memory checkpoint instead of calling the model again', async () => {
+    const { ctx, requests, setReply } = await mountContext({
+      compactAt: 100,
+      keepRecent: 2,
+      memoryAtPercent: 1,
+      memoryMinIntervalMs: 0,
+    })
+    setReply((messages) => {
+      const system = messages[0]?.role === 'system'
+        ? messages[0].content.map(part => part.type === 'text' ? part.text : '').join('')
+        : ''
+      if (system.includes('long-term memory')) return '## Memory\n- durable fact'
+      return '## Fresh summary\n- from model'
+    })
+    const session = ctx.sessions.create()
+    for (let index = 0; index < 10; index += 1) {
+      ctx.sessions.append(session.id, 'message/user', {
+        id: `m${index}`,
+        text: `instruction ${index} ${'x'.repeat(300)}`,
+        at: index,
+      })
+    }
+
+    const memory = await ctx.context.refreshMemory(session.id)
+    expect(memory?.text).toContain('durable fact')
+    expect(requests).toHaveLength(1)
+
+    const info = await ctx.context.compactNow(session.id)
+    expect(info).toBeDefined()
+    expect(requests).toHaveLength(1)
+    const summary = ctx.sessions.get(session.id)!.events.find(item => item.type === 'context/summary')
+    expect(summary?.data.text).toContain('durable fact')
+
+    const context = await ctx.context.info(session.id)
+    expect(context.memory?.upToSeq).toBe(9)
   })
 
   it('calibrates the estimate with provider usage', async () => {
