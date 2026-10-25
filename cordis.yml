@@ -101,7 +101,8 @@
   name: '@ruobai/web-server'
   config:
     host: 127.0.0.1
-    port: 4310
+    # `pnpm dev --port 4400` sets PORT before boot; unset keeps 4310.
+    port: !!js "process.env.PORT ? Number(process.env.PORT) : 4310"
 
 - id: ui-api
   name: '@ruobai/ui-server'
