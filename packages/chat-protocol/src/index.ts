@@ -99,10 +99,15 @@ export interface TurnStats {
   inputTokens?: number
   outputTokens?: number
   cachedInputTokens?: number
-  /** Time from turn start to the first text delta. */
+  /** Time from turn start to the first streamed delta (text or reasoning). */
   ttftMs?: number
-  /** Time between first and last text delta. */
+  /** Time spent streaming, summed over the steps that streamed visibly. */
   generationMs?: number
+  /**
+   * Output tokens produced inside `generationMs`. Steps whose deltas arrived in
+   * one burst are excluded from both, so the pair always describes the same work.
+   */
+  streamedOutputTokens?: number
   durationMs?: number
   steps?: number
   outputChars?: number
@@ -118,4 +123,4 @@ export type ChatEvent =
   | { type: 'message-reasoning'; sessionId: string; messageId: string; delta: string }
   | { type: 'message-block'; sessionId: string; messageId: string; block: ChatBlock }
   | { type: 'message-done'; sessionId: string; session: ChatSession }
-  | { type: 'session-stats'; sessionId: string; stats: TurnStats }
+  | { type: 'session-stats'; sessionId: string; stats?: TurnStats }

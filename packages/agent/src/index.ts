@@ -10,6 +10,12 @@ import type { ToolDefinition } from '@ruobai/tools'
 
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 
+/**
+ * A step whose deltas all land inside one burst has no measurable duration;
+ * timing it would report a fictional rate.
+ */
+const MIN_STREAM_MS = 250
+
 export interface RunOptions {
   /** Aborts the turn when this signal fires (e.g. the parent turn ending). */
   signal?: AbortSignal
@@ -155,10 +161,16 @@ export class AgentService extends Service {
     let lastText = ''
     const startedAt = Date.now()
     let firstDeltaAt: number | undefined
-    let lastDeltaAt: number | undefined
+    // Time the model spent streaming, summed over the steps that streamed
+    // visibly: tool round trips in between must not dilute the rate.
+    let generationMs = 0
+    // Output tokens produced inside those measured windows. Without it the
+    // rate would divide step-spanning totals by a partial window.
+    let streamedTokens = 0
     let outputChars = 0
     let steps = 0
     let usageSeen = false
+    let cacheSeen = false
     let inputTokens = 0
     let outputTokens = 0
     let cachedInputTokens = 0
@@ -223,18 +235,27 @@ export class AgentService extends Service {
         let failureCode: string | undefined
         let stop: StopReason = 'stop'
         let stepInputTokens = 0
+        let stepFirstDeltaAt: number | undefined
+        let stepLastDeltaAt: number | undefined
+        let stepOutputTokens = 0
 
         try {
           for await (const chunk of this.ctx.llm.stream(built.request, provider)) {
             if (chunk.type === 'reasoning-delta') {
               reasoningContent += chunk.text
+              // Reasoning is billed as output: it belongs to the same window.
+              const now = Date.now()
+              firstDeltaAt ??= now
+              stepFirstDeltaAt ??= now
+              stepLastDeltaAt = now
               this.ctx.emit('agent/reasoning', sessionId, messageId, chunk.text)
             } else if (chunk.type === 'text-delta') {
               textContent += chunk.text
               outputChars += chunk.text.length
               const now = Date.now()
               firstDeltaAt ??= now
-              lastDeltaAt = now
+              stepFirstDeltaAt ??= now
+              stepLastDeltaAt = now
               this.ctx.emit('agent/delta', sessionId, messageId, chunk.text)
             } else if (chunk.type === 'tool-call') {
               calls.push({ type: 'tool-call', id: chunk.id, name: chunk.name, arguments: chunk.arguments })
@@ -247,13 +268,27 @@ export class AgentService extends Service {
                 usageSeen = true
                 inputTokens += chunk.usage.inputTokens ?? 0
                 outputTokens += chunk.usage.outputTokens ?? 0
-                cachedInputTokens += chunk.usage.cachedInputTokens ?? 0
+                if (chunk.usage.cachedInputTokens !== undefined) {
+                  cacheSeen = true
+                  cachedInputTokens += chunk.usage.cachedInputTokens
+                }
                 stepInputTokens += chunk.usage.inputTokens ?? 0
+                stepOutputTokens += chunk.usage.outputTokens ?? 0
               }
             }
           }
         } catch (error) {
           failure = error instanceof Error ? error.message : String(error)
+        }
+
+        // Only count a step's tokens when its stream was actually observable:
+        // buffered or single-frame answers have no usable window.
+        if (stepFirstDeltaAt !== undefined && stepLastDeltaAt !== undefined) {
+          const span = stepLastDeltaAt - stepFirstDeltaAt
+          if (span >= MIN_STREAM_MS) {
+            generationMs += span
+            streamedTokens += stepOutputTokens
+          }
         }
 
         // Anchor the estimator to what the provider actually billed.
@@ -357,12 +392,11 @@ export class AgentService extends Service {
         ...(usageSeen ? {
           inputTokens,
           outputTokens,
-          ...(cachedInputTokens ? { cachedInputTokens } : {}),
+          ...(cacheSeen ? { cachedInputTokens } : {}),
         } : {}),
         ...(firstDeltaAt !== undefined ? { ttftMs: firstDeltaAt - startedAt } : {}),
-        ...(firstDeltaAt !== undefined && lastDeltaAt !== undefined
-          ? { generationMs: lastDeltaAt - firstDeltaAt }
-          : {}),
+        ...(generationMs ? { generationMs } : {}),
+        ...(streamedTokens ? { streamedOutputTokens: streamedTokens } : {}),
         durationMs: Date.now() - startedAt,
         steps,
         outputChars,

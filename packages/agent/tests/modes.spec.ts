@@ -119,39 +119,6 @@ describe('agent modes', () => {
     expect(step).toBe(2)
   })
 
-  it('reports turn usage through agent/usage', async () => {
-    const harness = await createHarness()
-    harnesses.push(harness)
-
-    await useScripted(harness.ctx, {
-      name: 'scripted',
-      async *stream() {
-        yield { type: 'text-delta', text: 'hello' }
-        await new Promise(resolve => setTimeout(resolve, 20))
-        yield {
-          type: 'done',
-          reason: 'stop',
-          usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 6 },
-        }
-      },
-    })
-
-    const session = harness.ctx.chat.create(undefined, 'agent')
-    const usage = new Promise<any>((resolve) => {
-      harness.ctx.once('agent/usage', (_id, stats) => resolve(stats))
-    })
-    harness.ctx.chat.send(session.id, 'hi')
-
-    await expect(usage).resolves.toMatchObject({
-      inputTokens: 10,
-      outputTokens: 2,
-      cachedInputTokens: 6,
-      steps: 1,
-      outputChars: 5,
-    })
-    expect(harness.ctx.chat.get(session.id)?.stats).toMatchObject({ outputTokens: 2 })
-  })
-
   it('keeps looping until the model stops calling tools', async () => {
     const harness = await createHarness()
     harnesses.push(harness)

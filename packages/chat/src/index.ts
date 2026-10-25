@@ -56,7 +56,6 @@ export class ChatService extends Service {
     ctx.on('agent/step-start', (id, messageId) => {
       if (!this.visible(id)) return
       const session = this.ensure(id)
-      session.stats = undefined
       if (!session.messages.some(message => message.id === messageId)) {
         session.messages.push({
           id: messageId,
@@ -307,6 +306,12 @@ export class ChatService extends Service {
     this.apply(session, event)
 
     if (event.type === 'message/user') {
+      // A new turn invalidates the previous turn's metrics. Clearing here (not
+      // per step) keeps them from flashing to "—" between tool round trips.
+      if (event.data.source?.kind !== 'skill' && session.stats) {
+        session.stats = undefined
+        this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id })
+      }
       const message = session.messages.find(item => item.id === event.data.id)
       if (message) this.ctx.emit('chat/event', { type: 'message-added', sessionId: id, message })
     } else if (event.type === 'turn/error') {

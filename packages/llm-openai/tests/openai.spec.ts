@@ -162,6 +162,130 @@ describe('openai adapter', () => {
     await llm.dispose()
   })
 
+  it('reads usage from the trailing frame after finish_reason', async () => {
+    const baseUrl = await mockApi([
+      'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":4,"prompt_tokens_details":{"cached_tokens":6}}}\n\n',
+      'data: [DONE]\n\n',
+    ])
+
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model' })
+    await provider
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({ messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }, 'openai')) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'done',
+      reason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 4, cachedInputTokens: 6 },
+    })
+
+    await provider.dispose()
+    await llm.dispose()
+  })
+
+  it('ignores a zero placeholder next to the real cache counter', async () => {
+    const baseUrl = await mockApi([
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":0},"prompt_cache_hit_tokens":80}}\n\n',
+      'data: [DONE]\n\n',
+    ])
+
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model' })
+    await provider
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({ messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }, 'openai')) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'done',
+      usage: { inputTokens: 100, outputTokens: 5, cachedInputTokens: 80 },
+    })
+
+    await provider.dispose()
+    await llm.dispose()
+  })
+
+  it('folds exclusive cache counters into the prompt instead of overflowing', async () => {
+    const baseUrl = await mockApi([
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":200,"completion_tokens":5,"prompt_cache_hit_tokens":800}}\n\n',
+      'data: [DONE]\n\n',
+    ])
+
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model' })
+    await provider
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({ messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }, 'openai')) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'done',
+      usage: { inputTokens: 1000, outputTokens: 5, cachedInputTokens: 800 },
+    })
+
+    await provider.dispose()
+    await llm.dispose()
+  })
+
+  it('requests usage frames and retries without them when rejected', async () => {
+    const bodies: any[] = []
+    const server = createServer((req, res) => {
+      let raw = ''
+      req.on('data', (chunk) => { raw += chunk })
+      req.on('end', () => {
+        const body = JSON.parse(raw)
+        bodies.push(body)
+        if (body.stream_options) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: 'unknown field stream_options' } }))
+          return
+        }
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        res.write('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n')
+        res.write('data: [DONE]\n\n')
+        res.end()
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    servers.push(() => new Promise<void>(resolve => server.close(() => resolve())))
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model' })
+    await provider
+
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({ messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }, 'openai')) {
+      chunks.push(chunk)
+    }
+
+    expect(bodies[0]?.stream_options).toEqual({ include_usage: true })
+    expect(bodies[1]?.stream_options).toBeUndefined()
+    expect(chunks).toContainEqual({ type: 'text-delta', text: 'ok' })
+
+    await provider.dispose()
+    await llm.dispose()
+  })
+
   it('surfaces a structured context overflow code', async () => {
     const server = createServer((req, res) => {
       res.writeHead(400, { 'Content-Type': 'application/json' })
