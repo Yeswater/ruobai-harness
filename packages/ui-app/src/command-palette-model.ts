@@ -46,9 +46,9 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
   },
   {
     id: 'toggle-details',
-    label: '显示 / 隐藏详情面板',
-    description: '切换右侧的上下文与统计',
-    keywords: 'details panel 面板 详情 侧边栏',
+    label: '显示 / 隐藏会话栏',
+    description: '切换右侧的环境与上下文面板',
+    keywords: 'session details panel 会话 面板 上下文 环境',
   },
   {
     id: 'show-files',

@@ -7,7 +7,8 @@ import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarS
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
-import { DetailsPanel, type PanelView } from './components/DetailsPanel.tsx'
+import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
+import { SessionPanel } from './components/SessionPanel.tsx'
 import { BranchIcon, FilePanelIcon, FolderIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
@@ -31,15 +32,16 @@ function loadCollapsed() {
   return localStorage.getItem(SIDEBAR_KEY) === '1'
 }
 
-function maxDetailsWidth(collapsed: boolean) {
-  const reserved = collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272
+function maxDetailsWidth(collapsed: boolean, sessionOpen: boolean) {
+  const reserved = (collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272)
+    + (sessionOpen ? 304 : 0)
   return Math.max(320, window.innerWidth - reserved)
 }
 
 function loadDetailsWidth() {
   const saved = Number(localStorage.getItem(DETAILS_WIDTH_KEY))
   const width = Number.isFinite(saved) && saved >= 280 ? saved : DETAILS_DEFAULT_WIDTH
-  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1'))
+  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1', true))
 }
 
 export function App() {
@@ -49,7 +51,8 @@ export function App() {
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [detailsOpen, setDetailsOpen] = useState(true)
-  const [panelView, setPanelView] = useState<PanelView>('session')
+  const [fileOpen, setFileOpen] = useState(false)
+  const [panelView, setPanelView] = useState<FileView>('files')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
@@ -85,17 +88,17 @@ export function App() {
   }, [sidebarCollapsed])
 
   const resizeDetails = useCallback((next: number) => {
-    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed), Math.max(280, Math.round(next)))
+    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed, detailsOpen), Math.max(280, Math.round(next)))
     setDetailsWidth(clamped)
     localStorage.setItem(DETAILS_WIDTH_KEY, String(clamped))
-  }, [sidebarCollapsed])
+  }, [sidebarCollapsed, detailsOpen])
 
   useEffect(() => {
     const clamp = () => setDetailsWidth(current =>
-      Math.min(current, maxDetailsWidth(sidebarCollapsed)))
+      Math.min(current, maxDetailsWidth(sidebarCollapsed, detailsOpen)))
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
-  }, [sidebarCollapsed])
+  }, [sidebarCollapsed, detailsOpen])
 
   const toggleSidebar = useCallback(() => {
     if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(current => !current)
@@ -116,14 +119,14 @@ export function App() {
     }
   }, [toolsMenuOpen])
 
-  const showPanel = useCallback((view: PanelView) => {
-    if (detailsOpen && panelView === view) {
-      setDetailsOpen(false)
+  const showFilePanel = useCallback((view: FileView) => {
+    if (fileOpen && panelView === view) {
+      setFileOpen(false)
       return
     }
     setPanelView(view)
-    setDetailsOpen(true)
-  }, [detailsOpen, panelView])
+    setFileOpen(true)
+  }, [fileOpen, panelView])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -180,10 +183,10 @@ export function App() {
         setDetailsOpen(current => !current)
         break
       case 'show-files':
-        showPanel('files')
+        showFilePanel('files')
         break
       case 'show-git':
-        showPanel('git')
+        showFilePanel('git')
         break
       case 'toggle-sidebar':
         toggleSidebar()
@@ -203,7 +206,8 @@ export function App() {
     <div
       className={[
         'app',
-        detailsOpen ? '' : 'details-closed',
+        detailsOpen ? 'session-panel-open' : '',
+        fileOpen ? 'file-panel-open' : '',
         sidebarCollapsed ? 'sidebar-collapsed' : '',
       ].filter(Boolean).join(' ')}
       style={{ '--details-width': `${detailsWidth}px` } as CSSProperties}
@@ -281,28 +285,29 @@ export function App() {
             <Slot name="header.actions" />
             <div className="main-tools" role="toolbar" aria-label="面板">
               <button
-                className={`icon-btn ${detailsOpen && panelView === 'files' ? 'active' : ''}`}
-                onClick={() => showPanel('files')}
+                className={`icon-btn ${detailsOpen ? 'active' : ''}`}
+                onClick={() => setDetailsOpen(current => !current)}
+                aria-label="会话"
+                title="会话"
+              >
+                <PanelIcon size={16} />
+              </button>
+              <span className="main-tools-sep" />
+              <button
+                className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
+                onClick={() => showFilePanel('files')}
                 aria-label="文件"
                 title="文件"
               >
                 <FilePanelIcon size={16} />
               </button>
               <button
-                className={`icon-btn ${detailsOpen && panelView === 'git' ? 'active' : ''}`}
-                onClick={() => showPanel('git')}
+                className={`icon-btn ${fileOpen && panelView === 'git' ? 'active' : ''}`}
+                onClick={() => showFilePanel('git')}
                 aria-label="Git"
                 title="Git"
               >
                 <BranchIcon size={16} />
-              </button>
-              <button
-                className={`icon-btn ${detailsOpen && panelView === 'session' ? 'active' : ''}`}
-                onClick={() => showPanel('session')}
-                aria-label="会话"
-                title="会话"
-              >
-                <PanelIcon size={16} />
               </button>
               <span className="main-tools-sep" />
               <button
@@ -401,13 +406,22 @@ export function App() {
 
       {detailsOpen
         ? (
-          <DetailsPanel
+          <SessionPanel
             session={harness.session}
             contextInfo={harness.contextInfo}
+            onClose={() => setDetailsOpen(false)}
+          />
+        )
+        : null}
+
+      {fileOpen
+        ? (
+          <DetailsPanel
+            session={harness.session}
             view={panelView}
             width={detailsWidth}
             onResize={resizeDetails}
-            onClose={() => setDetailsOpen(false)}
+            onClose={() => setFileOpen(false)}
             onReferenceFile={(path) => setReference({ text: `@${path} `, token: Date.now() })}
           />
         )
