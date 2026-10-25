@@ -99,7 +99,7 @@ export interface ContextInfo {
   /** Tool results currently pruned from the model view. */
   prunedToolResults: number
   /** Details of the most recent pruned tool results. */
-  pruned: Array<{ seq: number; name: string; before: number; after: number }>
+  pruned: Array<{ seq: number; name: string; before: number; after: number; text: string }>
   /** Rolling memory checkpoint used to skip a summarization call. */
   memory?: { at: number; upToSeq: number; chars: number }
   compaction: {
@@ -247,6 +247,7 @@ export class ContextService extends Service {
     name: string
     before: number
     after: number
+    text: string
   }>>()
 
   constructor(ctx: Context, public config: Config) {
@@ -285,6 +286,7 @@ export class ContextService extends Service {
         name: String(event.data?.name ?? ''),
         before: String(event.data?.content ?? '').length,
         after: pruned.get(event.seq)!.length,
+        text: pruned.get(event.seq)!,
       })))
 
     const messages: Message[] = []

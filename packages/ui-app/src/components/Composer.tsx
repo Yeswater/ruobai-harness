@@ -21,6 +21,7 @@ interface ComposerProps {
   disabled: boolean
   streaming: boolean
   sessionId?: string
+  workspace?: string
   provider?: string
   model: string
   models: ModelProvider[]
@@ -53,7 +54,7 @@ const FILE_ACCEPT = [
 const DIRECTORY_PROPS = { webkitdirectory: '', directory: '' } as Record<string, string>
 
 export function Composer({
-  disabled, streaming, sessionId, provider, model, models, modes, skills = [], mode, permission,
+  disabled, streaming, sessionId, workspace, provider, model, models, modes, skills = [], mode, permission,
   commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
   onStop, onNewSession, onOpenConnectors, reference,
 }: ComposerProps) {
@@ -530,7 +531,7 @@ export function Composer({
         />
       </form>
 
-      <StatsLine stats={stats} contextInfo={contextInfo} />
+      <StatsLine stats={stats} contextInfo={contextInfo} sessionId={sessionId} workspace={workspace} />
 
       {attachments.error
         ? (

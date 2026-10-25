@@ -281,7 +281,7 @@ export interface ContextInfo {
   /** Tool results pruned from the model view. */
   prunedToolResults: number
   /** Details of the most recent pruned tool results. */
-  pruned: Array<{ seq: number; name: string; before: number; after: number }>
+  pruned: Array<{ seq: number; name: string; before: number; after: number; text?: string }>
   /** Rolling memory checkpoint used to skip a summarization call. */
   memory?: { at: number; upToSeq: number; chars: number }
   compaction: {

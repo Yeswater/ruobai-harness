@@ -13,6 +13,7 @@ import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
 import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
 import { ContextView } from './components/ContextView.tsx'
+import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
 import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
@@ -459,6 +460,7 @@ export function App() {
                 disabled={!harness.session}
                 streaming={harness.session?.streaming ?? false}
                 sessionId={harness.session?.id}
+                workspace={harness.session?.workspace}
                 provider={harness.session?.provider}
                 model={harness.session?.model ?? 'ruobai-chat'}
                 models={harness.models}
@@ -544,6 +546,7 @@ export function App() {
       {sidebarOpen
         ? <button className="scrim" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar" />
         : null}
+      <FastTooltips />
     </div>
   )
 }

@@ -1,9 +1,12 @@
 import type { TurnStats } from '@ruobai/chat-protocol'
 import type { ContextInfo } from '../api.ts'
+import { WorkspaceBadge } from './WorkspaceBadge.tsx'
 
 interface StatsLineProps {
   stats?: TurnStats | null
   contextInfo: ContextInfo | null
+  sessionId?: string
+  workspace?: string
 }
 
 /** Below this the stream window is pure noise (buffered or single-frame answers). */
@@ -68,14 +71,15 @@ export function statsItems(stats: TurnStats | null | undefined, contextInfo: Con
   ]
 }
 
-export function StatsLine({ stats, contextInfo }: StatsLineProps) {
+export function StatsLine({ stats, contextInfo, sessionId, workspace }: StatsLineProps) {
   const items = statsItems(stats, contextInfo)
 
   return (
     <div className="stats-line">
-      {items.map((item, index) => (
+      <WorkspaceBadge sessionId={sessionId} workspace={workspace} />
+      {items.map(item => (
         <span key={item.key} className="stats-item" title={item.title}>
-          {index ? <span className="stats-sep">·</span> : null}
+          <span className="stats-sep">·</span>
           {item.label}
         </span>
       ))}
