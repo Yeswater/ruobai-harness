@@ -80,7 +80,7 @@
 ### 3.6 手动与可见性
 
 - 输入框 `/compact [关注点]`：立即压缩、写入一条 `turn/notice`，本轮不调用模型。
-- `GET /api/sessions/:id/context` 新增 `calibration`、`prunedToolResults`、`pruned`、`memory`、`compaction`（失败次数、熔断状态、上次压缩前后大小）；会话面板展示阈值、裁剪条数、上次压缩与错误。
+- `GET /api/sessions/:id/context` 新增 `calibration`、`prunedToolResults`、`pruned`、`memory`、`compaction`（失败次数、熔断状态、上次压缩前后大小）、`systemTools`；「上下文」页展示阈值、裁剪条数、上次压缩与错误。
 - 对话区头部改为「会话 / 轨迹 / 上下文」三个视图：
   - 轨迹：原始事件时间线（用户、助手、工具调用与结果、压缩检查点、记忆、错误），支持只看工具/上下文。
   - 上下文：完整占用构成、滚动记忆、压缩检查点历史、被裁剪的工具输出，以及「立即压缩」按钮。

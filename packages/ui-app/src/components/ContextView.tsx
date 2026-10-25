@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
-import { api, type ContextInfo, type TrajectoryEvent } from '../api.ts'
+import {
+  api, type ContextInfo, type GitInfo, type ProtocolsInfo, type TrajectoryEvent,
+} from '../api.ts'
 import { ContextCard, formatTokens } from './ContextCard.tsx'
+import { EnvironmentCard } from './EnvironmentCard.tsx'
 import { ArchiveIcon } from './Icons.tsx'
 
 interface ContextViewProps {
@@ -14,32 +17,61 @@ function timeOf(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
+function dateOf(ts: number) {
+  return new Date(ts).toLocaleString([], {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function triggerLabel(trigger?: string) {
   if (trigger === 'manual') return '手动'
   if (trigger === 'overflow') return '溢出恢复'
   return '自动'
 }
 
-/** Full-page context inspector: usage, pruning, checkpoints and memory. */
+/** Full-page context inspector: session sources, usage, pruning and memory. */
 export function ContextView({ session, context, onRefresh }: ContextViewProps) {
   const [events, setEvents] = useState<TrajectoryEvent[]>([])
+  const [git, setGit] = useState<GitInfo | null>(null)
+  const [protocols, setProtocols] = useState<ProtocolsInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const sessionId = session?.id
 
   useEffect(() => {
     if (!sessionId) {
       setEvents([])
+      setGit(null)
+      setProtocols(null)
       return
     }
     let cancelled = false
     void api.getTrajectory(sessionId)
       .then((list) => { if (!cancelled) setEvents(list) })
       .catch(() => { if (!cancelled) setEvents([]) })
+    void api.getGitInfo(sessionId)
+      .then((info) => { if (!cancelled) setGit(info) })
+      .catch(() => { if (!cancelled) setGit(null) })
+    void api.getProtocols(sessionId)
+      .then((info) => { if (!cancelled) setProtocols(info) })
+      .catch(() => { if (!cancelled) setProtocols(null) })
     return () => { cancelled = true }
-  }, [sessionId, session?.updatedAt, reload])
+  }, [sessionId, reload])
+
+  const copy = (value: string, label: string) => {
+    const pending = navigator.clipboard?.writeText(value)
+    if (!pending) return
+    void pending.then(() => {
+      setCopied(label)
+      setTimeout(() => setCopied(current => current === label ? null : current), 1_500)
+    }).catch(() => undefined)
+  }
 
   const compact = () => {
     if (!sessionId || busy || session.streaming) return
@@ -63,9 +95,189 @@ export function ContextView({ session, context, onRefresh }: ContextViewProps) {
   const summaries = events.filter(event => event.type === 'context/summary')
   const memories = events.filter(event => event.type === 'context/memory')
   const pruned = context?.pruned ?? []
+  const instructions = protocols?.instructions
+  const skills = protocols?.skills?.items ?? []
+  const mcpFiles = protocols?.mcp?.files ?? []
+  const a2aAgents = protocols?.a2a?.agents ?? []
+  const thresholdPercent = context?.contextWindow
+    ? Math.round((context.compactAt / context.contextWindow) * 100)
+    : undefined
 
   return (
     <div className="context-view">
+      <section className="context-section">
+        <header className="context-section-head">
+          <div>
+            <h2>会话与环境</h2>
+            <p>这个会话所在的工作区、模型与运行时信息。</p>
+          </div>
+          <button
+            type="button"
+            className="btn ghost compact"
+            onClick={() => setReload(value => value + 1)}
+          >
+            刷新
+          </button>
+        </header>
+        <EnvironmentCard git={git} workspace={session.workspace} />
+        <dl className="context-kv">
+          <div>
+            <dt>会话 ID</dt>
+            <dd>
+              <span className="mono">{session.id}</span>
+              <button type="button" className="link-btn" onClick={() => copy(session.id, 'id')}>
+                {copied === 'id' ? '已复制' : '复制'}
+              </button>
+            </dd>
+          </div>
+          <div>
+            <dt>模型</dt>
+            <dd>{session.provider ? `${session.provider} / ` : ''}{session.model}</dd>
+          </div>
+          <div>
+            <dt>模式</dt>
+            <dd>{session.mode ?? 'agent'}</dd>
+          </div>
+          <div>
+            <dt>权限</dt>
+            <dd>{session.permission ?? '默认'}</dd>
+          </div>
+          <div>
+            <dt>消息</dt>
+            <dd>{session.messages.length} 条</dd>
+          </div>
+          <div>
+            <dt>时间</dt>
+            <dd>{dateOf(session.createdAt)} → {dateOf(session.updatedAt)}</dd>
+          </div>
+          <div>
+            <dt>Git</dt>
+            <dd>
+              {git?.available
+                ? `${git.files} 个改动 · +${git.added} / −${git.removed}`
+                  + (git.ahead ? ` · 领先 ${git.ahead}` : '')
+                  + (git.behind ? ` · 落后 ${git.behind}` : '')
+                : git ? '非 Git 仓库' : '…'}
+            </dd>
+          </div>
+          <div>
+            <dt>工作区</dt>
+            <dd>
+              <span className="mono">{git?.workspace ?? session.workspace ?? '未选择'}</span>
+              {git?.workspace || session.workspace
+                ? (
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={() => copy(git?.workspace ?? session.workspace ?? '', 'workspace')}
+                  >
+                    {copied === 'workspace' ? '已复制' : '复制路径'}
+                  </button>
+                )
+                : null}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="context-section">
+        <header className="context-section-head">
+          <div>
+            <h2>上下文来源</h2>
+            <p>进入系统提示与工具列表的内容，以及它们当前占用的规模。</p>
+          </div>
+        </header>
+        <div className="context-sources">
+          <article className="context-source">
+            <div className="context-source-head">
+              <span className="context-source-count">{instructions?.files.length ?? 0}</span>
+              <span>指令文件</span>
+            </div>
+            {instructions?.files.length
+              ? (
+                <ul>
+                  {instructions.files.map(file => (
+                    <li key={file.path} title={file.path}>
+                      <span className="mono">{file.display}</span>
+                      <span className="context-muted">{formatTokens(file.bytes)} 字符</span>
+                    </li>
+                  ))}
+                </ul>
+              )
+              : <div className="context-muted">未发现 AGENTS.md / CLAUDE.md 等指令文件</div>}
+            {instructions?.truncated ? <div className="context-warn">内容已按预算截断</div> : null}
+          </article>
+
+          <article className="context-source">
+            <div className="context-source-head">
+              <span className="context-source-count">{skills.length}</span>
+              <span>技能</span>
+            </div>
+            {skills.length
+              ? (
+                <ul>
+                  {skills.slice(0, 8).map(skill => (
+                    <li key={`${skill.source}:${skill.name}`} title={skill.description}>
+                      <span className="mono">/{skill.name}</span>
+                      <span className="context-muted">{skill.source === 'global' ? '全局' : '项目'}</span>
+                    </li>
+                  ))}
+                  {skills.length > 8 ? <li className="context-muted">… 其余 {skills.length - 8} 个</li> : null}
+                </ul>
+              )
+              : <div className="context-muted">未发现技能</div>}
+          </article>
+
+          <article className="context-source">
+            <div className="context-source-head">
+              <span className="context-source-count">{context?.systemTools.length ?? 0}</span>
+              <span>内置工具</span>
+            </div>
+            <div className="context-tool-list">
+              {(context?.systemTools ?? []).map(name => <span key={name} className="context-chip mono">{name}</span>)}
+              {context?.systemTools.length ? null : <span className="context-muted">暂无</span>}
+            </div>
+          </article>
+
+          <article className="context-source">
+            <div className="context-source-head">
+              <span className="context-source-count">{context?.mcpTools.length ?? 0}</span>
+              <span>MCP 工具</span>
+            </div>
+            <div className="context-tool-list">
+              {(context?.mcpTools ?? []).map(name => <span key={name} className="context-chip mono">{name}</span>)}
+              {context?.mcpTools.length ? null : <span className="context-muted">未连接 MCP 服务器</span>}
+            </div>
+            {mcpFiles.length
+              ? (
+                <div className="context-muted">
+                  {mcpFiles.length} 个配置文件 · {mcpFiles.reduce((sum, file) => sum + file.count, 0)} 个服务器
+                </div>
+              )
+              : null}
+          </article>
+
+          <article className="context-source">
+            <div className="context-source-head">
+              <span className="context-source-count">{a2aAgents.length}</span>
+              <span>远端 Agent</span>
+            </div>
+            {a2aAgents.length
+              ? (
+                <ul>
+                  {a2aAgents.slice(0, 6).map(agent => (
+                    <li key={agent.id} title={agent.url}>
+                      <span className="mono">{agent.name}</span>
+                      <span className={`context-muted ${agent.status === 'error' ? 'error' : ''}`}>{agent.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              )
+              : <div className="context-muted">未配置 A2A agent</div>}
+          </article>
+        </div>
+      </section>
+
       <section className="context-section">
         <header className="context-section-head">
           <div>
@@ -84,6 +296,17 @@ export function ContextView({ session, context, onRefresh }: ContextViewProps) {
           </button>
         </header>
         <ContextCard context={context} />
+        {context
+          ? (
+            <div className="context-formula">
+              窗口 {context.contextWindow ? formatTokens(context.contextWindow) : '未配置'}
+              {' · '}压缩阈值 {formatTokens(context.compactAt)}
+              {thresholdPercent ? `（${thresholdPercent}%）` : ''}
+              {' · '}估算校准 ×{context.calibration.toFixed(2)}
+              {' · '}摘要 {context.summaries} 次
+            </div>
+          )
+          : null}
         {notice ? <div className="context-note">{notice}</div> : null}
         {error ? <div className="context-note error">{error}</div> : null}
         {context?.compaction.disabled

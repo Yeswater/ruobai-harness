@@ -12,11 +12,10 @@ import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
 import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
-import { SessionPanel } from './components/SessionPanel.tsx'
-import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
 import { ContextView } from './components/ContextView.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
+import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
@@ -52,16 +51,15 @@ function loadCollapsed() {
   return localStorage.getItem(SIDEBAR_KEY) === '1'
 }
 
-function maxDetailsWidth(collapsed: boolean, sessionOpen: boolean) {
-  const reserved = (collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272)
-    + (sessionOpen ? 304 : 0)
+function maxDetailsWidth(collapsed: boolean) {
+  const reserved = collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272
   return Math.max(320, window.innerWidth - reserved)
 }
 
 function loadDetailsWidth() {
   const saved = Number(localStorage.getItem(DETAILS_WIDTH_KEY))
   const width = Number.isFinite(saved) && saved >= 280 ? saved : DETAILS_DEFAULT_WIDTH
-  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1', true))
+  return Math.min(width, maxDetailsWidth(localStorage.getItem(SIDEBAR_KEY) === '1'))
 }
 
 export function App() {
@@ -71,9 +69,8 @@ export function App() {
   const [preference, setPreference] = useState<ThemePreference>(initialPreference)
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
-  const [detailsOpen, setDetailsOpen] = useState(true)
   const [fileOpen, setFileOpen] = useState(false)
-  const [expandedPanel, setExpandedPanel] = useState<'session' | 'file' | null>(null)
+  const [expandedPanel, setExpandedPanel] = useState<'file' | null>(null)
   const [panelView, setPanelView] = useState<FileView>('files')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -132,17 +129,17 @@ export function App() {
   }, [sidebarCollapsed])
 
   const resizeDetails = useCallback((next: number) => {
-    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed, detailsOpen), Math.max(280, Math.round(next)))
+    const clamped = Math.min(maxDetailsWidth(sidebarCollapsed), Math.max(280, Math.round(next)))
     setDetailsWidth(clamped)
     localStorage.setItem(DETAILS_WIDTH_KEY, String(clamped))
-  }, [sidebarCollapsed, detailsOpen])
+  }, [sidebarCollapsed])
 
   useEffect(() => {
     const clamp = () => setDetailsWidth(current =>
-      Math.min(current, maxDetailsWidth(sidebarCollapsed, detailsOpen)))
+      Math.min(current, maxDetailsWidth(sidebarCollapsed)))
     window.addEventListener('resize', clamp)
     return () => window.removeEventListener('resize', clamp)
-  }, [sidebarCollapsed, detailsOpen])
+  }, [sidebarCollapsed])
 
   const toggleSidebar = useCallback(() => {
     if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(current => !current)
@@ -166,33 +163,21 @@ export function App() {
   const showFilePanel = useCallback((view: FileView) => {
     if (fileOpen && panelView === view) {
       setFileOpen(false)
-      if (expandedPanel === 'file') setExpandedPanel(null)
+      setExpandedPanel(null)
       return
     }
     setPanelView(view)
     setFileOpen(true)
-    if (expandedPanel === 'session') setExpandedPanel(null)
-  }, [fileOpen, panelView, expandedPanel])
+  }, [fileOpen, panelView])
 
-  const toggleSessionPanel = useCallback(() => {
-    if (detailsOpen) {
-      setDetailsOpen(false)
-      if (expandedPanel === 'session') setExpandedPanel(null)
-      return
-    }
-    setDetailsOpen(true)
-    if (expandedPanel === 'file') setExpandedPanel(null)
-  }, [detailsOpen, expandedPanel])
-
-  const toggleExpandPanel = useCallback((panel: 'session' | 'file') => {
+  const toggleExpandPanel = useCallback(() => {
     if (window.innerWidth <= 1120) return
-    if (expandedPanel === panel) {
+    if (expandedPanel === 'file') {
       setExpandedPanel(null)
       return
     }
-    if (panel === 'session') setDetailsOpen(true)
-    else setFileOpen(true)
-    setExpandedPanel(panel)
+    setFileOpen(true)
+    setExpandedPanel('file')
   }, [expandedPanel])
 
   useEffect(() => {
@@ -229,8 +214,7 @@ export function App() {
       if (isExpandShortcut(event)) {
         event.preventDefault()
         if (expandedPanel) setExpandedPanel(null)
-        else if (fileOpen) toggleExpandPanel('file')
-        else toggleExpandPanel('session')
+        else if (fileOpen) toggleExpandPanel()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -260,9 +244,6 @@ export function App() {
       case 'permissions':
         openSettings('permissions')
         break
-      case 'toggle-details':
-        setDetailsOpen(current => !current)
-        break
       case 'show-files':
         showFilePanel('files')
         break
@@ -274,8 +255,7 @@ export function App() {
         break
       case 'expand-panel':
         if (expandedPanel) setExpandedPanel(null)
-        else if (fileOpen) toggleExpandPanel('file')
-        else toggleExpandPanel('session')
+        else if (fileOpen) toggleExpandPanel()
         break
       case 'toggle-theme':
         setPreference(theme === 'dark' ? 'light' : 'dark')
@@ -292,9 +272,7 @@ export function App() {
     <div
       className={[
         'app',
-        detailsOpen ? 'session-panel-open' : '',
         fileOpen ? 'file-panel-open' : '',
-        expandedPanel === 'session' ? 'session-expanded' : '',
         expandedPanel === 'file' ? 'file-expanded' : '',
         sidebarCollapsed ? 'sidebar-collapsed' : '',
       ].filter(Boolean).join(' ')}
@@ -387,15 +365,6 @@ export function App() {
             <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
             <Slot name="header.actions" />
             <div className="main-tools" role="toolbar" aria-label="面板">
-              <button
-                className={`icon-btn ${detailsOpen ? 'active' : ''}`}
-                onClick={toggleSessionPanel}
-                aria-label="会话"
-                title="会话"
-              >
-                <PanelIcon size={16} />
-              </button>
-              <span className="main-tools-sep" />
               <button
                 className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
                 onClick={() => showFilePanel('files')}
@@ -522,21 +491,6 @@ export function App() {
             )}
       </main>
 
-      {detailsOpen
-        ? (
-          <SessionPanel
-            session={harness.session}
-            contextInfo={harness.contextInfo}
-            expanded={expandedPanel === 'session'}
-            onToggleExpand={() => toggleExpandPanel('session')}
-            onClose={() => {
-              setDetailsOpen(false)
-              if (expandedPanel === 'session') setExpandedPanel(null)
-            }}
-          />
-        )
-        : null}
-
       {fileOpen
         ? (
           <DetailsPanel
@@ -544,7 +498,7 @@ export function App() {
             view={panelView}
             width={detailsWidth}
             expanded={expandedPanel === 'file'}
-            onToggleExpand={() => toggleExpandPanel('file')}
+            onToggleExpand={toggleExpandPanel}
             onResize={resizeDetails}
             onClose={() => {
               setFileOpen(false)

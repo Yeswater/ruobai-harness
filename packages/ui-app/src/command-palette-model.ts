@@ -45,12 +45,6 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     keywords: 'permission approval guard 审批 安全 规则',
   },
   {
-    id: 'toggle-details',
-    label: '显示 / 隐藏会话栏',
-    description: '切换右侧的环境与上下文面板',
-    keywords: 'session details panel 会话 面板 上下文 环境',
-  },
-  {
     id: 'show-files',
     label: '打开文件面板',
     description: '浏览工作区文件、预览并引用到对话',
@@ -71,8 +65,8 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
   },
   {
     id: 'expand-panel',
-    label: '展开 / 收起右侧面板',
-    description: '让会话或文件面板占满窗口',
+    label: '展开 / 收起文件面板',
+    description: '让文件面板占满窗口',
     keywords: 'expand fullscreen 展开 全屏 面板',
     shortcut: '\\',
   },

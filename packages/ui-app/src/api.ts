@@ -291,6 +291,8 @@ export interface ContextInfo {
     mcpTools: number
   }
   mcpTools: string[]
+  /** Names of the built-in (non-MCP) tools exposed to the model. */
+  systemTools: string[]
   /** Estimated/actual ratio learned from provider usage; 1 means uncalibrated. */
   calibration: number
   /** Tool results pruned from the model view. */

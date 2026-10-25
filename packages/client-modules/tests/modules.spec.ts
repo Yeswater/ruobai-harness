@@ -20,7 +20,7 @@ describe('client modules', () => {
     await loader
     cleanups.push(() => loader.dispose())
 
-    const id = await ctx.loader.create({ name: '@ruobai/plugin-welcome' })
+    const id = await ctx.loader.create({ name: '@ruobai/client-fixture' })
     await ctx.loader.await()
 
     const web = ctx.plugin(WebServer, { port: 0 })
@@ -43,7 +43,7 @@ describe('client modules', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('text/javascript')
     const code = await response.text()
-    expect(code).toContain('client plugin')
+    expect(code).toContain('client fixture')
     expect(code).toContain('__RBU__')
   })
 })

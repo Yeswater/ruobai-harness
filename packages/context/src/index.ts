@@ -92,6 +92,8 @@ export interface ContextInfo {
   }
   /** Names of the MCP tools currently exposed to the model. */
   mcpTools: string[]
+  /** Names of the built-in (non-MCP) tools exposed to the model. */
+  systemTools: string[]
   /** Estimated/actual ratio learned from provider usage; 1 means uncalibrated. */
   calibration: number
   /** Tool results currently pruned from the model view. */
@@ -353,6 +355,7 @@ export class ContextService extends Service {
       summaries: record.events.filter(event => event.type === SUMMARY_EVENT).length,
       breakdown,
       mcpTools: mcp.map(tool => tool.name),
+      systemTools: regular.map(tool => tool.name),
       calibration: Number(factor.toFixed(3)),
       prunedToolResults: (this.prunedDetails.get(sessionId) ?? []).length,
       pruned: (this.prunedDetails.get(sessionId) ?? []).slice(-20),
