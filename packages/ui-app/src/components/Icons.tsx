@@ -353,5 +353,45 @@ export function AlertIcon({ size }: IconProps) {
   )
 }
 
+export function RefreshIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M20 12a8 8 0 1 1-2.4-5.7" />
+      <path d="M20 4v4.5h-4.5" />
+    </svg>
+  )
+}
+
+export function SyncIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 9a8 8 0 0 1 13.4-4.2L20 7" />
+      <path d="M20 3v4h-4" />
+      <path d="M20 15a8 8 0 0 1-13.4 4.2L4 17" />
+      <path d="M4 21v-4h4" />
+    </svg>
+  )
+}
+
+export function ArrowDownIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 4v14" />
+      <path d="M6 13l6 6 6-6" />
+      <path d="M5 21h14" />
+    </svg>
+  )
+}
+
+export function ArrowUpIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 20V6" />
+      <path d="M6 11l6-6 6 6" />
+      <path d="M5 3h14" />
+    </svg>
+  )
+}
+
 
 

@@ -1,6 +1,9 @@
 import type {
   AttachmentMeta, ChatEvent, ChatMessage, ChatSession, SessionSummary, TurnStats,
 } from '@ruobai/chat-protocol'
+import type {
+  GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitInfo, GitLogResult,
+} from '@ruobai/git/types'
 
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
@@ -213,26 +216,6 @@ export interface DangerRuleInfo {
   sample: string
 }
 
-export interface SessionChange {
-  seq: number
-  path: string
-  tool: string
-  callId?: string
-  beforeHash?: string
-  afterHash?: string
-  beforeBytes?: number
-  afterBytes?: number
-  beforeExisted: boolean
-  skipped?: 'too-large' | 'unreadable'
-  diff?: string
-  at: number
-}
-
-export interface RevertResult {
-  reverted: string[]
-  skipped: Array<{ path: string; reason: string }>
-}
-
 export type McpApproval = 'auto' | 'always' | 'never'
 export type McpStatus = 'connecting' | 'connected' | 'error' | 'disconnected'
 
@@ -293,24 +276,10 @@ export interface ContextInfo {
   mcpTools: string[]
 }
 
-export interface GitInfo {
-  available: boolean
-  branch: string | null
-  workspace: string
-  home: string
-  files: number
-  added: number
-  removed: number
-  ahead?: number
-  behind?: number
-}
-
-/** One working-tree entry from `git status`. */
-export interface GitFile {
-  path: string
-  status: string
-  staged: boolean
-}
+export type {
+  GitBranch, GitChange, GitCommit, GitCommitDetail, GitCommitFile, GitCommitResult, GitDiffResult,
+  GitInfo, GitLogResult,
+} from '@ruobai/git/types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
@@ -432,35 +401,106 @@ export const api = {
       body: JSON.stringify(input),
     })).guard,
 
-  getSessionChanges: async (id: string) =>
-    (await request<{ changes: SessionChange[] }>(`/api/checkpoints/${encodeURIComponent(id)}`)).changes,
-
-  revertSessionChanges: async (id: string, upToSeq?: number) =>
-    request<RevertResult>(`/api/checkpoints/${encodeURIComponent(id)}/revert`, {
-      method: 'POST',
-      body: JSON.stringify(upToSeq === undefined ? {} : { upToSeq }),
-    }),
-
   getContext: async (id: string) =>
     request<ContextInfo>(`/api/sessions/${encodeURIComponent(id)}/context`),
 
   getGitInfo: async (id: string) =>
-    request<GitInfo>(`/api/workspace/git?sessionId=${encodeURIComponent(id)}`),
+    request<GitInfo>(`/api/git/info?sessionId=${encodeURIComponent(id)}`),
 
-  getGitFiles: async (id: string) =>
-    (await request<{ files: GitFile[] }>(
-      `/api/workspace/git/files?sessionId=${encodeURIComponent(id)}`,
-    )).files,
+  getGitStatus: async (id: string) =>
+    request<{ info: GitInfo; changes: GitChange[] }>(
+      `/api/git/status?sessionId=${encodeURIComponent(id)}`,
+    ),
 
-  getGitDiff: async (id: string, path: string) => {
-    const params = new URLSearchParams({ sessionId: id, path })
-    return request<{ path: string; diff: string }>(`/api/workspace/git/diff?${params}`)
+  getGitDiff: async (
+    id: string,
+    options: { path: string; scope?: 'working' | 'staged' | 'commit'; hash?: string },
+  ) => {
+    const params = new URLSearchParams({ sessionId: id, path: options.path })
+    if (options.scope) params.set('scope', options.scope)
+    if (options.hash) params.set('hash', options.hash)
+    return request<GitDiffResult>(`/api/git/diff?${params}`)
   },
 
-  commitWorkspace: async (id: string, message: string, paths?: string[]) =>
-    request<{ ok: true; commit: string }>('/api/workspace/commit', {
+  getGitLog: async (
+    id: string,
+    options: { limit?: number; skip?: number; all?: boolean; ref?: string; q?: string; path?: string } = {},
+  ) => {
+    const params = new URLSearchParams({ sessionId: id })
+    if (options.limit) params.set('limit', String(options.limit))
+    if (options.skip) params.set('skip', String(options.skip))
+    if (options.all) params.set('all', '1')
+    if (options.ref) params.set('ref', options.ref)
+    if (options.q) params.set('q', options.q)
+    if (options.path) params.set('path', options.path)
+    return request<GitLogResult>(`/api/git/log?${params}`)
+  },
+
+  getGitCommit: async (id: string, hash: string) => {
+    const params = new URLSearchParams({ sessionId: id, hash })
+    return request<GitCommitDetail>(`/api/git/commit?${params}`)
+  },
+
+  getGitBranches: async (id: string) =>
+    (await request<{ branches: GitBranch[] }>(
+      `/api/git/branches?sessionId=${encodeURIComponent(id)}`,
+    )).branches,
+
+  stageGitPaths: async (id: string, paths: string[]) =>
+    request<{ ok: true }>('/api/git/stage', {
       method: 'POST',
-      body: JSON.stringify(paths?.length ? { sessionId: id, message, paths } : { sessionId: id, message }),
+      body: JSON.stringify({ sessionId: id, paths }),
+    }),
+
+  unstageGitPaths: async (id: string, paths: string[]) =>
+    request<{ ok: true }>('/api/git/unstage', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id, paths }),
+    }),
+
+  discardGitPaths: async (id: string, paths: string[]) =>
+    request<{ ok: true }>('/api/git/discard', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id, paths }),
+    }),
+
+  commitGit: async (
+    id: string,
+    options: { message: string; amend?: boolean; signoff?: boolean; paths?: string[] },
+  ) =>
+    request<GitCommitResult>('/api/git/commit', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id, ...options }),
+    }),
+
+  checkoutGitBranch: async (id: string, branch: string) =>
+    (await request<{ ok: true; branch: string }>('/api/git/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id, branch }),
+    })).branch,
+
+  createGitBranch: async (id: string, name: string) =>
+    (await request<{ ok: true; branch: string }>('/api/git/branch', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id, name }),
+    })).branch,
+
+  gitFetch: async (id: string) =>
+    request<{ output: string }>('/api/git/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id }),
+    }),
+
+  gitPull: async (id: string) =>
+    request<{ output: string }>('/api/git/pull', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id }),
+    }),
+
+  gitPush: async (id: string) =>
+    request<{ output: string }>('/api/git/push', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: id }),
     }),
 
   getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number, compact?: boolean) => {

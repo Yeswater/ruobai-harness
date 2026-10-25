@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { type PointerEvent as ReactPointerEvent } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
-import { api, type GitInfo } from '../api.ts'
 import { modKeyLabel } from '../shortcuts.ts'
 import { FileBrowser } from './FileBrowser.tsx'
-import { GitPanel } from './GitPanel.tsx'
+import { GitPanel } from './git/GitPanel.tsx'
 import { CollapseIcon, CloseIcon, ExpandIcon } from './Icons.tsx'
 
 export type FileView = 'files' | 'git'
@@ -29,44 +28,6 @@ const TITLES: Record<FileView, string> = {
 export function DetailsPanel({
   session, view, width, expanded, onToggleExpand, onResize, onClose, onReferenceFile,
 }: DetailsPanelProps) {
-  const [git, setGit] = useState<GitInfo | null>(null)
-  const [gitError, setGitError] = useState<string | null>(null)
-  const sessionId = session?.id
-
-  const loadGit = useCallback(async (id: string) => {
-    try {
-      const info = await api.getGitInfo(id)
-      setGit(info)
-      setGitError(null)
-    } catch (caught) {
-      setGitError(caught instanceof Error ? caught.message : String(caught))
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!sessionId || view !== 'git') {
-      setGit(null)
-      return
-    }
-    let cancelled = false
-    const load = async () => {
-      try {
-        const info = await api.getGitInfo(sessionId)
-        if (cancelled) return
-        setGit(info)
-        setGitError(null)
-      } catch (caught) {
-        if (!cancelled) setGitError(caught instanceof Error ? caught.message : String(caught))
-      }
-    }
-    void load()
-    const timer = setInterval(load, 5_000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-  }, [sessionId, view])
-
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -113,20 +74,11 @@ export function DetailsPanel({
         </div>
       </div>
 
-      <div className={`details-scroll ${view === 'files' ? 'bare' : ''}`}>
+      <div className={`details-scroll bare ${view === 'git' ? 'git-scroll' : ''}`}>
         {session
           ? view === 'files'
             ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} />
-            : (
-              <>
-                {gitError ? <div className="detail-note error">{gitError}</div> : null}
-                <GitPanel
-                  sessionId={session.id}
-                  git={git}
-                  onRefresh={() => { void loadGit(session.id) }}
-                />
-              </>
-            )
+            : <GitPanel sessionId={session.id} expanded={expanded} />
           : <div className="loading">no session</div>}
       </div>
     </aside>

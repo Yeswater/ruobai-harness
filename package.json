@@ -31,6 +31,8 @@
     "@ruobai/cordis-plugin-loader": "workspace:*",
     "@ruobai/cordis-plugin-logger-console": "workspace:*",
     "@ruobai/cordis-plugin-timer": "workspace:*",
+    "@ruobai/git": "workspace:*",
+    "@ruobai/git-web": "workspace:*",
     "@ruobai/llm": "workspace:*",
     "@ruobai/llm-catalog": "workspace:*",
     "@ruobai/llm-mock": "workspace:*",

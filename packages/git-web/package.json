@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/git-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/git": "workspace:*",
+    "@ruobai/web-server": "workspace:*",
+    "@ruobai/workspace": "workspace:*"
+  }
+}

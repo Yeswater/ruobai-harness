@@ -10,6 +10,8 @@ import CheckpointsService from '@ruobai/checkpoints'
 import CheckpointsWeb from '@ruobai/checkpoints-web'
 import ContextService from '@ruobai/context'
 import { Context } from '@ruobai/cordis'
+import GitService from '@ruobai/git'
+import GitWeb from '@ruobai/git-web'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
 import MockProvider from '@ruobai/llm-mock'
@@ -88,6 +90,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   }))
   await mount(ctx.plugin(McpCatalog))
   await mount(ctx.plugin(WorkspaceService, { root: process.cwd() }))
+  await mount(ctx.plugin(GitService))
   await mount(ctx.plugin(SkillsService, {
     globalRoot: protocolHome,
     homeDir: dir,
@@ -119,6 +122,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(WebServer, { port: 0, host: '127.0.0.1', ...options.web }))
   await mount(ctx.plugin(UiApi))
   await mount(ctx.plugin(WorkspaceWeb))
+  await mount(ctx.plugin(GitWeb))
   await mount(ctx.plugin(CheckpointsWeb))
   await mount(ctx.plugin(SettingsWeb))
   await mount(ctx.plugin(SkillsWeb))
