@@ -17,6 +17,7 @@ import { MarkdownPreview } from './MarkdownPreview.tsx'
 const MAX_LINES = 3_000
 const TREE_WIDTH_KEY = 'rbh-file-tree-width'
 const COMPACT_KEY = 'rbh-file-tree-compact'
+const LAST_FILE_PREFIX = 'rbh-file-last:'
 const DEFAULT_TREE_WIDTH = 236
 
 function loadTreeWidth() {
@@ -27,6 +28,25 @@ function loadTreeWidth() {
 /** IDEA-style compact middle directories, on unless the user turned it off. */
 function loadCompact() {
   return localStorage.getItem(COMPACT_KEY) !== '0'
+}
+
+function lastFileKey(sessionId?: string) {
+  return sessionId ? `${LAST_FILE_PREFIX}${sessionId}` : null
+}
+
+function loadLastFile(sessionId?: string) {
+  const key = lastFileKey(sessionId)
+  return key ? localStorage.getItem(key) || null : null
+}
+
+function saveLastFile(sessionId: string | undefined, path: string) {
+  const key = lastFileKey(sessionId)
+  if (key) localStorage.setItem(key, path)
+}
+
+function clearLastFile(sessionId?: string) {
+  const key = lastFileKey(sessionId)
+  if (key) localStorage.removeItem(key)
 }
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -97,6 +117,17 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
       .catch((caught) => {
         if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught))
       })
+    // Reopen the file this session was last looking at.
+    const last = loadLastFile(sessionId)
+    if (last) {
+      void openFile(last).then((opened) => {
+        if (cancelled || opened) return
+        // The path is stale (deleted or renamed): fall back to the empty state.
+        setTabs(current => current.filter(tab => tab.path !== last))
+        setActive(current => (current === last ? null : current))
+        clearLastFile(sessionId)
+      })
+    }
     return () => {
       cancelled = true
     }
@@ -146,8 +177,13 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     if (openingDir) void loadDir(path)
   }
 
-  const openFile = async (path: string, line?: number) => {
+  const activate = (path: string) => {
     setActive(path)
+    saveLastFile(sessionId, path)
+  }
+
+  const openFile = async (path: string, line?: number): Promise<boolean> => {
+    activate(path)
     setLineTarget(line ?? null)
     setError(null)
     // Markdown opens rendered; a content-search jump needs the source line view.
@@ -160,11 +196,13 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
       setTabs(current => current.map(tab => tab.path === path
         ? { path, content: file.content, size: file.size, loading: false }
         : tab))
+      return true
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught)
       setTabs(current => current.map(tab => tab.path === path
         ? { ...tab, loading: false, error: message }
         : tab))
+      return false
     }
   }
 
@@ -172,7 +210,11 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     const index = tabs.findIndex(tab => tab.path === path)
     const next = tabs.filter(tab => tab.path !== path)
     setTabs(next)
-    if (active === path) setActive(next[Math.max(0, index - 1)]?.path ?? next[0]?.path ?? null)
+    if (active !== path) return
+    const target = next[Math.max(0, index - 1)]?.path ?? next[0]?.path ?? null
+    setActive(target)
+    if (target) saveLastFile(sessionId, target)
+    else clearLastFile(sessionId)
   }
 
   useEffect(() => {
@@ -324,7 +366,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
         disabled: tabs.length < 2,
         onSelect: () => {
           setTabs(current => current.filter(item => item.path === path))
-          setActive(path)
+          activate(path)
         },
       },
       { separator: true },
@@ -487,7 +529,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                   title={item.path}
                   onContextMenu={event => tabMenu(event, item.path)}
                 >
-                  <button className="file-tab-open" onClick={() => setActive(item.path)}>
+                  <button className="file-tab-open" onClick={() => activate(item.path)}>
                     <FileTypeIcon path={item.path} size={11} />
                     <span className="file-tab-name">{basename(item.path)}</span>
                   </button>
