@@ -1,5 +1,5 @@
 import { Service, type Context } from '@ruobai/cordis'
-import type {} from '@ruobai/agent'
+import type { StepTiming } from '@ruobai/agent'
 import type { ContentPart } from '@ruobai/llm'
 import { DEFAULT_PERMISSION, isPermissionMode } from '@ruobai/permissions'
 import type { SessionEvent, SessionMeta } from '@ruobai/session'
@@ -356,7 +356,7 @@ export class ChatService extends Service {
       }
     } else if (event.type === 'message/assistant') {
       session.stats = foldStats(session.stats, event.data)
-      const blocks = blocksOf(event.data.parts as ContentPart[])
+      const blocks = blocksOf(event.data.parts as ContentPart[], event.data.timing, event.ts)
       const existing = session.messages.find(message => message.id === event.data.id)
       if (existing) {
         existing.blocks = blocks
@@ -377,6 +377,8 @@ export class ChatService extends Service {
         if (block && block.type === 'tool') {
           block.output = event.data.content
           block.isError = Boolean(event.data.isError)
+          // Timing rides the log, so a reloaded session shows the same duration.
+          block.finishedAt = event.ts
           break
         }
       }
@@ -485,13 +487,35 @@ function foldStats(previous: TurnStats | undefined, data: StepRecord): TurnStats
   return stats
 }
 
-function blocksOf(parts: ContentPart[]): ChatBlock[] {
+/**
+ * Turn one step's parts into blocks.
+ *
+ * The step's persisted timing stamps every block it produced: a reasoning block
+ * spans its own step, and a tool call starts when the step that requested it
+ * settled, so a folded process row can report how long each action took.
+ */
+function blocksOf(parts: ContentPart[], timing?: StepTiming, at?: number): ChatBlock[] {
   const blocks: ChatBlock[] = []
+  const startedAt = timing?.stepStartTime ?? at
+  const finishedAt = timing?.completedTime ?? at
   for (const part of parts) {
     if (part.type === 'text') blocks.push({ type: 'text', text: part.text })
-    else if (part.type === 'reasoning') blocks.push({ type: 'reasoning', text: part.text })
-    else if (part.type === 'tool-call') {
-      blocks.push({ type: 'tool', callId: part.id, name: part.name, input: part.arguments, output: '' })
+    else if (part.type === 'reasoning') {
+      blocks.push({
+        type: 'reasoning',
+        text: part.text,
+        ...(startedAt !== undefined ? { startedAt } : {}),
+        ...(finishedAt !== undefined ? { finishedAt } : {}),
+      })
+    } else if (part.type === 'tool-call') {
+      blocks.push({
+        type: 'tool',
+        callId: part.id,
+        name: part.name,
+        input: part.arguments,
+        output: '',
+        ...(finishedAt !== undefined ? { startedAt: finishedAt } : {}),
+      })
     }
   }
   return blocks

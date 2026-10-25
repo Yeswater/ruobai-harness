@@ -16,6 +16,10 @@ export interface TextBlock {
 export interface ReasoningBlock {
   type: 'reasoning'
   text: string
+  /** When the step's request was dispatched (epoch ms). */
+  startedAt?: number
+  /** When the step's message was assembled; absent while it streams. */
+  finishedAt?: number
 }
 
 export interface ToolBlock {
@@ -26,6 +30,10 @@ export interface ToolBlock {
   input: string
   output: string
   isError?: boolean
+  /** When the call was dispatched (epoch ms). */
+  startedAt?: number
+  /** When its result landed; absent while it runs. */
+  finishedAt?: number
 }
 
 export interface AttachmentMeta {

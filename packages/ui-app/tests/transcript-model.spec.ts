@@ -1,76 +1,126 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatBlock, ChatMessage } from '@ruobai/chat-protocol'
-import { buildPlan, segmentsOf } from '../src/transcript-model.ts'
+import {
+  buildPlan, formatDuration, groupDuration, groupSummary, isGroupRunning,
+} from '../src/transcript-model.ts'
 
 let counter = 0
-function message(role: ChatMessage['role'], blocks: ChatBlock[]): ChatMessage {
+function message(role: ChatMessage['role'], blocks: ChatBlock[], status: ChatMessage['status'] = 'done'): ChatMessage {
   counter += 1
-  return { id: `m${counter}`, role, blocks, status: 'done', createdAt: counter }
+  return { id: `m${counter}`, role, blocks, status, createdAt: counter }
 }
 
-function call(name: string, id = `c${++counter}`): ChatBlock {
-  return { type: 'tool', callId: id, name, input: '{}', output: 'ok' }
+function call(name: string, extra: Partial<ChatBlock> = {}): ChatBlock {
+  counter += 1
+  return {
+    type: 'tool',
+    callId: `c${counter}`,
+    name,
+    input: '{}',
+    output: 'ok',
+    startedAt: 1_000,
+    finishedAt: 3_000,
+    ...extra,
+  } as ChatBlock
 }
 
 const text = (value: string): ChatBlock => ({ type: 'text', text: value })
-const reasoning = (value: string): ChatBlock => ({ type: 'reasoning', text: value })
+const thought = (value: string, bounds?: { startedAt?: number; finishedAt?: number }): ChatBlock =>
+  ({ type: 'reasoning', text: value, ...bounds })
 
 describe('transcript plan', () => {
-  it('folds consecutive tool-only steps into a single run', () => {
+  it('folds thoughts and calls into one process group between paragraphs', () => {
     const plan = buildPlan([
       message('user', [text('do it')]),
-      message('assistant', [call('read_file'), call('read_file')]),
-      message('assistant', [call('bash')]),
-      message('assistant', [text('done')]),
+      message('assistant', [thought('先看看'), call('bash')]),
+      message('assistant', [call('read_file'), text('done')]),
     ])
-    expect(plan.map(item => item.kind)).toEqual(['message', 'run', 'message'])
-    expect(plan[1]).toMatchObject({ kind: 'run' })
-    expect(plan[1]?.kind === 'run' && plan[1].blocks).toHaveLength(3)
+    expect(plan.map(item => item.kind)).toEqual(['user', 'process', 'text'])
+    const group = plan[1]
+    expect(group?.kind === 'process' && group.items.map(item => item.kind))
+      .toEqual(['reasoning', 'tool', 'tool'])
   })
 
-  it('starts a new run when prose or thinking separates the calls', () => {
+  it('always keeps prose visible, splitting the group around it', () => {
     const plan = buildPlan([
-      message('assistant', [call('bash')]),
-      message('assistant', [reasoning('想一下'), call('bash')]),
-      message('assistant', [call('bash')]),
+      message('assistant', [call('bash'), text('中间结论'), call('bash')]),
     ])
-    expect(plan.map(item => item.kind)).toEqual(['run', 'message', 'run'])
+    expect(plan.map(item => item.kind)).toEqual(['process', 'text', 'process'])
   })
 
-  it('leaves messages with attachments out of runs', () => {
+  it('marks the last paragraph of a streaming step', () => {
+    const plan = buildPlan([message('assistant', [text('部分')], 'streaming')])
+    expect(plan[0]).toMatchObject({ kind: 'text', streaming: true })
+  })
+
+  it('gives every plan item a unique key', () => {
     const plan = buildPlan([
-      message('user', [text('look')]),
-      message('assistant', [text('ok')]),
+      message('user', [text('a')]),
+      message('assistant', [thought('t'), call('bash'), text('b')]),
+      message('assistant', [call('bash')]),
     ])
-    expect(plan.every(item => item.kind === 'message')).toBe(true)
+    const keys = plan.map(item => item.key)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })
 
-describe('message segments', () => {
-  it('keeps prose inline and folds only the calls', () => {
-    const segments = segmentsOf(message('assistant', [
-      reasoning('先看看'),
-      text('我来读一下'),
-      call('read_file', 'a'),
-      call('bash', 'b'),
-    ]))
-    expect(segments.map(segment => segment.kind)).toEqual(['block', 'block', 'run'])
-    expect(segments[2]?.kind === 'run' && segments[2].blocks.map(block => block.name))
-      .toEqual(['read_file', 'bash'])
+describe('process group state', () => {
+  it('is running while a call has no result', () => {
+    // No finishedAt and no output: still in flight.
+    expect(isGroupRunning([{
+      kind: 'tool', key: 'a', block: call('bash', { output: '', finishedAt: undefined }),
+    }])).toBe(true)
+    expect(isGroupRunning([{ kind: 'tool', key: 'a', block: call('bash') }])).toBe(false)
+    expect(isGroupRunning([{ kind: 'reasoning', key: 'b', block: thought('想') as never }])).toBe(true)
   })
 
-  it('splits runs around a later paragraph', () => {
-    const segments = segmentsOf(message('assistant', [
-      call('bash', 'a'),
-      text('中间结论'),
-      call('bash', 'b'),
-    ]))
-    expect(segments.map(segment => segment.kind)).toEqual(['run', 'block', 'run'])
+  it('treats an empty result as finished when the timestamp says so', () => {
+    expect(isGroupRunning([{
+      kind: 'tool', key: 'a', block: call('bash', { output: '', finishedAt: 2_000 }),
+    }])).toBe(false)
   })
 
-  it('keeps keys stable and unique', () => {
-    const segments = segmentsOf(message('assistant', [text('a'), call('bash'), text('b'), call('bash')]))
-    const keys = segments.map(segment => segment.key)
-    expect(new Set(keys).size).toBe(keys.length)
+  it('spans the earliest start to the latest end', () => {
+    const items = [
+      { kind: 'tool' as const, key: 'a', block: call('bash', { startedAt: 1_000, finishedAt: 2_000 }) as never },
+      { kind: 'tool' as const, key: 'b', block: call('bash', { startedAt: 2_500, finishedAt: 5_500 }) as never },
+    ]
+    expect(groupDuration(items)).toBe(4_500)
+  })
+
+  it('has no duration until both bounds are recorded', () => {
+    expect(groupDuration([
+      { kind: 'tool', key: 'a', block: call('bash', { finishedAt: undefined }) as never },
+    ])).toBeUndefined()
+  })
+
+  it('summarizes a finished group with its duration', () => {
+    const items = [
+      { kind: 'tool' as const, key: 'a', block: call('bash', { startedAt: 0, finishedAt: 90_000 }) as never },
+    ]
+    expect(groupSummary(items)).toBe('已完成，用时 1分30秒')
+  })
+
+  it('counts failures in the summary', () => {
+    const items = [
+      { kind: 'tool' as const, key: 'a', block: call('bash', { startedAt: 0, finishedAt: 2_000, isError: true }) as never },
+    ]
+    expect(groupSummary(items)).toBe('已完成，用时 2 秒（1 个失败）')
+  })
+
+  it('says 已完成 without a span', () => {
+    expect(groupSummary([
+      { kind: 'reasoning', key: 'a', block: thought('想') as never },
+    ])).toBe('已完成')
+  })
+})
+
+describe('duration format', () => {
+  it('drops empty units', () => {
+    expect(formatDuration(0)).toBe('0 秒')
+    expect(formatDuration(42_000)).toBe('42 秒')
+    expect(formatDuration(90_000)).toBe('1分30秒')
+    expect(formatDuration(120_000)).toBe('2分')
+    expect(formatDuration(3_900_000)).toBe('1小时5分')
   })
 })

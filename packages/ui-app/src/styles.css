@@ -704,76 +704,22 @@ button {
   50% { opacity: 0; }
 }
 
-/* Thinking fold */
+/* Process group: everything a turn did, folded into one line once it settles */
 
-.thinking {
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--tool-bg) 45%, transparent);
-}
-
-.thinking-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-
-.thinking-head::after {
-  content: "›";
-  margin-left: 2px;
-  color: var(--faint);
-  font-size: 14px;
-  transition: transform .15s;
-}
-
-.thinking[open] .thinking-head::after {
-  transform: rotate(90deg);
-}
-
-.thinking-head::-webkit-details-marker {
-  display: none;
-}
-
-.thinking-title {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.thinking-meta {
-  margin-left: auto;
-  color: var(--faint);
-}
-
-.thinking-body {
-  max-height: 280px;
-  padding: 8px 12px 10px;
-  overflow: auto;
-  border-top: 1px dashed var(--border);
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
-/* Tool run: a burst of calls folded into one summary row */
-
-.tool-run {
+.process {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
+  /* Tighter than the transcript rhythm: a folded run belongs to its paragraph. */
+  margin: -8px 0;
 }
 
-.tool-run-head {
+.process-head {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 0;
+  align-self: flex-start;
+  padding: 3px 0;
   border: 0;
   background: none;
   color: var(--muted);
@@ -781,47 +727,152 @@ button {
   text-align: left;
 }
 
-.tool-run-head:hover {
+.process-head:hover {
   color: var(--text);
 }
 
-.tool-run-head svg {
+.process-head > svg:first-child {
+  flex: none;
+  color: var(--faint);
+}
+
+.process-head > svg:last-child {
   flex: none;
   color: var(--faint);
   transform: rotate(-90deg);
   transition: transform .15s;
 }
 
-.tool-run.open .tool-run-head svg {
+.process.open > .process-head > svg:last-child {
   transform: rotate(0deg);
 }
 
-.tool-run-text {
+.process-title {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.tool-run-body {
+.process-body {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--tool-bg);
+  padding: 2px 0 4px 2px;
 }
 
-.tool-run-body .tool {
+.process-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.process-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 0;
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: left;
 }
 
-.tool-run-body .tool + .tool {
-  border-top: 1px solid var(--border);
+.process-row-head:hover {
+  color: var(--text);
 }
+
+.process-row-head > svg {
+  flex: none;
+  align-self: center;
+  color: var(--faint);
+}
+
+.process-row-label {
+  flex: none;
+  color: var(--faint);
+}
+
+.process-row:hover .process-row-label {
+  color: var(--muted);
+}
+
+.process-row-sep {
+  flex: none;
+  color: var(--faint);
+}
+
+.process-row-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-row.expanded .process-row-text {
+  display: none;
+}
+
+.process-row-state {
+  flex: none;
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  animation: process-fade 1.4s ease-in-out infinite;
+}
+
+.process-row-state.failed,
+.process-row.failed .process-row-label {
+  color: var(--danger);
+  animation: none;
+}
+
+@keyframes process-fade {
+  50% { opacity: .45; }
+}
+
+.process-row-meta {
+  flex: none;
+  margin-left: 4px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.process-row-body {
+  margin: 2px 0 6px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-left: 2px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--tool-bg) 55%, transparent);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.process-row-body .tool-command,
+.process-row-body .tool-output {
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+}
+
+.process-row-body .tool-output {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+/* Tool output primitives (reused by process rows) */
 
 .tool-path {
-  padding: 6px 10px;
-  border-top: 1px dashed var(--border);
+  padding: 0 0 6px;
   color: var(--faint);
   font-family: var(--mono);
   font-size: 10.5px;
@@ -830,102 +881,18 @@ button {
 
 .tool-command {
   margin: 0;
-  padding: 8px 10px;
   overflow: auto;
-  border-top: 1px dashed var(--border);
-  background: color-mix(in srgb, var(--tool-bg) 55%, var(--panel));
   color: var(--text);
   font-family: var(--mono);
-  font-size: 11.5px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
-/* Tool card */
-
-.tool {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--tool-bg);
-}
-
-.tool-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-}
-
-.tool-head::after {
-  content: "›";
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 14px;
-  transition: transform .15s;
-}
-
-.tool[open] .tool-head::after {
-  transform: rotate(90deg);
-}
-
-.tool-head::-webkit-details-marker {
-  display: none;
-}
-
-.tool-name {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.tool-input {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 11.5px;
-}
-
-.tool-state {
-  color: var(--danger);
-  font-size: 10px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
-
-.tool-state.running {
-  color: var(--accent);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-.tool-meta {
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 10.5px;
-}
-
-@keyframes pulse {
-  50% { opacity: .45; }
-}
-
 .tool-output {
-  max-height: 320px;
-  margin: 0;
-  padding: 10px 12px;
   overflow: auto;
-  border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--tool-bg) 70%, transparent);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 11.5px;
   line-height: 1.6;
 }
 
@@ -1595,16 +1562,6 @@ button {
   display: flex;
   align-items: center;
   gap: 2px;
-}
-
-/* Tool errors */
-
-.tool.error {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-}
-
-.tool.error .tool-name {
-  color: var(--danger);
 }
 
 /* Files */

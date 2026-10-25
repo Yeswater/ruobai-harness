@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent 
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
-import { BrainIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
+import { BrainIcon, CheckIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
-import { describeToolRun, isRunning, toolDetail } from '../tool-summary.ts'
-import { buildPlan, segmentsOf } from '../transcript-model.ts'
+import { describeTool, isRunning as isToolRunning, toolDetail } from '../tool-summary.ts'
+import {
+  buildPlan, groupSummary, isGroupRunning, type ProcessItem,
+} from '../transcript-model.ts'
 
 interface TranscriptProps {
   session: ChatSession | null
@@ -30,7 +32,6 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   const lastMessageRef = useRef<string | null>(null)
   const [atBottom, setAtBottom] = useState(true)
   const messages = session?.messages ?? []
-  const currentTurnStart = session ? lastUserIndex(messages) : -1
   const plan = useMemo(() => buildPlan(messages), [messages])
 
   const last = messages.at(-1)
@@ -110,17 +111,29 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
             </div>
           ) : null}
 
-          {plan.map((item) => item.kind === 'run'
-            ? <ToolRun key={item.key} blocks={item.blocks} />
-            : (
-              <Message
+          {plan.map((item) => {
+            if (item.kind === 'user') return <UserMessage key={item.key} message={item.message} />
+            if (item.kind === 'text') {
+              return (
+                <div className="prose markdown" key={item.key}>
+                  <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
+                  {item.streaming ? <span className="caret" /> : null}
+                </div>
+              )
+            }
+            if (item.kind === 'pending') {
+              return <div className="prose thinking" key={item.key}><span className="caret" /> 思考中…</div>
+            }
+            return (
+              <ProcessGroup
                 key={item.key}
-                message={item.message}
-                // Thoughts stay unfolded while the turn runs; the fold closes only
-                // once the whole turn ends, so a multi-step run keeps its context.
-                activeTurn={Boolean(session?.streaming) && item.index > currentTurnStart}
+                items={item.items}
+                // The turn's live flag is the authority: a group left behind by a
+                // finished turn is never "running", even without timing stamps.
+                streaming={Boolean(session?.streaming)}
               />
-            ))}
+            )
+          })}
         </div>
 
         {!atBottom && messages.length
@@ -138,27 +151,19 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   )
 }
 
-function lastUserIndex(messages: ChatMessage[]) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === 'user') return index
-  }
-  return -1
-}
-
-function Message({ message, activeTurn }: { message: ChatMessage; activeTurn: boolean }) {
+function UserMessage({ message }: { message: ChatMessage }) {
   const contextMenu = useContextMenu()
-  const fullText = message.blocks
-    .filter(block => block.type === 'text')
-    .map(block => (block as { text: string }).text)
-    .join('\n')
-    .trim()
+  const text = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
+  const attachments = message.blocks
+    .filter(block => block.type === 'attachment')
+    .map(block => block.attachment)
 
   const onContextMenu = (event: ReactMouseEvent) => {
     contextMenu.open(event, [
       {
         label: '复制消息',
-        disabled: !fullText,
-        onSelect: () => { void navigator.clipboard.writeText(fullText).catch(() => undefined) },
+        disabled: !text.trim(),
+        onSelect: () => { void navigator.clipboard.writeText(text).catch(() => undefined) },
       },
       { separator: true },
       {
@@ -168,105 +173,52 @@ function Message({ message, activeTurn }: { message: ChatMessage; activeTurn: bo
     ])
   }
 
-  if (message.role === 'user') {
-    const text = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
-    const attachments = message.blocks
-      .filter(block => block.type === 'attachment')
-      .map(block => block.attachment)
-    return (
-      <div className="msg user" id={`msg-${message.id}`} onContextMenu={onContextMenu}>
-        {attachments.length ? <AttachmentRail attachments={attachments} /> : null}
-        {text ? <div className="bubble">{text}</div> : null}
-      </div>
-    )
-  }
-
   return (
-    <div className="msg assistant" id={`msg-${message.id}`} onContextMenu={onContextMenu}>
-      <div className="msg-body">
-        {segmentsOf(message).map((segment) => {
-          if (segment.kind === 'run') return <ToolRun key={segment.key} blocks={segment.blocks} />
-          const { block, index } = segment
-          if (block.type === 'text') {
-            return (
-              <div className="prose markdown" key={index}>
-                <Markdown remarkPlugins={[remarkGfm]}>{block.text}</Markdown>
-                {message.status === 'streaming' && index === message.blocks.length - 1
-                  ? <span className="caret" />
-                  : null}
-              </div>
-            )
-          }
-          if (block.type === 'reasoning') {
-            return (
-              <ThinkingCard
-                key={index}
-                block={block}
-                expanded={activeTurn || message.status === 'streaming'}
-                live={message.status === 'streaming'}
-              />
-            )
-          }
-          return null
-        })}
-        {message.status === 'streaming' && message.blocks.length === 0
-          ? <div className="prose thinking"><span className="caret" /> 思考中…</div>
-          : null}
-      </div>
+    <div className="msg user" id={`msg-${message.id}`} onContextMenu={onContextMenu}>
+      {attachments.length ? <AttachmentRail attachments={attachments} /> : null}
+      {text ? <div className="bubble">{text}</div> : null}
     </div>
   )
 }
 
-function ThinkingCard({ block, expanded, live }: { block: ReasoningBlock; expanded: boolean; live: boolean }) {
-  return (
-    <details className="thinking" open={expanded}>
-      <summary className="thinking-head">
-        <BrainIcon size={12} />
-        <span className="thinking-title">思考过程</span>
-        <span className="thinking-meta">{live ? '正在思考…' : `${block.text.length} 字`}</span>
-      </summary>
-      <div className="thinking-body">
-        {block.text}
-        {live ? <span className="caret" /> : null}
-      </div>
-    </details>
-  )
-}
-
 /**
- * A burst of tool calls collapsed into one readable row. It opens itself while a
- * call is still running and closes once the burst finishes, unless the user has
- * taken over the toggle.
+ * Everything the turn did between two paragraphs: thoughts and tool calls.
+ *
+ * It stays open while work is in flight so the user can watch the run, then
+ * collapses to `已完成，用时 1分30秒`. A click pins the state until the next
+ * action starts, so reading a finished run does not fight the auto-fold.
  */
-function ToolRun({ blocks }: { blocks: ToolBlock[] }) {
-  const running = blocks.some(isRunning)
-  // `null` means "follow the run": open while something is executing, closed
-  // once the burst is over. Any click pins the state until execution resumes.
+function ProcessGroup({ items, streaming }: { items: ProcessItem[]; streaming: boolean }) {
+  const running = streaming && isGroupRunning(items)
   const [override, setOverride] = useState<boolean | null>(null)
-  const shown = override ?? running
+  const open = override ?? running
 
   useEffect(() => {
+    // New work re-opens the group; the previous pin is stale from here on.
     if (running) setOverride(null)
-  }, [running])
+  }, [running, items.length])
 
   return (
-    <div className={`tool-run ${shown ? 'open' : ''}`}>
+    <div className={`process ${open ? 'open' : ''}`}>
       <button
         type="button"
-        className="tool-run-head"
-        aria-expanded={shown}
-        onClick={() => setOverride(!shown)}
+        className="process-head"
+        aria-expanded={open}
+        onClick={() => setOverride(!open)}
       >
-        <span className="tool-run-text">{describeToolRun(blocks)}</span>
-        {running ? <span className="tool-state running">运行中</span> : null}
-        <ChevronDownIcon size={13} />
+        {running
+          ? <ToolIcon size={12} />
+          : <CheckIcon size={12} />}
+        <span className="process-title">{running ? '执行中…' : groupSummary(items)}</span>
+        <ChevronDownIcon size={12} />
       </button>
-      {shown
+
+      {open
         ? (
-          <div className="tool-run-body">
-            {blocks.map((block, index) => (
-              <ToolCard key={block.callId ?? index} block={block} />
-            ))}
+          <div className="process-body">
+            {items.map(item => item.kind === 'reasoning'
+              ? <ThoughtRow key={item.key} block={item.block} />
+              : <ToolRow key={item.key} block={item.block} />)}
           </div>
         )
         : null}
@@ -274,48 +226,78 @@ function ToolRun({ blocks }: { blocks: ToolBlock[] }) {
   )
 }
 
-function ToolCard({ block }: { block: ToolBlock }) {
-  const running = isRunning(block)
-  const detail = toolDetail(block)
+function duration(block: { startedAt?: number; finishedAt?: number }) {
+  if (block.startedAt === undefined || block.finishedAt === undefined) return ''
+  const seconds = Math.round((block.finishedAt - block.startedAt) / 1000)
+  return seconds >= 1 ? `${seconds}s` : ''
+}
+
+function firstLine(text: string, limit = 110) {
+  const line = text.split('\n').find(item => item.trim())?.trim() ?? text.trim()
+  return line.length > limit ? `${line.slice(0, limit - 1)}…` : line
+}
+
+function ThoughtRow({ block }: { block: ReasoningBlock }) {
+  const [open, setOpen] = useState(false)
+  const live = block.finishedAt === undefined
+  const elapsed = duration(block)
 
   return (
-    <details className={`tool ${block.isError ? 'error' : ''}`}>
-      <summary className="tool-head">
-        <ToolIcon size={13} />
-        <span className="tool-name">{detail.title}</span>
-        <span className="tool-input">{detail.command ? '' : formatToolInput(block.input, detail.path)}</span>
-        {running
-          ? <span className="tool-state running">运行中</span>
-          : block.isError
-            ? <span className="tool-state">failed</span>
-            : <span className="tool-meta">{formatOutputSize(block.output)}</span>}
-      </summary>
-      {detail.command
-        ? <pre className="tool-command">$ {detail.command}</pre>
-        : detail.path ? <div className="tool-path">{detail.path}</div> : null}
-      <pre className="tool-output">{block.output || (block.isError ? 'failed' : 'running…')}</pre>
-    </details>
+    <div className={`process-row ${open ? 'expanded' : ''}`}>
+      <button
+        type="button"
+        className="process-row-head"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+      >
+        <BrainIcon size={12} />
+        <span className="process-row-label">思考</span>
+        <span className="process-row-sep">·</span>
+        <span className="process-row-text">{open ? '' : firstLine(block.text)}</span>
+        {live ? <span className="process-row-state">思考中</span> : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
+      </button>
+      {open
+        ? <div className="process-row-body prose">{block.text}</div>
+        : null}
+    </div>
   )
 }
 
-function formatOutputSize(output: string) {
-  if (!output) return ''
-  if (output.length < 1_000) return `${output.length} 字符`
-  return `${(output.length / 1_000).toFixed(1)}k 字符`
-}
+function ToolRow({ block }: { block: ToolBlock }) {
+  const [open, setOpen] = useState(false)
+  const detail = toolDetail(block)
+  const running = isToolRunning(block)
+  const elapsed = running ? '' : duration(block)
 
-function formatToolInput(raw: string, path?: string) {
-  try {
-    const value = JSON.parse(raw)
-    if (value && typeof value === 'object') {
-      const parts = Object.entries(value)
-        // The path already leads the title.
-        .filter(([key]) => key !== 'path')
-        .map(([key, item]) => `${key}: ${typeof item === 'string' ? item : JSON.stringify(item)}`)
-      if (parts.length) return parts.join(' · ')
-    }
-  } catch {
-    // fall through to the raw string
-  }
-  return path ? '' : raw
+  return (
+    <div className={`process-row ${open ? 'expanded' : ''} ${block.isError ? 'failed' : ''}`}>
+      <button
+        type="button"
+        className="process-row-head"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+      >
+        <ToolIcon size={12} />
+        <span className="process-row-label">{detail.row}</span>
+        {detail.summary ? <span className="process-row-sep">·</span> : null}
+        <span className="process-row-text">{detail.summary}</span>
+        {running
+          ? <span className="process-row-state">运行中</span>
+          : block.isError
+            ? <span className="process-row-state failed">失败</span>
+            : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
+      </button>
+      {open
+        ? (
+          <div className="process-row-body">
+            {detail.command
+              ? <pre className="tool-command">$ {detail.command}</pre>
+              : detail.path ? <div className="tool-path">{detail.path}</div> : null}
+            <pre className="tool-output">{block.output || (block.isError ? 'failed' : 'running…')}</pre>
+            <div className="process-row-hint">{describeTool(block)}</div>
+          </div>
+        )
+        : null}
+    </div>
+  )
 }
