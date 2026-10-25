@@ -4212,6 +4212,8 @@ body {
   font-size: 10px;
 }
 
+.ctx-hint.error { color: var(--danger); }
+
 @media (max-width: 760px) {
   .modal.settings-modal {
     width: 100vw;

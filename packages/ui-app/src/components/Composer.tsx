@@ -246,6 +246,16 @@ export function Composer({
       focusAt(next.caret)
       return
     }
+    if (id === 'compact') {
+      // `/compact [focus]` is parsed by the host; keep the caret after the
+      // space so a focus can be typed before sending.
+      const next = applyCompletion(text, caret, trigger, '/compact ')
+      setText(next.text)
+      setCaret(next.caret)
+      setDismissed(true)
+      focusAt(next.caret)
+      return
+    }
     const next = applyCompletion(text, caret, trigger, '')
     setText(next.text)
     setCaret(next.caret)

@@ -291,6 +291,18 @@ export interface ContextInfo {
     mcpTools: number
   }
   mcpTools: string[]
+  /** Estimated/actual ratio learned from provider usage; 1 means uncalibrated. */
+  calibration: number
+  /** Tool results pruned from the model view. */
+  prunedToolResults: number
+  compaction: {
+    failures: number
+    disabled: boolean
+    lastError?: string
+    lastAt?: number
+    lastBefore?: number
+    lastAfter?: number
+  }
 }
 
 export interface GitInfo {

@@ -269,14 +269,24 @@ describe('workspace web', () => {
     const harness = await createHarness()
     harnesses.push(harness)
     const base = harness.ctx.web.url
+    const dir = await mkdtemp(join(tmpdir(), 'rbh-search-web-'))
+    dirs.push(dir)
+    await mkdir(join(dir, 'src'))
+    await writeFile(join(dir, 'package.json'), '{}')
+    await writeFile(join(dir, 'src', 'package-lock.json'), '{}')
+    const session = harness.ctx.sessions.create({ title: 'search', workspace: dir })
 
-    const found = await (await fetch(`${base}/api/workspace/search?q=package&limit=5`)).json() as {
+    const found = await (await fetch(
+      `${base}/api/workspace/search?q=package&limit=5&sessionId=${session.id}`,
+    )).json() as {
       files: Array<{ path: string; type: string }>
     }
     expect(found.files.length).toBeLessThanOrEqual(5)
     expect(found.files.some(file => file.path === 'package.json')).toBe(true)
 
-    const top = await (await fetch(`${base}/api/workspace/search?limit=50`)).json() as {
+    const top = await (await fetch(
+      `${base}/api/workspace/search?limit=50&sessionId=${session.id}`,
+    )).json() as {
       files: Array<{ path: string }>
     }
     expect(top.files.length).toBeGreaterThan(0)
