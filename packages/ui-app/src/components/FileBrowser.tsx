@@ -98,10 +98,17 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const [opening, setOpening] = useState(false)
   const codeRef = useRef<HTMLDivElement>(null)
   const filesRef = useRef<HTMLDivElement>(null)
+  const treeRef = useRef<HTMLDivElement>(null)
+  const childrenRef = useRef(children)
+  const sessionRef = useRef(sessionId)
+  const revealPending = useRef<string | null>(null)
+  childrenRef.current = children
+  sessionRef.current = sessionId
 
   useEffect(() => {
     let cancelled = false
     setRoot(null)
+    childrenRef.current = {}
     setChildren({})
     setExpanded(new Set())
     setTabs([])
@@ -112,7 +119,9 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
       .then((node) => {
         if (cancelled) return
         setRoot(node)
-        setChildren({ '.': node.children ?? [] })
+        const initial = node.children ?? []
+        childrenRef.current = { ...childrenRef.current, '.': initial }
+        setChildren(childrenRef.current)
       })
       .catch((caught) => {
         if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught))
@@ -121,7 +130,11 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     const last = loadLastFile(sessionId)
     if (last) {
       void openFile(last).then((opened) => {
-        if (cancelled || opened) return
+        if (cancelled) return
+        if (opened) {
+          void revealFile(last)
+          return
+        }
         // The path is stale (deleted or renamed): fall back to the empty state.
         setTabs(current => current.filter(tab => tab.path !== last))
         setActive(current => (current === last ? null : current))
@@ -140,7 +153,9 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     setError(null)
     try {
       const node = await api.getWorkspaceTree(path, sessionId, 1, compact)
-      setChildren(previous => ({ ...previous, [path]: node.children ?? [] }))
+      const next = { ...childrenRef.current, [path]: node.children ?? [] }
+      childrenRef.current = next
+      setChildren(next)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -153,6 +168,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     setCompact(next)
     localStorage.setItem(COMPACT_KEY, next ? '1' : '0')
     setRoot(null)
+    childrenRef.current = {}
     setChildren({})
     setExpanded(new Set())
     setLoadingDir(null)
@@ -160,7 +176,9 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     try {
       const node = await api.getWorkspaceTree('.', sessionId, 1, next)
       setRoot(node)
-      setChildren({ '.': node.children ?? [] })
+      const initial = node.children ?? []
+      childrenRef.current = { ...childrenRef.current, '.': initial }
+      setChildren(childrenRef.current)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     }
@@ -176,6 +194,55 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     })
     if (openingDir) void loadDir(path)
   }
+
+  const ensureChildren = async (path: string): Promise<WorkspaceEntry[]> => {
+    const cached = childrenRef.current[path]
+    if (cached) return cached
+    const node = await api.getWorkspaceTree(path, sessionId, 1, compact)
+    const list = node.children ?? []
+    const next = { ...childrenRef.current, [path]: list }
+    childrenRef.current = next
+    setChildren(next)
+    return list
+  }
+
+  /** Expand the tree down to a restored file so its highlighted row is visible. */
+  const revealFile = async (path: string) => {
+    const target = sessionId
+    const dirs: string[] = []
+    let current = '.'
+    for (let depth = 0; depth < 40; depth += 1) {
+      let list: WorkspaceEntry[]
+      try {
+        list = await ensureChildren(current)
+      } catch {
+        return
+      }
+      if (sessionRef.current !== target) return
+      // Compact trees merge directory chains, so pick the longest matching
+      // ancestor instead of walking the raw path one segment at a time.
+      const next = list
+        .filter(entry => entry.type === 'directory' && path.startsWith(`${entry.path}/`))
+        .sort((a, b) => b.path.length - a.path.length)[0]
+      if (!next) break
+      dirs.push(next.path)
+      current = next.path
+    }
+    revealPending.current = path
+    setExpanded((previous) => {
+      const next = new Set(previous)
+      for (const dir of dirs) next.add(dir)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (!active || revealPending.current !== active) return
+    revealPending.current = null
+    treeRef.current
+      ?.querySelector('.tree-row.active')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [active, expanded])
 
   const activate = (path: string) => {
     setActive(path)
@@ -485,7 +552,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
             </div>
           )
           : (
-            <div className="file-tree">
+            <div className="file-tree" ref={treeRef}>
               {root
                 ? (children['.']?.length
                   ? children['.'].map(child => (

@@ -8017,3 +8017,111 @@ body.resizing .file-side-resizer::after {
 .stats-line > .stats-item:first-child .stats-sep {
   display: none;
 }
+
+/* ===== Edit/write tool diff (process row) ===== */
+
+.process-row-body.diff-body {
+  margin: 2px 0 6px;
+  padding: 0;
+  border-left: 0;
+  background: none;
+}
+
+.tool-diff {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.tool-diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--tool-bg);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tool-diff-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-diff-stats {
+  display: flex;
+  flex: none;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.tool-diff-stats .add { color: var(--ok); }
+.tool-diff-stats .del { color: var(--danger); }
+
+.tool-diff-body {
+  max-height: 320px;
+  padding: 4px 0;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.tool-diff-row {
+  display: flex;
+  min-width: max-content;
+}
+
+.tool-diff-row.context {
+  color: var(--muted);
+}
+
+.tool-diff-row.add {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--text);
+}
+
+.tool-diff-row.del {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--text);
+}
+
+.tool-diff-gutter {
+  flex: none;
+  width: 42px;
+  padding: 0 6px;
+  border-right: 1px solid var(--border);
+  color: var(--faint);
+  text-align: right;
+  user-select: none;
+}
+
+.tool-diff-sign {
+  flex: none;
+  width: 16px;
+  color: var(--faint);
+  text-align: center;
+  user-select: none;
+}
+
+.tool-diff-row.add .tool-diff-sign { color: var(--ok); }
+.tool-diff-row.del .tool-diff-sign { color: var(--danger); }
+
+.tool-diff-text {
+  padding: 0 8px;
+  white-space: pre;
+}
+
+.tool-diff-empty,
+.tool-diff-more {
+  padding: 5px 10px;
+  color: var(--faint);
+  font-size: 10.5px;
+}

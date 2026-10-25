@@ -86,6 +86,42 @@ export function toolDetail(block: ToolBlock): ToolDetail {
   return { row: block.name, summary: '' }
 }
 
+export interface ToolEdit {
+  path: string
+  /** Replaced text, for an in-place edit. */
+  oldText?: string
+  /** Replacement text, for an in-place edit. */
+  newText?: string
+  /** Whole file body, for a newly written file. */
+  content?: string
+}
+
+/**
+ * The diff an edit/write tool performed, when its input can be read. Only the
+ * two shapes this harness writes are understood; anything else falls back to
+ * the raw tool output.
+ */
+export function toolEdit(block: ToolBlock): ToolEdit | null {
+  const input = parseInput(block.input)
+  if (!input) return null
+  const path = pathOf(input)
+  if (!path) return null
+  const name = block.name.toLowerCase()
+
+  if (['edit_file', 'edit', 'apply_patch', 'multi_edit'].includes(name)) {
+    const oldText = input.oldText ?? input.old_string ?? input.oldString
+    const newText = input.newText ?? input.new_string ?? input.newString
+    if (typeof oldText === 'string' && typeof newText === 'string') {
+      return { path, oldText, newText }
+    }
+    return null
+  }
+  if (['write_file', 'create_file', 'write'].includes(name) && typeof input.content === 'string') {
+    return { path, content: input.content }
+  }
+  return null
+}
+
 /** One line describing a call, e.g. `运行 grep -rn …`. */
 export function describeTool(block: ToolBlock): string {
   const detail = toolDetail(block)

@@ -6,7 +6,8 @@ import { BrainIcon, CheckIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Ic
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
-import { toolDetail } from '../tool-summary.ts'
+import { toolDetail, toolEdit, type ToolEdit } from '../tool-summary.ts'
+import { addedLines, diffLines } from '../tool-diff.ts'
 import {
   buildPlan, formatDuration, groupSummary, isGroupRunning, itemDuration, shouldGroupRun,
   type ProcessItem,
@@ -288,6 +289,7 @@ function ThoughtRow({ block, pending }: { block: ReasoningBlock; pending: boolea
 function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
   const [open, setOpen] = useState(false)
   const detail = toolDetail(block)
+  const edit = toolEdit(block)
   const elapsed = durationLabel(itemDuration({ kind: 'tool', key: '', block, pending }))
 
   return (
@@ -310,14 +312,71 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
       </button>
       {open
         ? (
-          <div className="process-row-body">
-            {detail.command
-              ? <pre className="tool-command">$ {detail.command}</pre>
-              : detail.path ? <div className="tool-path">{detail.path}</div> : null}
-            <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
+          <div className={`process-row-body ${edit ? 'diff-body' : ''}`}>
+            {edit
+              ? (
+                <>
+                  <ToolDiff edit={edit} />
+                  {block.isError
+                    ? <pre className="tool-output">{block.output || 'failed'}</pre>
+                    : null}
+                </>
+              )
+              : (
+                <>
+                  {detail.command
+                    ? <pre className="tool-command">$ {detail.command}</pre>
+                    : detail.path ? <div className="tool-path">{detail.path}</div> : null}
+                  <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
+                </>
+              )}
           </div>
         )
         : null}
+    </div>
+  )
+}
+
+const DIFF_RENDER_LIMIT = 200
+
+/** The edit/write change, styled as a compact Claude Code-like diff. */
+function ToolDiff({ edit }: { edit: ToolEdit }) {
+  const lines = useMemo(
+    () => edit.content !== undefined
+      ? addedLines(edit.content)
+      : diffLines(edit.oldText ?? '', edit.newText ?? ''),
+    [edit],
+  )
+  const added = lines.filter(line => line.kind === 'add').length
+  const removed = lines.filter(line => line.kind === 'del').length
+  const shown = lines.slice(0, DIFF_RENDER_LIMIT)
+
+  return (
+    <div className="tool-diff">
+      <div className="tool-diff-head">
+        <span className="tool-diff-path" title={edit.path}>{edit.path}</span>
+        <span className="tool-diff-stats">
+          <span className="add">+{added}</span>
+          <span className="del">−{removed}</span>
+        </span>
+      </div>
+      <div className="tool-diff-body">
+        {shown.map((line, index) => (
+          <div className={`tool-diff-row ${line.kind}`} key={index}>
+            <span className="tool-diff-gutter">
+              {line.kind === 'del' ? line.oldLine : line.newLine}
+            </span>
+            <span className="tool-diff-sign">
+              {line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ' '}
+            </span>
+            <span className="tool-diff-text">{line.text || ' '}</span>
+          </div>
+        ))}
+        {!lines.length ? <div className="tool-diff-empty">没有可显示的差异</div> : null}
+        {lines.length > shown.length
+          ? <div className="tool-diff-more">… 还有 {lines.length - shown.length} 行</div>
+          : null}
+      </div>
     </div>
   )
 }
