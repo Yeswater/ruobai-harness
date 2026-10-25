@@ -94,19 +94,24 @@ export interface SessionSummary {
   streaming: boolean
 }
 
-/** Ephemeral metrics for the most recent turn. */
+/**
+ * Metrics for the most recent turn, folded from the durable session log.
+ *
+ * Token counts are disjoint (`inputTokens` is uncached); the cache figures sit
+ * beside it so `cachedInputTokens / (inputTokens + cachedInputTokens)` is a
+ * real hit ratio. `streamedOutputTokens` and `generationMs` describe the same
+ * steps — the ones that reported both timing and billing.
+ */
 export interface TurnStats {
   inputTokens?: number
   outputTokens?: number
   cachedInputTokens?: number
+  cacheWriteInputTokens?: number
   /** Time from turn start to the first streamed delta (text or reasoning). */
   ttftMs?: number
-  /** Time spent streaming, summed over the steps that streamed visibly. */
+  /** Decode time: first streamed token → assembled message, summed per step. */
   generationMs?: number
-  /**
-   * Output tokens produced inside `generationMs`. Steps whose deltas arrived in
-   * one burst are excluded from both, so the pair always describes the same work.
-   */
+  /** Output tokens decoded inside `generationMs`. */
   streamedOutputTokens?: number
   durationMs?: number
   steps?: number

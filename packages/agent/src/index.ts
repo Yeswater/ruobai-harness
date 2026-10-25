@@ -3,7 +3,7 @@ import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
 import { isContextOverflow } from '@ruobai/context'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
-import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart } from '@ruobai/llm'
+import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart, Usage } from '@ruobai/llm'
 import type { ModeDefinition } from '@ruobai/modes'
 import type { SessionRecord } from '@ruobai/session'
 import type { ToolDefinition } from '@ruobai/tools'
@@ -11,10 +11,40 @@ import type { ToolDefinition } from '@ruobai/tools'
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 
 /**
- * A step whose deltas all land inside one burst has no measurable duration;
- * timing it would report a fictional rate.
+ * Timing boundaries persisted beside each assistant message: request dispatch →
+ * first streamed token → assembled message. Everything time-derived (TTFT, the
+ * decode rate) folds from these stamps, so a reloaded session reports exactly
+ * what a live one did.
  */
-const MIN_STREAM_MS = 250
+/**
+ * Shortest decode window worth dividing by. A step that delivered every token
+ * inside one flush has no measurable rate; timing it produced figures like
+ * "26000 tok/s" that no provider can serve.
+ */
+const MIN_DECODE_MS = 50
+
+export interface StepTiming {
+  stepStartTime: number
+  /** First text or reasoning delta; absent when the step streamed nothing. */
+  firstTokenTime?: number
+  /** When the assembled message was appended to the log. */
+  completedTime: number
+}
+
+/** Sum two usage records for the same step (streamed totals arrive in pieces). */
+function mergeUsage(left: Usage, right: Usage): Usage {
+  const sum = (a?: number, b?: number) => (a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0))
+  const inputTokens = sum(left.inputTokens, right.inputTokens)
+  const outputTokens = sum(left.outputTokens, right.outputTokens)
+  const cachedInputTokens = sum(left.cachedInputTokens, right.cachedInputTokens)
+  const cacheWriteInputTokens = sum(left.cacheWriteInputTokens, right.cacheWriteInputTokens)
+  return {
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(cacheWriteInputTokens !== undefined ? { cacheWriteInputTokens } : {}),
+  }
+}
 
 export interface RunOptions {
   /** Aborts the turn when this signal fires (e.g. the parent turn ending). */
@@ -165,19 +195,17 @@ export class AgentService extends Service {
     let lastText = ''
     const startedAt = Date.now()
     let firstDeltaAt: number | undefined
-    // Time the model spent streaming, summed over the steps that streamed
-    // visibly: tool round trips in between must not dilute the rate.
-    let generationMs = 0
-    // Output tokens produced inside those measured windows. Without it the
-    // rate would divide step-spanning totals by a partial window.
-    let streamedTokens = 0
+    // Decode window and the tokens decoded inside it: a step contributes to both
+    // or to neither, so the rate always divides the work it measured.
+    let decodeMs = 0
+    let decodedTokens = 0
     let outputChars = 0
     let steps = 0
     let usageSeen = false
-    let cacheSeen = false
     let inputTokens = 0
     let outputTokens = 0
     let cachedInputTokens = 0
+    let cacheWriteInputTokens = 0
     try {
       const record = this.ctx.sessions.get(sessionId)
       if (!record) throw new Error(`session disappeared: ${sessionId}`)
@@ -229,6 +257,7 @@ export class AgentService extends Service {
 
         const messageId = randomUUID()
         steps += 1
+        const stepStartTime = Date.now()
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
         const built = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
@@ -239,9 +268,8 @@ export class AgentService extends Service {
         let failureCode: string | undefined
         let stop: StopReason = 'stop'
         let stepInputTokens = 0
-        let stepFirstDeltaAt: number | undefined
-        let stepLastDeltaAt: number | undefined
-        let stepOutputTokens = 0
+        let stepFirstTokenTime: number | undefined
+        let stepUsage: Usage | undefined
 
         try {
           for await (const chunk of this.ctx.llm.stream(built.request, provider)) {
@@ -250,16 +278,14 @@ export class AgentService extends Service {
               // Reasoning is billed as output: it belongs to the same window.
               const now = Date.now()
               firstDeltaAt ??= now
-              stepFirstDeltaAt ??= now
-              stepLastDeltaAt = now
+              stepFirstTokenTime ??= now
               this.ctx.emit('agent/reasoning', sessionId, messageId, chunk.text)
             } else if (chunk.type === 'text-delta') {
               textContent += chunk.text
               outputChars += chunk.text.length
               const now = Date.now()
               firstDeltaAt ??= now
-              stepFirstDeltaAt ??= now
-              stepLastDeltaAt = now
+              stepFirstTokenTime ??= now
               this.ctx.emit('agent/delta', sessionId, messageId, chunk.text)
             } else if (chunk.type === 'tool-call') {
               calls.push({ type: 'tool-call', id: chunk.id, name: chunk.name, arguments: chunk.arguments })
@@ -272,27 +298,15 @@ export class AgentService extends Service {
                 usageSeen = true
                 inputTokens += chunk.usage.inputTokens ?? 0
                 outputTokens += chunk.usage.outputTokens ?? 0
-                if (chunk.usage.cachedInputTokens !== undefined) {
-                  cacheSeen = true
-                  cachedInputTokens += chunk.usage.cachedInputTokens
-                }
+                cachedInputTokens += chunk.usage.cachedInputTokens ?? 0
+                cacheWriteInputTokens += chunk.usage.cacheWriteInputTokens ?? 0
                 stepInputTokens += chunk.usage.inputTokens ?? 0
-                stepOutputTokens += chunk.usage.outputTokens ?? 0
+                stepUsage = stepUsage ? mergeUsage(stepUsage, chunk.usage) : chunk.usage
               }
             }
           }
         } catch (error) {
           failure = error instanceof Error ? error.message : String(error)
-        }
-
-        // Only count a step's tokens when its stream was actually observable:
-        // buffered or single-frame answers have no usable window.
-        if (stepFirstDeltaAt !== undefined && stepLastDeltaAt !== undefined) {
-          const span = stepLastDeltaAt - stepFirstDeltaAt
-          if (span >= MIN_STREAM_MS) {
-            generationMs += span
-            streamedTokens += stepOutputTokens
-          }
         }
 
         // Anchor the estimator to what the provider actually billed.
@@ -320,8 +334,32 @@ export class AgentService extends Service {
         if (reasoningContent) parts.push({ type: 'reasoning', text: reasoningContent })
         if (textContent) parts.push({ type: 'text', text: textContent })
         parts.push(...calls)
+
+        // Fold timing and billing in as the step settles. Both ride the log next
+        // to the message, so a reloaded session recomputes the same readings.
+        const completedTime = Date.now()
+        const timing: StepTiming = {
+          stepStartTime,
+          ...(stepFirstTokenTime !== undefined ? { firstTokenTime: stepFirstTokenTime } : {}),
+          completedTime,
+        }
+        // A window this short cannot have decoded anything: it means the whole
+        // step arrived in one buffered burst (or a replayed stream), and timing
+        // it would report a rate no model reaches.
+        const decodeWindow = stepFirstTokenTime !== undefined ? completedTime - stepFirstTokenTime : 0
+        if (decodeWindow >= MIN_DECODE_MS && stepUsage?.outputTokens !== undefined) {
+          decodeMs += decodeWindow
+          decodedTokens += stepUsage.outputTokens
+        }
+
         if (parts.length) {
-          this.ctx.sessions.append(sessionId, 'message/assistant', { id: messageId, parts, at: Date.now() })
+          this.ctx.sessions.append(sessionId, 'message/assistant', {
+            id: messageId,
+            parts,
+            at: completedTime,
+            ...(stepUsage ? { usage: stepUsage } : {}),
+            timing,
+          })
         }
 
         if (!calls.length) {
@@ -396,11 +434,12 @@ export class AgentService extends Service {
         ...(usageSeen ? {
           inputTokens,
           outputTokens,
-          ...(cacheSeen ? { cachedInputTokens } : {}),
+          cachedInputTokens,
+          cacheWriteInputTokens,
         } : {}),
         ...(firstDeltaAt !== undefined ? { ttftMs: firstDeltaAt - startedAt } : {}),
-        ...(generationMs ? { generationMs } : {}),
-        ...(streamedTokens ? { streamedOutputTokens: streamedTokens } : {}),
+        ...(decodeMs ? { generationMs: decodeMs } : {}),
+        ...(decodedTokens ? { streamedOutputTokens: decodedTokens } : {}),
         durationMs: Date.now() - startedAt,
         steps,
         outputChars,

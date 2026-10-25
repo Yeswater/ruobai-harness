@@ -61,11 +61,23 @@ export interface ToolSchema {
   parameters?: Record<string, unknown>
 }
 
+/**
+ * Token accounting for one model call.
+ *
+ * Counts are DISJOINT, the way provider billing works: `inputTokens` is the
+ * *uncached* prompt, cache reads and cache writes are reported beside it. Billed
+ * input is the sum of all three, which is what makes a hit ratio well defined.
+ * Adapters whose provider folds cache hits into a single prompt count subtract
+ * them out on the way in.
+ */
 export interface Usage {
+  /** Uncached prompt tokens. */
   inputTokens?: number
   outputTokens?: number
-  /** Prompt tokens billed as cache reads, when the provider reports them. */
+  /** Prompt tokens served from the cache. */
   cachedInputTokens?: number
+  /** Prompt tokens written to the cache (Anthropic-style providers). */
+  cacheWriteInputTokens?: number
 }
 
 export interface ModelRequest {

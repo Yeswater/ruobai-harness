@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { statsItems } from '../src/components/StatsLine.tsx'
+import { cacheHitRate, statsItems, tokensPerSecond } from '../src/components/StatsLine.tsx'
 
 const context = {
   estimatedTokens: 24_000,
@@ -9,71 +9,57 @@ const context = {
   mcpTools: [],
 }
 
+const labels = (stats: Parameters<typeof statsItems>[0], info: Parameters<typeof statsItems>[1] = context) =>
+  statsItems(stats, info).map(item => item.label)
+
 describe('stats line', () => {
-  it('formats speed, cache hit and context usage', () => {
-    const items = statsItems(
-      { outputTokens: 100, generationMs: 2000, inputTokens: 100, cachedInputTokens: 50 },
-      context,
-    )
-    expect(items.map(item => item.label)).toEqual(['50 tok/s', '缓存命中 50%', '上下文 50%'])
+  it('reports decode speed, cache hit, billing and context', () => {
+    expect(labels({
+      inputTokens: 60,
+      cachedInputTokens: 40,
+      outputTokens: 100,
+      streamedOutputTokens: 100,
+      generationMs: 2000,
+    })).toEqual(['50 tok/s', '缓存命中 40%', '输入 100 · 输出 100', '上下文 50%'])
   })
 
-  it('shows placeholders when a metric is unavailable', () => {
-    const items = statsItems(null, null)
-    expect(items.map(item => item.label)).toEqual(['— tok/s', '缓存命中 —', '上下文 —'])
+  it('shows only what the session has recorded', () => {
+    // No dash placeholders: an unrecorded figure is absent, not "—".
+    expect(labels(null, null)).toEqual([])
+    expect(labels({}, context)).toEqual(['上下文 50%'])
+    expect(labels({ outputTokens: 12 })).toEqual(['输入 0 · 输出 12', '上下文 50%'])
+  })
+
+  it('divides only the tokens decoded inside the measured window', () => {
+    // 1200 output tokens across the turn, but only 200 were decoded inside the
+    // timed window: dividing the total would invent a rate.
+    expect(tokensPerSecond({ outputTokens: 1200, streamedOutputTokens: 200, generationMs: 2000 }))
+      .toBe(100)
+  })
+
+  it('needs a positive decode window', () => {
+    expect(tokensPerSecond({ outputTokens: 400, streamedOutputTokens: 400, generationMs: 0 }))
+      .toBeUndefined()
+    expect(tokensPerSecond({ outputTokens: 400, streamedOutputTokens: 400 })).toBeUndefined()
+    expect(tokensPerSecond({ streamedOutputTokens: 0, generationMs: 1000 })).toBeUndefined()
+  })
+
+  it('counts cache reads and writes in the hit-ratio denominator', () => {
+    // Disjoint counts: 50 uncached + 50 cached + 100 written = 200 billed.
+    expect(cacheHitRate({ inputTokens: 50, cachedInputTokens: 50, cacheWriteInputTokens: 100 }))
+      .toBe(25)
+    expect(cacheHitRate({ inputTokens: 90, cachedInputTokens: 10 })).toBe(10)
+    expect(cacheHitRate({ inputTokens: 100, cachedInputTokens: 0 })).toBe(0)
+  })
+
+  it('has no ratio without a billed prompt', () => {
+    // Cache-only billing is a full hit; an empty record has no denominator.
+    expect(cacheHitRate({ cachedInputTokens: 10 })).toBe(100)
+    expect(cacheHitRate({})).toBeUndefined()
   })
 
   it('prefers the configured model context window', () => {
     const items = statsItems(null, { ...context, contextWindow: 96_000 })
-    expect(items[2]?.label).toBe('上下文 25%')
-  })
-
-  it('divides only the tokens that were actually streamed', () => {
-    // 1200 output tokens across three steps, but only the 2s window of streamed
-    // text can be timed: dividing the total would report an impossible rate.
-    const items = statsItems(
-      { outputTokens: 1200, streamedOutputTokens: 200, generationMs: 2000, inputTokens: 100 },
-      context,
-    )
-    expect(items[0]?.label).toBe('100 tok/s')
-  })
-
-  it('ignores buffered streams with no measurable window', () => {
-    const items = statsItems(
-      { outputTokens: 400, streamedOutputTokens: 400, generationMs: 40 },
-      context,
-    )
-    expect(items[0]?.label).toBe('— tok/s')
-  })
-
-  it('shows a reported zero instead of a placeholder', () => {
-    const items = statsItems(
-      { outputTokens: 10, generationMs: 1000, inputTokens: 1000, cachedInputTokens: 0 },
-      context,
-    )
-    expect(items[1]?.label).toBe('缓存命中 0%')
-  })
-
-  it('drops a cache figure that cannot fit inside the prompt', () => {
-    const items = statsItems(
-      { outputTokens: 10, generationMs: 1000, inputTokens: 1000, cachedInputTokens: 4000 },
-      context,
-    )
-    expect(items[1]?.label).toBe('缓存命中 —')
-  })
-
-  it('rejects non-numeric provider noise', () => {
-    const items = statsItems(
-      {
-        outputTokens: Number.NaN,
-        streamedOutputTokens: 10,
-        generationMs: Number.POSITIVE_INFINITY,
-        inputTokens: 0,
-        cachedInputTokens: 10,
-      },
-      context,
-    )
-    expect(items[0]?.label).toBe('— tok/s')
-    expect(items[1]?.label).toBe('缓存命中 —')
+    expect(items.at(-1)?.label).toBe('上下文 25%')
   })
 })

@@ -3,7 +3,9 @@ import type {} from '@ruobai/agent'
 import type { ContentPart } from '@ruobai/llm'
 import { DEFAULT_PERMISSION, isPermissionMode } from '@ruobai/permissions'
 import type { SessionEvent, SessionMeta } from '@ruobai/session'
-import type { AttachmentMeta, ChatBlock, ChatEvent, ChatMessage, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import type {
+  AttachmentMeta, ChatBlock, ChatEvent, ChatMessage, ChatSession, SessionSummary, TurnStats,
+} from '@ruobai/chat-protocol'
 
 export type * from '@ruobai/chat-protocol'
 
@@ -104,12 +106,6 @@ export class ChatService extends Service {
       this.touch(id, session)
     })
 
-    ctx.on('agent/usage', (id, stats) => {
-      if (!this.visible(id)) return
-      const session = this.ensure(id)
-      session.stats = stats
-      this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id, stats })
-    })
   }
 
   list(): SessionSummary[] {
@@ -306,14 +302,13 @@ export class ChatService extends Service {
     this.apply(session, event)
 
     if (event.type === 'message/user') {
-      // A new turn invalidates the previous turn's metrics. Clearing here (not
-      // per step) keeps them from flashing to "—" between tool round trips.
-      if (event.data.source?.kind !== 'skill' && session.stats) {
-        session.stats = undefined
-        this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id })
-      }
       const message = session.messages.find(item => item.id === event.data.id)
       if (message) this.ctx.emit('chat/event', { type: 'message-added', sessionId: id, message })
+      // A user turn opens a fresh stats window; publish the empty fold so the
+      // strip stops showing the previous turn's numbers.
+      if (event.data.source?.kind !== 'skill') {
+        this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id })
+      }
     } else if (event.type === 'turn/error') {
       const message = session.messages.find(item => item.id === `error-${event.seq}`)
       if (message) this.ctx.emit('chat/event', { type: 'message-added', sessionId: id, message })
@@ -323,6 +318,8 @@ export class ChatService extends Service {
     } else if (event.type === 'message/assistant') {
       const message = session.messages.find(item => item.id === event.data.id)
       if (message) this.ctx.emit('chat/event', { type: 'message-updated', sessionId: id, message })
+      // Steps arrive one by one; republish the fold so partial turns read live.
+      if (session.stats) this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id, stats: session.stats })
     } else if (event.type === 'tool/result') {
       const message = session.messages.find(item => item.blocks.some(block =>
         block.type === 'tool' && block.callId === event.data.callId))
@@ -340,6 +337,9 @@ export class ChatService extends Service {
         session.updatedAt = Math.max(session.updatedAt, event.ts)
         return
       }
+      // A user turn opens a new stats window. Folding from the log (rather than
+      // from a live event) is what keeps the readings after a reload.
+      session.stats = undefined
       if (!session.messages.some(message => message.id === event.data.id)) {
         const blocks: ChatBlock[] = []
         if (event.data.text) blocks.push({ type: 'text', text: event.data.text })
@@ -355,6 +355,7 @@ export class ChatService extends Service {
         })
       }
     } else if (event.type === 'message/assistant') {
+      session.stats = foldStats(session.stats, event.data)
       const blocks = blocksOf(event.data.parts as ContentPart[])
       const existing = session.messages.find(message => message.id === event.data.id)
       if (existing) {
@@ -434,6 +435,54 @@ export class ChatService extends Service {
     if (meta) session.updatedAt = meta.updatedAt
     this.ctx.emit('chat/event', { type: 'session-updated', session })
   }
+}
+
+/** One step's persisted billing and timing, as written by the agent. */
+interface StepRecord {
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    cachedInputTokens?: number
+    cacheWriteInputTokens?: number
+  }
+  timing?: {
+    stepStartTime?: number
+    firstTokenTime?: number
+    completedTime?: number
+  }
+}
+
+/**
+ * Fold one assistant message into the turn's stats.
+ *
+ * Billing is summed over every step; the decode window and the tokens decoded
+ * inside it are summed only over steps that reported both, so throughput never
+ * divides a total by a partial window. TTFT is the first step that streamed.
+ */
+function foldStats(previous: TurnStats | undefined, data: StepRecord): TurnStats | undefined {
+  const usage = data.usage
+  const timing = data.timing
+  if (!usage && !timing) return previous
+  const stats: TurnStats = { ...(previous ?? {}) }
+
+  if (usage) {
+    stats.inputTokens = (stats.inputTokens ?? 0) + (usage.inputTokens ?? 0)
+    stats.cachedInputTokens = (stats.cachedInputTokens ?? 0) + (usage.cachedInputTokens ?? 0)
+    stats.cacheWriteInputTokens = (stats.cacheWriteInputTokens ?? 0) + (usage.cacheWriteInputTokens ?? 0)
+    stats.outputTokens = (stats.outputTokens ?? 0) + (usage.outputTokens ?? 0)
+  }
+
+  const first = timing?.firstTokenTime
+  const completed = timing?.completedTime
+  if (first !== undefined && timing?.stepStartTime !== undefined && stats.ttftMs === undefined) {
+    stats.ttftMs = Math.max(0, first - timing.stepStartTime)
+  }
+  if (first !== undefined && completed !== undefined && usage?.outputTokens !== undefined) {
+    stats.generationMs = (stats.generationMs ?? 0) + Math.max(0, completed - first)
+    stats.streamedOutputTokens = (stats.streamedOutputTokens ?? 0) + usage.outputTokens
+  }
+  stats.steps = (stats.steps ?? 0) + 1
+  return stats
 }
 
 function blocksOf(parts: ContentPart[]): ChatBlock[] {

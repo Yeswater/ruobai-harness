@@ -316,9 +316,13 @@ function largestOf(...values: Array<number | undefined>): number | undefined {
 }
 
 /**
- * Normalize provider usage. Vendors disagree on whether cache reads are part of
- * the prompt count (OpenAI, DeepSeek) or billed on top of it (Anthropic-style
- * proxies), which is why the ratio has to be repaired here instead of in the UI.
+ * Normalize provider usage into disjoint harness counts.
+ *
+ * OpenAI and DeepSeek fold cache reads into `prompt_tokens`
+ * (`prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens`), so the
+ * cached part has to be subtracted back out; gateways that follow the
+ * Anthropic shape report it beside the prompt instead. Either way the reported
+ * prompt is the billed total and drops out of `inputTokens`.
  */
 function readUsage(raw: unknown): Usage | undefined {
   if (!raw || typeof raw !== 'object') return undefined
@@ -332,16 +336,21 @@ function readUsage(raw: unknown): Usage | undefined {
     toNumber(fields.prompt_cache_hit_tokens),
     toNumber(fields.cache_read_input_tokens),
   )
+  const cachedWrite = largestOf(
+    toNumber(details.cache_creation_tokens),
+    toNumber(details.cache_write_tokens),
+    toNumber(fields.cache_creation_input_tokens),
+  )
   const usage: Usage = {}
   // A cache figure larger than the prompt count can only mean the provider
-  // reports cache reads on top of the prompt; fold them in so the ratio fits.
-  const input = prompt === undefined
-    ? undefined
-    : cached !== undefined && cached > prompt ? prompt + cached : prompt
-  if (input !== undefined) usage.inputTokens = input
+  // reports cache reads on top of the prompt; the prompt is already uncached.
+  const folded = cached !== undefined && prompt !== undefined && cached <= prompt ? cached : undefined
+  const uncached = prompt === undefined ? undefined : prompt - (folded ?? 0)
+  if (uncached !== undefined) usage.inputTokens = uncached
   if (completion !== undefined) usage.outputTokens = completion
   // Keep an explicit zero: "0% cached" is a measurement, not a missing value.
   if (cached !== undefined) usage.cachedInputTokens = cached
+  if (cachedWrite !== undefined) usage.cacheWriteInputTokens = cachedWrite
   return usage
 }
 

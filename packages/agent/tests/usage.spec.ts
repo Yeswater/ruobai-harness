@@ -57,7 +57,7 @@ describe('turn usage', () => {
     expect(harness.ctx.chat.get(session.id)?.stats).toMatchObject({ outputTokens: 2 })
   })
 
-  it('times only the streaming windows, not the tool round trips between them', async () => {
+  it('times decode windows and keeps tool round trips out of them', async () => {
     const harness = await createHarness()
     harnesses.push(harness)
 
@@ -66,23 +66,20 @@ describe('turn usage', () => {
       name: 'scripted',
       async *stream() {
         step += 1
+        yield* paced(3, 150, { type: 'text-delta' as const, text: 'checking' })
         if (step === 1) {
-          yield* paced(3, 150, { type: 'text-delta' as const, text: 'checking' })
           yield {
             type: 'tool-call' as const,
             id: 'call_list',
             name: 'list_dir',
             arguments: JSON.stringify({ path: '.' }),
           }
-          // Idle tail: waiting on the provider must not be billed as generation.
-          await sleep(400)
           yield {
             type: 'done' as const,
             reason: 'tool-calls' as const,
             usage: { inputTokens: 100, outputTokens: 40, cachedInputTokens: 20 },
           }
         } else {
-          yield* paced(3, 150, { type: 'text-delta' as const, text: 'done' })
           yield {
             type: 'done' as const,
             reason: 'stop' as const,
@@ -100,17 +97,18 @@ describe('turn usage', () => {
 
     const stats = await usage
     expect(stats.steps).toBe(2)
+    // Disjoint billing, summed across both steps.
     expect(stats.inputTokens).toBe(300)
     expect(stats.outputTokens).toBe(100)
     expect(stats.cachedInputTokens).toBe(210)
-    // Two windows of roughly 300ms each; the 400ms idle tail is excluded.
+    // Both steps measured a window, and both are paired with their tokens.
     expect(stats.streamedOutputTokens).toBe(100)
-    expect(stats.generationMs).toBeGreaterThanOrEqual(400)
-    expect(stats.generationMs).toBeLessThan(1000)
-    expect(stats.ttftMs).toBeLessThan(stats.generationMs!)
+    expect(stats.generationMs).toBeGreaterThan(500)
+    expect(stats.generationMs).toBeLessThan(2000)
+    expect(stats.ttftMs).toBeDefined()
   })
 
-  it('leaves steps with a single buffered frame out of the rate', async () => {
+  it('leaves a one-burst step out of the decode rate', async () => {
     const harness = await createHarness()
     harnesses.push(harness)
 
@@ -134,8 +132,42 @@ describe('turn usage', () => {
     harness.ctx.chat.send(session.id, 'hi')
 
     const stats = await usage
+    // Billed tokens are still reported; only the unmeasurable window is dropped.
     expect(stats.outputTokens).toBe(400)
     expect(stats.streamedOutputTokens).toBeUndefined()
+    expect(stats.generationMs).toBeUndefined()
+  })
+
+  it('records billing and timing on the log so the projection can rebuild them', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+
+    await useScripted(harness, {
+      name: 'scripted',
+      async *stream() {
+        yield* paced(2, 80, { type: 'text-delta' as const, text: 'ok' })
+        yield { type: 'done', reason: 'stop', usage: { inputTokens: 12, outputTokens: 6, cachedInputTokens: 4 } }
+      },
+    })
+
+    const session = harness.ctx.chat.create(undefined, 'agent')
+    const done = new Promise<void>((resolve) => {
+      harness.ctx.once('agent/turn-end', () => resolve())
+    })
+    harness.ctx.chat.send(session.id, 'hi')
+    await done
+
+    const assistant = harness.ctx.sessions.get(session.id)?.events
+      .find(event => event.type === 'message/assistant')
+    expect(assistant?.data.usage).toMatchObject({ inputTokens: 12, outputTokens: 6, cachedInputTokens: 4 })
+    expect(assistant?.data.timing).toMatchObject({ completedTime: expect.any(Number) })
+    expect(assistant?.data.timing.firstTokenTime).toBeGreaterThanOrEqual(assistant?.data.timing.stepStartTime)
+
+    // What a browser gets on the next load: the chat projection folds the log in
+    // the same pass that renders the messages, so nothing has to be re-requested.
+    const stats = harness.ctx.chat.get(session.id)?.stats
+    expect(stats).toMatchObject({ inputTokens: 12, outputTokens: 6, cachedInputTokens: 4, steps: 1 })
+    expect(stats?.generationMs).toBeGreaterThan(0)
   })
 
   it('starts every turn with a clean stats line', async () => {

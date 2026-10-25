@@ -9,66 +9,103 @@ interface StatsLineProps {
   workspace?: string
 }
 
-/** Below this the stream window is pure noise (buffered or single-frame answers). */
-const MIN_SPEED_WINDOW_MS = 250
-
 function finite(value: number | undefined): number | undefined {
   return value !== undefined && Number.isFinite(value) ? value : undefined
 }
 
 /**
- * Tokens per second for the last turn.
+ * Decode throughput for the last turn.
  *
- * The numerator must be the tokens generated inside the measured window:
- * `outputTokens` spans every step of the turn (including tool round trips),
- * which is why `streamedOutputTokens` is preferred and the bare total is only a
- * fallback for stats recorded before the split existed.
+ * Numerator and denominator must describe the same work: `streamedOutputTokens`
+ * covers exactly the steps that also reported a decode window, so it is read
+ * first and the turn-wide `outputTokens` is only a fallback for logs written
+ * before that split existed.
  */
 export function tokensPerSecond(stats: TurnStats | null | undefined): number | undefined {
   const generationMs = finite(stats?.generationMs)
-  if (generationMs === undefined || generationMs < MIN_SPEED_WINDOW_MS) return undefined
+  if (generationMs === undefined || generationMs <= 0) return undefined
   const tokens = finite(stats?.streamedOutputTokens) ?? finite(stats?.outputTokens)
   if (tokens === undefined || tokens <= 0) return undefined
   return tokens / (generationMs / 1000)
 }
 
-/** Share of the prompt billed as cache reads, repaired into 0–100%. */
-export function cacheHitRate(stats: TurnStats | null | undefined): number | undefined {
-  const input = finite(stats?.inputTokens)
-  const cached = finite(stats?.cachedInputTokens)
-  if (input === undefined || input <= 0 || cached === undefined || cached < 0) return undefined
-  // Providers that bill cache reads on top of the prompt are normalized in the
-  // adapter; anything still overflowing here is provider noise, not a real 100%.
-  if (cached > input) return undefined
-  return (cached / input) * 100
+/** Billed prompt tokens: uncached input plus everything served from cache. */
+export function billedInputTokens(stats: TurnStats | null | undefined): number {
+  return (finite(stats?.inputTokens) ?? 0)
+    + (finite(stats?.cachedInputTokens) ?? 0)
+    + (finite(stats?.cacheWriteInputTokens) ?? 0)
 }
 
-export function statsItems(stats: TurnStats | null | undefined, contextInfo: ContextInfo | null) {
+/** Share of the billed prompt served from cache, 0–100. */
+export function cacheHitRate(stats: TurnStats | null | undefined): number | undefined {
+  const billed = billedInputTokens(stats)
+  const cached = finite(stats?.cachedInputTokens)
+  if (billed <= 0 || cached === undefined || cached < 0) return undefined
+  return Math.min(100, (cached / billed) * 100)
+}
+
+export interface StatsItem {
+  key: 'speed' | 'cache' | 'tokens' | 'context'
+  label: string
+  title: string
+}
+
+/** Compact token count: 517 / 12.2k / 1.2m. */
+export function formatTokens(value: number): string {
+  const scaled = (input: number) => (input >= 100 ? String(Math.round(input)) : String(Math.round(input * 10) / 10))
+  if (value < 1_000) return String(Math.round(value))
+  if (value < 1_000_000) return `${scaled(value / 1_000)}k`
+  return `${scaled(value / 1_000_000)}m`
+}
+
+/**
+ * Build the stats strip.
+ *
+ * A figure with no recorded value is dropped instead of printed as a dash: a
+ * row of `—` reads like a broken build, while a shorter strip reads like a
+ * session that has not billed anything yet. Every figure here rides the durable
+ * log, so a reload or a paged transcript shows the same numbers.
+ */
+export function statsItems(stats: TurnStats | null | undefined, contextInfo: ContextInfo | null): StatsItem[] {
+  const items: StatsItem[] = []
   const speed = tokensPerSecond(stats)
   const cacheHit = cacheHitRate(stats)
+  const outputTokens = finite(stats?.outputTokens)
   const contextPercent = contextInfo
     ? Math.min(100, Math.round(
       (contextInfo.estimatedTokens / Math.max(1, contextInfo.contextWindow ?? contextInfo.compactAt)) * 100,
     ))
     : undefined
 
-  return [
-    {
+  if (speed !== undefined) {
+    items.push({
       key: 'speed',
-      label: speed !== undefined ? `${Math.round(speed)} tok/s` : '— tok/s',
-      title: '本回合流式生成速度',
-    },
-    {
+      label: `${Math.round(speed)} tok/s`,
+      title: '本回合解码速度（解码 token / 解码耗时）',
+    })
+  }
+  if (cacheHit !== undefined) {
+    items.push({
       key: 'cache',
-      label: cacheHit !== undefined ? `缓存命中 ${Math.round(cacheHit)}%` : '缓存命中 —',
-      title: '提供方返回的缓存命中率',
-    },
-    {
+      label: `缓存命中 ${Math.round(cacheHit)}%`,
+      title: '缓存读取 token 占计费输入 token 的比例',
+    })
+  }
+  if (billedInputTokens(stats) > 0 || outputTokens !== undefined) {
+    items.push({
+      key: 'tokens',
+      label: `输入 ${formatTokens(billedInputTokens(stats))} · 输出 ${formatTokens(outputTokens ?? 0)}`,
+      title: '最近一回合的计费 token',
+    })
+  }
+  if (contextPercent !== undefined) {
+    items.push({
       key: 'context',
-      label: contextPercent !== undefined ? `上下文 ${contextPercent}%` : '上下文 —',
+      label: `上下文 ${contextPercent}%`,
       title: '上下文占用 / 压缩阈值',
-    },
-  ]
+    })
+  }
+  return items
 }
 
 export function StatsLine({ stats, contextInfo, sessionId, workspace }: StatsLineProps) {

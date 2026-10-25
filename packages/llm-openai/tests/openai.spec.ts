@@ -153,9 +153,10 @@ describe('openai adapter', () => {
     expect(Array.isArray(content)).toBe(true)
     expect(content[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } })
     expect(content[2].text).toContain('<file name="a.txt" path="src/a.txt">')
+    // Disjoint counts: prompt_tokens 10 includes the 6 cached, so 4 are uncached.
     expect(chunks.at(-1)).toMatchObject({
       type: 'done',
-      usage: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 6 },
+      usage: { inputTokens: 4, outputTokens: 2, cachedInputTokens: 6 },
     })
 
     await provider.dispose()
@@ -183,7 +184,7 @@ describe('openai adapter', () => {
     expect(chunks.at(-1)).toMatchObject({
       type: 'done',
       reason: 'stop',
-      usage: { inputTokens: 10, outputTokens: 4, cachedInputTokens: 6 },
+      usage: { inputTokens: 4, outputTokens: 4, cachedInputTokens: 6 },
     })
 
     await provider.dispose()
@@ -210,7 +211,7 @@ describe('openai adapter', () => {
 
     expect(chunks.at(-1)).toMatchObject({
       type: 'done',
-      usage: { inputTokens: 100, outputTokens: 5, cachedInputTokens: 80 },
+      usage: { inputTokens: 20, outputTokens: 5, cachedInputTokens: 80 },
     })
 
     await provider.dispose()
@@ -235,9 +236,11 @@ describe('openai adapter', () => {
       chunks.push(chunk)
     }
 
+    // Cache reads beyond the prompt count are billed on top; the prompt stays
+    // uncached, so the pair still adds up (200 + 800).
     expect(chunks.at(-1)).toMatchObject({
       type: 'done',
-      usage: { inputTokens: 1000, outputTokens: 5, cachedInputTokens: 800 },
+      usage: { inputTokens: 200, outputTokens: 5, cachedInputTokens: 800 },
     })
 
     await provider.dispose()
