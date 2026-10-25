@@ -4908,11 +4908,12 @@ body.resizing .details-resizer::after {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .git-workbench.wide {
   display: grid;
-  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, min(440px, 38%)) minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -4929,11 +4930,11 @@ body.resizing .details-resizer::after {
 
 .git-nav-scroll {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 14px;
-  min-height: 0;
-  max-height: 65%;
+  min-height: 140px;
+  max-height: 60%;
   padding: 8px 9px 12px;
   overflow-y: auto;
 }
@@ -4942,7 +4943,7 @@ body.resizing .details-resizer::after {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  min-height: 160px;
+  min-height: 120px;
   padding: 7px 9px 10px;
   border-top: 1px solid var(--border);
   overflow-y: auto;
@@ -5450,11 +5451,12 @@ body.resizing .details-resizer::after {
 
 .git-detail-pane {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   padding: 9px 11px 14px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .git-detail-pane.file-mode {
@@ -5498,9 +5500,11 @@ body.resizing .details-resizer::after {
 
 .git-detail {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .git-detail-pane.file-mode .git-detail {
@@ -5563,12 +5567,15 @@ body.resizing .details-resizer::after {
 
 .git-commit-files {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 1px;
+  max-height: 240px;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
+  overflow-y: auto;
 }
 
 .git-detail-file {
@@ -5576,9 +5583,9 @@ body.resizing .details-resizer::after {
 }
 
 .git-detail .git-diff {
-  flex: none;
-  min-height: 220px;
-  max-height: 460px;
+  flex: 1 1 auto;
+  min-height: 180px;
+  max-height: none;
 }
 
 /* Diff */

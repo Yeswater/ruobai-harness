@@ -49,7 +49,7 @@ interface HistoryListProps {
   selectedHash: string | null
   /** True when the layout has room for a detail pane and nothing is selected. */
   autoSelect: boolean
-  onSelect: (hash: string) => void
+  onSelect: (hash: string, auto?: boolean) => void
   onError: (text: string | null) => void
 }
 
@@ -107,7 +107,7 @@ export function HistoryList({
     const key = `${filter.all}:${filter.ref ?? ''}:${commits[0]!.hash}`
     if (autoRef.current === key) return
     autoRef.current = key
-    onSelect(commits[0]!.hash)
+    onSelect(commits[0]!.hash, true)
   }, [autoSelect, selectedHash, commits, filter.all, filter.ref, onSelect])
 
   const graph = useMemo(() => computeGraph(commits), [commits])

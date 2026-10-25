@@ -52,6 +52,7 @@ export function GitPanel({ sessionId, expanded }: GitPanelProps) {
   const [busy, setBusy] = useState<string | null>(null)
   const [revision, setRevision] = useState(0)
   const fileRequest = useRef(0)
+  const autoCommit = useRef(false)
 
   useEffect(() => {
     const element = rootRef.current
@@ -212,8 +213,22 @@ export function GitPanel({ sessionId, expanded }: GitPanelProps) {
     }
   }
 
+  useEffect(() => {
+    if (wide || !autoCommit.current) return
+    // The first commit is picked only to fill the wide detail pane; a narrow
+    // panel should fall back to the changes list instead of hiding it.
+    autoCommit.current = false
+    setSelection(current => (current?.kind === 'commit' ? null : current))
+  }, [wide])
+
   const selectEntry = (entry: ChangeEntry) => {
+    autoCommit.current = false
     setSelection({ kind: 'file', key: entryKey(entry), entry })
+  }
+
+  const selectCommit = (hash: string, auto = false) => {
+    autoCommit.current = auto
+    setSelection({ kind: 'commit', hash })
   }
 
   const remotes = [...new Set(
@@ -330,7 +345,7 @@ export function GitPanel({ sessionId, expanded }: GitPanelProps) {
                         remotes={remotes}
                         selectedHash={selectedHash}
                         autoSelect={autoSelect}
-                        onSelect={hash => setSelection({ kind: 'commit', hash })}
+                        onSelect={selectCommit}
                         onError={setError}
                       />
                     </div>

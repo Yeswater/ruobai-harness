@@ -168,8 +168,6 @@ export function App() {
     }
     setPanelView(view)
     setFileOpen(true)
-    // The Git workbench needs two columns; open it wide and let the user collapse.
-    if (view === 'git' && window.innerWidth > 1120) setExpandedPanel('file')
   }, [fileOpen, panelView])
 
   const toggleExpandPanel = useCallback(() => {
