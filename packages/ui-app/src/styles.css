@@ -5540,3 +5540,50 @@ body.resizing .details-resizer::after {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Explicit tracks: a hidden (display:none) sidebar must not shift the rest. */
+.sidebar {
+  grid-column: 1;
+}
+
+.main {
+  grid-column: 2;
+}
+
+.session-panel {
+  grid-column: 3;
+}
+
+.details {
+  grid-column: 4;
+}
+
+@media (max-width: 1120px) {
+  .main {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .sidebar,
+  .main {
+    grid-column: 1;
+  }
+}
+
+/* One authoritative track template; older .app.sidebar-collapsed rules lose. */
+.app.app {
+  grid-template-columns: var(--sidebar-col) minmax(0, 1fr) var(--session-col) var(--file-col);
+}
+
+@media (max-width: 1120px) {
+  .app.app {
+    grid-template-columns: var(--sidebar-col) minmax(0, 1fr) 0px 0px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app.app {
+    grid-template-columns: minmax(0, 1fr) 0px 0px 0px;
+  }
+}
