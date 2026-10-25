@@ -70,6 +70,13 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     shortcut: 'B',
   },
   {
+    id: 'expand-panel',
+    label: '展开 / 收起右侧面板',
+    description: '让会话或文件面板占满窗口',
+    keywords: 'expand fullscreen 展开 全屏 面板',
+    shortcut: '\\',
+  },
+  {
     id: 'toggle-theme',
     label: '切换主题',
     description: '在浅色与深色之间切换',

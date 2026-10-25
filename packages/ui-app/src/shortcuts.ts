@@ -34,6 +34,11 @@ export function isSidebarShortcut(event: KeyLike) {
   return isPlainMod(event) && event.key.toLowerCase() === 'b'
 }
 
+/** ⌘\ / Ctrl+\: expand or collapse the active right-hand panel. */
+export function isExpandShortcut(event: KeyLike) {
+  return isPlainMod(event) && (event.key === '\\' || event.code === 'Backslash')
+}
+
 function detectPlatform(platform?: string) {
   if (platform !== undefined) return platform
   return typeof navigator === 'undefined' ? '' : navigator.platform

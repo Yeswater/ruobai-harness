@@ -69,6 +69,24 @@ export function MoreIcon({ size }: IconProps) {
   )
 }
 
+/** Diagonal arrows pointing outward: expand the panel. */
+export function ExpandIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6" />
+    </svg>
+  )
+}
+
+/** Diagonal arrows pointing inward: collapse the expanded panel. */
+export function CollapseIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6" />
+    </svg>
+  )
+}
+
 export function MenuIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
 }

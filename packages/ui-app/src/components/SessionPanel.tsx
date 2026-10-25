@@ -1,22 +1,25 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
 import { api, type ContextInfo, type GitInfo } from '../api.ts'
+import { modKeyLabel } from '../shortcuts.ts'
 import { ContextCard } from './ContextCard.tsx'
 import { EnvironmentCard } from './EnvironmentCard.tsx'
-import { CloseIcon } from './Icons.tsx'
+import { CollapseIcon, CloseIcon, ExpandIcon } from './Icons.tsx'
 import { InfoCard } from './InfoCard.tsx'
 import { Slot } from './Slot.tsx'
 
 interface SessionPanelProps {
   session: ChatSession | null
   contextInfo: ContextInfo | null
+  expanded: boolean
+  onToggleExpand: () => void
   onClose: () => void
 }
 
 type CardKey = 'environment' | 'context'
 
 /** Session context beside the chat; the file/Git explorer lives separately. */
-export function SessionPanel({ session, contextInfo, onClose }: SessionPanelProps) {
+export function SessionPanel({ session, contextInfo, expanded, onToggleExpand, onClose }: SessionPanelProps) {
   const [open, setOpen] = useState<Record<CardKey, boolean>>({
     environment: true,
     context: true,
@@ -59,9 +62,19 @@ export function SessionPanel({ session, contextInfo, onClose }: SessionPanelProp
     <aside className="session-panel">
       <div className="details-head">
         <span className="details-title">会话</span>
-        <button className="icon-btn subtle" onClick={onClose} aria-label="关闭会话栏">
-          <CloseIcon />
-        </button>
+        <div className="details-head-actions">
+          <button
+            className={`icon-btn subtle ${expanded ? 'active' : ''}`}
+            onClick={onToggleExpand}
+            aria-label={expanded ? '收起面板' : '展开面板'}
+            title={`${expanded ? '收起' : '展开'} (${modKeyLabel()}\\)`}
+          >
+            {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+          </button>
+          <button className="icon-btn subtle" onClick={onClose} aria-label="关闭会话栏">
+            <CloseIcon />
+          </button>
+        </div>
       </div>
 
       <div className="details-scroll">

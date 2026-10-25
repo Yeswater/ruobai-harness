@@ -1,6 +1,7 @@
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
 import css from 'highlight.js/lib/languages/css'
+import java from 'highlight.js/lib/languages/java'
 import javascript from 'highlight.js/lib/languages/javascript'
 import json from 'highlight.js/lib/languages/json'
 import markdown from 'highlight.js/lib/languages/markdown'
@@ -11,6 +12,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('css', css)
+hljs.registerLanguage('java', java)
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('json', json)
 hljs.registerLanguage('markdown', markdown)
@@ -29,6 +31,7 @@ const BY_EXTENSION: Record<string, string> = {
   yml: 'yaml', yaml: 'yaml',
   sh: 'bash', bash: 'bash', zsh: 'bash',
   py: 'python',
+  java: 'java',
 }
 
 export function languageOf(path: string) {
@@ -46,6 +49,7 @@ const FENCE_ALIASES: Record<string, string> = {
   yml: 'yaml', yaml: 'yaml',
   sh: 'bash', shell: 'bash', bash: 'bash', zsh: 'bash',
   py: 'python', python: 'python',
+  java: 'java',
 }
 
 /** Highlight one fenced block; `undefined` for unsupported or unknown fences. */

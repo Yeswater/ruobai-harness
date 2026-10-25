@@ -3,7 +3,10 @@ import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
 import { api, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
-import { isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut, modKeyLabel } from './shortcuts.ts'
+import {
+  isExpandShortcut, isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut,
+  modKeyLabel,
+} from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
@@ -54,6 +57,7 @@ export function App() {
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [fileOpen, setFileOpen] = useState(false)
+  const [expandedPanel, setExpandedPanel] = useState<'session' | 'file' | null>(null)
   const [panelView, setPanelView] = useState<FileView>('files')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -141,11 +145,42 @@ export function App() {
   const showFilePanel = useCallback((view: FileView) => {
     if (fileOpen && panelView === view) {
       setFileOpen(false)
+      if (expandedPanel === 'file') setExpandedPanel(null)
       return
     }
     setPanelView(view)
     setFileOpen(true)
-  }, [fileOpen, panelView])
+    if (expandedPanel === 'session') setExpandedPanel(null)
+  }, [fileOpen, panelView, expandedPanel])
+
+  const toggleSessionPanel = useCallback(() => {
+    if (detailsOpen) {
+      setDetailsOpen(false)
+      if (expandedPanel === 'session') setExpandedPanel(null)
+      return
+    }
+    setDetailsOpen(true)
+    if (expandedPanel === 'file') setExpandedPanel(null)
+  }, [detailsOpen, expandedPanel])
+
+  const toggleExpandPanel = useCallback((panel: 'session' | 'file') => {
+    if (window.innerWidth <= 1120) return
+    if (expandedPanel === panel) {
+      setExpandedPanel(null)
+      return
+    }
+    if (panel === 'session') setDetailsOpen(true)
+    else setFileOpen(true)
+    setExpandedPanel(panel)
+  }, [expandedPanel])
+
+  useEffect(() => {
+    const collapseOnNarrow = () => {
+      if (window.innerWidth <= 1120) setExpandedPanel(null)
+    }
+    window.addEventListener('resize', collapseOnNarrow)
+    return () => window.removeEventListener('resize', collapseOnNarrow)
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -170,10 +205,16 @@ export function App() {
         event.preventDefault()
         toggleSidebar()
       }
+      if (isExpandShortcut(event)) {
+        event.preventDefault()
+        if (expandedPanel) setExpandedPanel(null)
+        else if (fileOpen) toggleExpandPanel('file')
+        else toggleExpandPanel('session')
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openSettings, toggleSidebar])
+  }, [openSettings, toggleSidebar, expandedPanel, fileOpen, toggleExpandPanel])
 
   // Commands that need runtime state (nothing streaming, nothing to stop) drop out.
   const paletteCommands = useMemo(
@@ -210,6 +251,11 @@ export function App() {
       case 'toggle-sidebar':
         toggleSidebar()
         break
+      case 'expand-panel':
+        if (expandedPanel) setExpandedPanel(null)
+        else if (fileOpen) toggleExpandPanel('file')
+        else toggleExpandPanel('session')
+        break
       case 'toggle-theme':
         setPreference(theme === 'dark' ? 'light' : 'dark')
         break
@@ -227,6 +273,8 @@ export function App() {
         'app',
         detailsOpen ? 'session-panel-open' : '',
         fileOpen ? 'file-panel-open' : '',
+        expandedPanel === 'session' ? 'session-expanded' : '',
+        expandedPanel === 'file' ? 'file-expanded' : '',
         sidebarCollapsed ? 'sidebar-collapsed' : '',
       ].filter(Boolean).join(' ')}
       style={{ '--details-width': `${detailsWidth}px` } as CSSProperties}
@@ -322,7 +370,7 @@ export function App() {
             <div className="main-tools" role="toolbar" aria-label="面板">
               <button
                 className={`icon-btn ${detailsOpen ? 'active' : ''}`}
-                onClick={() => setDetailsOpen(current => !current)}
+                onClick={toggleSessionPanel}
                 aria-label="会话"
                 title="会话"
               >
@@ -446,7 +494,12 @@ export function App() {
           <SessionPanel
             session={harness.session}
             contextInfo={harness.contextInfo}
-            onClose={() => setDetailsOpen(false)}
+            expanded={expandedPanel === 'session'}
+            onToggleExpand={() => toggleExpandPanel('session')}
+            onClose={() => {
+              setDetailsOpen(false)
+              if (expandedPanel === 'session') setExpandedPanel(null)
+            }}
           />
         )
         : null}
@@ -457,8 +510,13 @@ export function App() {
             session={harness.session}
             view={panelView}
             width={detailsWidth}
+            expanded={expandedPanel === 'file'}
+            onToggleExpand={() => toggleExpandPanel('file')}
             onResize={resizeDetails}
-            onClose={() => setFileOpen(false)}
+            onClose={() => {
+              setFileOpen(false)
+              if (expandedPanel === 'file') setExpandedPanel(null)
+            }}
             onReferenceFile={(path) => setReference({ text: `@${path} `, token: Date.now() })}
           />
         )

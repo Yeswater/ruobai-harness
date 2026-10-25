@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
 import { api, type GitInfo } from '../api.ts'
+import { modKeyLabel } from '../shortcuts.ts'
 import { FileBrowser } from './FileBrowser.tsx'
 import { GitPanel } from './GitPanel.tsx'
-import { CloseIcon } from './Icons.tsx'
+import { CollapseIcon, CloseIcon, ExpandIcon } from './Icons.tsx'
 
 export type FileView = 'files' | 'git'
 
@@ -11,6 +12,8 @@ interface DetailsPanelProps {
   session: ChatSession | null
   view: FileView
   width: number
+  expanded: boolean
+  onToggleExpand: () => void
   onResize: (width: number) => void
   onClose: () => void
   /** Insert `@path` for the given file into the composer. */
@@ -24,7 +27,7 @@ const TITLES: Record<FileView, string> = {
 
 /** File explorer and source control, independent of the session panel. */
 export function DetailsPanel({
-  session, view, width, onResize, onClose, onReferenceFile,
+  session, view, width, expanded, onToggleExpand, onResize, onClose, onReferenceFile,
 }: DetailsPanelProps) {
   const [git, setGit] = useState<GitInfo | null>(null)
   const [gitError, setGitError] = useState<string | null>(null)
@@ -80,20 +83,34 @@ export function DetailsPanel({
   }
 
   return (
-    <aside className={`details view-${view}`} style={{ width }}>
-      <div
-        className="details-resizer"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="调整面板宽度"
-        onPointerDown={startResize}
-        onDoubleClick={() => onResize(344)}
-      />
+    <aside className={`details view-${view}`} style={expanded ? undefined : { width }}>
+      {expanded
+        ? null
+        : (
+          <div
+            className="details-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整面板宽度"
+            onPointerDown={startResize}
+            onDoubleClick={() => onResize(344)}
+          />
+        )}
       <div className="details-head">
         <span className="details-title">{TITLES[view]}</span>
-        <button className="icon-btn subtle" onClick={onClose} aria-label={`关闭${TITLES[view]}栏`}>
-          <CloseIcon />
-        </button>
+        <div className="details-head-actions">
+          <button
+            className={`icon-btn subtle ${expanded ? 'active' : ''}`}
+            onClick={onToggleExpand}
+            aria-label={expanded ? '收起面板' : '展开面板'}
+            title={`${expanded ? '收起' : '展开'} (${modKeyLabel()}\\)`}
+          >
+            {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+          </button>
+          <button className="icon-btn subtle" onClick={onClose} aria-label={`关闭${TITLES[view]}栏`}>
+            <CloseIcon />
+          </button>
+        </div>
       </div>
 
       <div className={`details-scroll ${view === 'files' ? 'bare' : ''}`}>

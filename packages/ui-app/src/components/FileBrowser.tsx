@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  useEffect, useMemo, useRef, useState,
+  type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   api, type WorkspaceEntry, type WorkspaceMatch, type WorkspaceTextMatch,
 } from '../api.ts'
@@ -11,6 +14,13 @@ import {
 import { MarkdownPreview } from './MarkdownPreview.tsx'
 
 const MAX_LINES = 3_000
+const TREE_WIDTH_KEY = 'rbh-file-tree-width'
+const DEFAULT_TREE_WIDTH = 236
+
+function loadTreeWidth() {
+  const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
+  return Number.isFinite(saved) && saved >= 180 && saved <= 720 ? saved : DEFAULT_TREE_WIDTH
+}
 
 const LANGUAGE_LABELS: Record<string, string> = {
   typescript: 'TypeScript',
@@ -22,6 +32,7 @@ const LANGUAGE_LABELS: Record<string, string> = {
   yaml: 'YAML',
   bash: 'Shell',
   python: 'Python',
+  java: 'Java',
 }
 
 interface FileTab {
@@ -42,7 +53,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const contextMenu = useContextMenu()
   const [root, setRoot] = useState<WorkspaceEntry | null>(null)
   const [children, setChildren] = useState<Record<string, WorkspaceEntry[]>>({})
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['.']))
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loadingDir, setLoadingDir] = useState<string | null>(null)
   const [tabs, setTabs] = useState<FileTab[]>([])
   const [active, setActive] = useState<string | null>(null)
@@ -54,15 +65,17 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const [error, setError] = useState<string | null>(null)
   const [wrap, setWrap] = useState(true)
   const [markdownPreview, setMarkdownPreview] = useState(true)
+  const [treeWidth, setTreeWidth] = useState(loadTreeWidth)
   const [copiedPath, setCopiedPath] = useState(false)
   const [opening, setOpening] = useState(false)
   const codeRef = useRef<HTMLDivElement>(null)
+  const filesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
     setRoot(null)
     setChildren({})
-    setExpanded(new Set(['.']))
+    setExpanded(new Set())
     setTabs([])
     setActive(null)
     setQuery('')
@@ -231,6 +244,31 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     void navigator.clipboard.writeText(text).catch(() => undefined)
   }
 
+  const startTreeResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = treeWidth
+    const max = Math.max(220, (filesRef.current?.getBoundingClientRect().width ?? 720) - 280)
+    document.body.classList.add('resizing')
+    const move = (moveEvent: PointerEvent) => {
+      const next = Math.min(max, Math.max(180, Math.round(startWidth + (moveEvent.clientX - startX))))
+      setTreeWidth(next)
+      localStorage.setItem(TREE_WIDTH_KEY, String(next))
+    }
+    const finish = () => {
+      document.body.classList.remove('resizing')
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+  }
+
+  const resetTreeWidth = () => {
+    setTreeWidth(DEFAULT_TREE_WIDTH)
+    localStorage.setItem(TREE_WIDTH_KEY, String(DEFAULT_TREE_WIDTH))
+  }
+
   const entryMenu = (event: ReactMouseEvent, path: string, directory: boolean) => {
     contextMenu.open(event, directory
       ? [
@@ -298,7 +336,11 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   }
 
   return (
-    <div className="files">
+    <div
+      className="files"
+      ref={filesRef}
+      style={{ '--file-tree-width': `${treeWidth}px` } as CSSProperties}
+    >
       <div className="file-side">
         <div className="file-filter">
           <SearchIcon size={12} />
@@ -366,22 +408,34 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
           : (
             <div className="file-tree">
               {root
-                ? (
-                  <TreeNode
-                    entry={root}
-                    childrenByDir={children}
-                    expanded={expanded}
-                    active={active}
-                    loadingDir={loadingDir}
-                    onToggle={toggle}
-                    onOpen={path => void openFile(path)}
-                    onMenu={entryMenu}
-                  />
-                )
+                ? (children['.']?.length
+                  ? children['.'].map(child => (
+                    <TreeNode
+                      key={child.path}
+                      entry={child}
+                      childrenByDir={children}
+                      expanded={expanded}
+                      active={active}
+                      loadingDir={loadingDir}
+                      onToggle={toggle}
+                      onOpen={path => void openFile(path)}
+                      onMenu={entryMenu}
+                    />
+                  ))
+                  : <div className="tree-empty">empty</div>)
                 : <div className="loading">loading workspace…</div>}
             </div>
           )}
       </div>
+
+      <div
+        className="file-side-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整文件树宽度"
+        onPointerDown={startTreeResize}
+        onDoubleClick={resetTreeWidth}
+      />
 
       {error ? <div className="detail-note error">{error}</div> : null}
 
