@@ -73,6 +73,22 @@ function toOpenAiMessages(messages: Message[]) {
   })
 }
 
+/** Providers disagree on the field name and shape of streamed reasoning. */
+function reasoningText(delta: Record<string, unknown>): string {
+  const raw = delta.reasoning_content ?? delta.reasoning
+  if (typeof raw === 'string') return raw
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (typeof item === 'string') return item
+        const text = item && typeof item === 'object' ? (item as { text?: unknown }).text : undefined
+        return typeof text === 'string' ? text : ''
+      })
+      .join('')
+  }
+  return ''
+}
+
 function toOpenAiTools(request: ModelRequest) {
   if (!request.tools?.length) return undefined
   return request.tools.map(tool => ({
@@ -205,6 +221,8 @@ export class OpenAiProvider implements LlmProvider {
             const choice = payload.choices?.[0]
             if (!choice) continue
             const delta = choice.delta ?? {}
+            const thinking = reasoningText(delta)
+            if (thinking) yield { type: 'reasoning-delta', text: thinking }
             if (typeof delta.content === 'string' && delta.content) {
               yield { type: 'text-delta', text: delta.content }
             }

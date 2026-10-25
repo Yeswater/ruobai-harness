@@ -12,6 +12,12 @@ export interface TextBlock {
   text: string
 }
 
+/** Provider-reported chain of thought, shown folded above the answer. */
+export interface ReasoningBlock {
+  type: 'reasoning'
+  text: string
+}
+
 export interface ToolBlock {
   type: 'tool'
   /** Correlates the block with the model's tool call and its later result. */
@@ -42,7 +48,7 @@ export interface AttachmentBlock {
   attachment: AttachmentMeta
 }
 
-export type ChatBlock = TextBlock | ToolBlock | AttachmentBlock
+export type ChatBlock = TextBlock | ReasoningBlock | ToolBlock | AttachmentBlock
 
 export interface ChatMessage {
   id: string
@@ -109,6 +115,7 @@ export type ChatEvent =
   | { type: 'message-added'; sessionId: string; message: ChatMessage }
   | { type: 'message-updated'; sessionId: string; message: ChatMessage }
   | { type: 'message-delta'; sessionId: string; messageId: string; delta: string }
+  | { type: 'message-reasoning'; sessionId: string; messageId: string; delta: string }
   | { type: 'message-block'; sessionId: string; messageId: string; block: ChatBlock }
   | { type: 'message-done'; sessionId: string; session: ChatSession }
   | { type: 'session-stats'; sessionId: string; stats: TurnStats }

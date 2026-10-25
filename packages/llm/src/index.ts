@@ -101,6 +101,7 @@ export class LlmService extends Service {
     let reason: string | undefined
     for await (const chunk of this.stream(request, providerName)) {
       if (chunk.type === 'text-delta') content += chunk.text
+      else if (chunk.type === 'reasoning-delta') continue
       else if (chunk.type === 'tool-call') calls.push({ id: chunk.id, name: chunk.name, arguments: chunk.arguments })
       else if (chunk.type === 'error') {
         error = chunk.message

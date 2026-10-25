@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
 import { api, type TrajectoryEvent } from '../api.ts'
-import { BranchIcon, ToolIcon } from './Icons.tsx'
+import { BrainIcon, BranchIcon, ToolIcon } from './Icons.tsx'
 
 type Filter = 'all' | 'tools' | 'context'
 
@@ -177,6 +177,14 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
                   {event.data?.parts?.map((part, index) => {
                     if (part.type === 'text') {
                       return <div className="traj-text" key={index}>{part.text}</div>
+                    }
+                    if (part.type === 'reasoning') {
+                      return (
+                        <div className="traj-reasoning" key={index}>
+                          <BrainIcon size={12} />
+                          <span>{part.text}</span>
+                        </div>
+                      )
                     }
                     if (part.type === 'tool-call') {
                       return (

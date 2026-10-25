@@ -66,6 +66,26 @@ describe('chat bridge', () => {
     }
   })
 
+  it('streams model thinking as a reasoning block before the answer', async () => {
+    const ctx = await setup()
+    const session = ctx.chat.create('thinking')
+    const deltas: string[] = []
+    ctx.on('chat/event', (event) => {
+      if (event.type === 'message-reasoning') deltas.push(event.delta)
+    })
+    const done = nextDone(ctx)
+
+    ctx.chat.send(session.id, '看一下文件')
+    const final = await done
+
+    const reasoning = final.messages
+      .flatMap(message => message.blocks)
+      .find(block => block.type === 'reasoning')
+    expect(reasoning?.type).toBe('reasoning')
+    if (reasoning?.type === 'reasoning') expect(reasoning.text).toContain('路径')
+    expect(deltas.length).toBeGreaterThan(0)
+  })
+
   it('stops a running turn', async () => {
     const ctx = await setup(15)
     const session = ctx.chat.create('stop')

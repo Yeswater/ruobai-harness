@@ -83,6 +83,17 @@ export class ChatService extends Service {
       this.ctx.emit('chat/event', { type: 'message-delta', sessionId: id, messageId, delta })
     })
 
+    ctx.on('agent/reasoning', (id, messageId, delta) => {
+      if (!this.visible(id)) return
+      const session = this.ensure(id)
+      const message = session.messages.find(item => item.id === messageId)
+      if (!message) return
+      const last = message.blocks.at(-1)
+      if (!last || last.type !== 'reasoning') message.blocks.push({ type: 'reasoning', text: delta })
+      else last.text += delta
+      this.ctx.emit('chat/event', { type: 'message-reasoning', sessionId: id, messageId, delta })
+    })
+
     ctx.on('agent/turn-end', (id) => {
       if (!this.visible(id)) return
       const session = this.ensure(id)
@@ -424,6 +435,7 @@ function blocksOf(parts: ContentPart[]): ChatBlock[] {
   const blocks: ChatBlock[] = []
   for (const part of parts) {
     if (part.type === 'text') blocks.push({ type: 'text', text: part.text })
+    else if (part.type === 'reasoning') blocks.push({ type: 'reasoning', text: part.text })
     else if (part.type === 'tool-call') {
       blocks.push({ type: 'tool', callId: part.id, name: part.name, input: part.arguments, output: '' })
     }

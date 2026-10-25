@@ -53,6 +53,7 @@ declare module '@ruobai/cordis' {
   interface Events {
     'agent/step-start'(sessionId: string, messageId: string): void
     'agent/delta'(sessionId: string, messageId: string, delta: string): void
+    'agent/reasoning'(sessionId: string, messageId: string, delta: string): void
     'agent/turn-end'(sessionId: string, reason: TurnEndReason): void
     'agent/error'(sessionId: string, message: string): void
     'agent/usage'(sessionId: string, stats: TurnStats): void
@@ -215,6 +216,7 @@ export class AgentService extends Service {
         this.ctx.emit('agent/step-start', sessionId, messageId)
 
         const built = await this.request(sessionId, controller.signal, mode, extra, options.denyTools)
+        let reasoningContent = ''
         let textContent = ''
         const calls: ToolCallPart[] = []
         let failure: string | undefined
@@ -224,7 +226,10 @@ export class AgentService extends Service {
 
         try {
           for await (const chunk of this.ctx.llm.stream(built.request, provider)) {
-            if (chunk.type === 'text-delta') {
+            if (chunk.type === 'reasoning-delta') {
+              reasoningContent += chunk.text
+              this.ctx.emit('agent/reasoning', sessionId, messageId, chunk.text)
+            } else if (chunk.type === 'text-delta') {
               textContent += chunk.text
               outputChars += chunk.text.length
               const now = Date.now()
@@ -273,6 +278,7 @@ export class AgentService extends Service {
         if (textContent) lastText = textContent
 
         const parts: ContentPart[] = []
+        if (reasoningContent) parts.push({ type: 'reasoning', text: reasoningContent })
         if (textContent) parts.push({ type: 'text', text: textContent })
         parts.push(...calls)
         if (parts.length) {

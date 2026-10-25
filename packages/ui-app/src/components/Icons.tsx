@@ -134,6 +134,15 @@ export function SparkIcon({ size }: IconProps) {
   return <svg {...base(size)} fill="currentColor" stroke="none"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z" /><path d="M18.5 15.5l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" opacity=".6" /></svg>
 }
 
+export function BrainIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M9.5 4.5a2.5 2.5 0 0 0-2.4 1.8 2.7 2.7 0 0 0-1.6 4.6 2.6 2.6 0 0 0 1.2 4.4A2.5 2.5 0 0 0 9.5 19 2 2 0 0 0 12 17.5v-11a2 2 0 0 0-2.5-2Z" />
+      <path d="M14.5 4.5a2.5 2.5 0 0 1 2.4 1.8 2.7 2.7 0 0 1 1.6 4.6 2.6 2.6 0 0 1-1.2 4.4A2.5 2.5 0 0 1 14.5 19 2 2 0 0 1 12 17.5" />
+    </svg>
+  )
+}
+
 export function GearIcon({ size }: IconProps) {
   return (
     <svg {...base(size)}>

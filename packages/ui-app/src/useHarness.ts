@@ -13,11 +13,26 @@ import {
   type PermissionMode,
 } from './api.ts'
 
+function appendDelta(session: ChatSession, messageId: string, kind: 'text' | 'reasoning', delta: string): ChatSession {
+  return {
+    ...session,
+    messages: session.messages.map((message) => {
+      if (message.id !== messageId) return message
+      const blocks = [...message.blocks]
+      const last = blocks.at(-1)
+      if (!last || last.type !== kind) blocks.push({ type: kind, text: delta })
+      else blocks[blocks.length - 1] = { ...last, text: last.text + delta }
+      return { ...message, blocks }
+    }),
+  }
+}
+
 function upsert(list: SessionSummary[], next: SessionSummary) {
   return [next, ...list.filter(item => item.id !== next.id)].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {  switch (event.type) {
+function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {
+  switch (event.type) {
     case 'session-updated':
       return event.session
     case 'message-added':
@@ -32,17 +47,9 @@ function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {  swit
           : [...session.messages, event.message],
       }
     case 'message-delta':
-      return {
-        ...session,
-        messages: session.messages.map((message) => {
-          if (message.id !== event.messageId) return message
-          const blocks = [...message.blocks]
-          const last = blocks.at(-1)
-          if (!last || last.type !== 'text') blocks.push({ type: 'text', text: event.delta })
-          else blocks[blocks.length - 1] = { ...last, text: last.text + event.delta }
-          return { ...message, blocks }
-        }),
-      }
+      return appendDelta(session, event.messageId, 'text', event.delta)
+    case 'message-reasoning':
+      return appendDelta(session, event.messageId, 'reasoning', event.delta)
     case 'message-block':
       return {
         ...session,

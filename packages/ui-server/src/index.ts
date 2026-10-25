@@ -444,6 +444,7 @@ function trajectoryEvent(event: { seq: number; ts: number; type: string; data: a
           at: data.at,
           parts: (data.parts ?? []).map((part: any) => {
             if (part.type === 'text') return { type: 'text', text: clip(part.text) }
+            if (part.type === 'reasoning') return { type: 'reasoning', text: clip(part.text) }
             if (part.type === 'tool-call') {
               return {
                 type: 'tool-call',
