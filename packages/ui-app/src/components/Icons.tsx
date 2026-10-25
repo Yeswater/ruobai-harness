@@ -48,6 +48,27 @@ export function PanelLeftIcon({ size }: IconProps) {
   return <svg {...base(size)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></svg>
 }
 
+/** Files panel: a rounded frame with an index column, matching CC's toolbar. */
+export function FilePanelIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9 4v16" />
+      <path d="M12.5 9h5.5M12.5 12h5.5M12.5 15h3.5" />
+    </svg>
+  )
+}
+
+export function MoreIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="5.5" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18.5" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 export function MenuIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
 }

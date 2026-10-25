@@ -8,7 +8,7 @@ import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
 import { DetailsPanel, type PanelView } from './components/DetailsPanel.tsx'
-import { BranchIcon, FolderIcon, FolderTreeIcon, MenuIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
+import { BranchIcon, FilePanelIcon, FolderIcon, MenuIcon, MoreIcon, PanelIcon, SearchIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { Slot } from './components/Slot.tsx'
@@ -62,6 +62,7 @@ export function App() {
   }, [])
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const pendingApprovals = harness.approvals
   // Shortcuts live outside React's render cycle; a ref keeps them current.
   const settingsOpenRef = useRef(settingsOpen)
@@ -100,6 +101,20 @@ export function App() {
     if (matchMedia('(max-width: 760px)').matches) setSidebarOpen(current => !current)
     else setSidebarCollapsed(current => !current)
   }, [])
+
+  useEffect(() => {
+    if (!toolsMenuOpen) return
+    const close = () => setToolsMenuOpen(false)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('click', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [toolsMenuOpen])
 
   const showPanel = useCallback((view: PanelView) => {
     if (detailsOpen && panelView === view) {
@@ -223,65 +238,116 @@ export function App() {
 
       <main className="main">
         <header className="main-head">
-          <button className="icon-btn menu-btn" onClick={toggleSidebar} aria-label="Toggle sidebar">
-            <MenuIcon />
-          </button>
-          <div className="main-title">
-            <h1>{harness.session?.title ?? 'New session'}</h1>
-            <div className="main-sub">
-              {harness.session?.workspace ? (
-                <span className="workspace-chip" title={harness.session.workspace}>
-                  <FolderIcon size={11} />
-                  {nameOf(harness.session.workspace)}
+          <div className="main-head-left">
+            <button className="icon-btn menu-btn" onClick={toggleSidebar} aria-label="Toggle sidebar">
+              <MenuIcon />
+            </button>
+            <div className="main-title">
+              <h1>{harness.session?.title ?? 'New session'}</h1>
+              <div className="main-sub">
+                {harness.session?.workspace ? (
+                  <span className="workspace-chip" title={harness.session.workspace}>
+                    <FolderIcon size={11} />
+                    {nameOf(harness.session.workspace)}
+                  </span>
+                ) : null}
+                <span>
+                  {harness.session
+                    ? [
+                        `${harness.session.messages.length} messages`,
+                        harness.session.model,
+                        harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
+                      ].filter(Boolean).join(' · ')
+                    : 'loading…'}
                 </span>
-              ) : null}
-              <span>
-                {harness.session
-                  ? [
-                      `${harness.session.messages.length} messages`,
-                      harness.session.model,
-                      harness.modes.find(item => item.id === harness.session?.mode)?.name ?? harness.session.mode,
-                    ].filter(Boolean).join(' · ')
-                  : 'loading…'}
-              </span>
+              </div>
             </div>
           </div>
-          <Slot name="header.actions" />
-          <button
-            className="palette-trigger"
-            onClick={() => setPaletteOpen(true)}
-            aria-label="全局搜索"
-            title={`全局搜索 (${modKeyLabel()}K)`}
-          >
-            <SearchIcon size={13} />
-            <span>搜索</span>
-            <span className="keycap">{modKeyLabel()}K</span>
-          </button>
-          <div className="main-tools" role="toolbar" aria-label="面板">
+
+          <div className="main-head-center">
             <button
-              className={`icon-btn ${detailsOpen && panelView === 'files' ? 'active' : ''}`}
-              onClick={() => showPanel('files')}
-              aria-label="文件"
-              title="文件"
+              className="palette-trigger"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="全局搜索"
+              title={`全局搜索 (${modKeyLabel()}K)`}
             >
-              <FolderTreeIcon size={16} />
+              <SearchIcon size={13} />
+              <span>搜索</span>
+              <span className="keycap">{modKeyLabel()}K</span>
             </button>
-            <button
-              className={`icon-btn ${detailsOpen && panelView === 'git' ? 'active' : ''}`}
-              onClick={() => showPanel('git')}
-              aria-label="Git"
-              title="Git"
-            >
-              <BranchIcon size={16} />
-            </button>
-            <button
-              className={`icon-btn ${detailsOpen && panelView === 'session' ? 'active' : ''}`}
-              onClick={() => showPanel('session')}
-              aria-label="会话"
-              title="会话"
-            >
-              <PanelIcon size={16} />
-            </button>
+          </div>
+
+          <div className="main-head-right">
+            <Slot name="header.actions" />
+            <div className="main-tools" role="toolbar" aria-label="面板">
+              <button
+                className={`icon-btn ${detailsOpen && panelView === 'files' ? 'active' : ''}`}
+                onClick={() => showPanel('files')}
+                aria-label="文件"
+                title="文件"
+              >
+                <FilePanelIcon size={16} />
+              </button>
+              <button
+                className={`icon-btn ${detailsOpen && panelView === 'git' ? 'active' : ''}`}
+                onClick={() => showPanel('git')}
+                aria-label="Git"
+                title="Git"
+              >
+                <BranchIcon size={16} />
+              </button>
+              <button
+                className={`icon-btn ${detailsOpen && panelView === 'session' ? 'active' : ''}`}
+                onClick={() => showPanel('session')}
+                aria-label="会话"
+                title="会话"
+              >
+                <PanelIcon size={16} />
+              </button>
+              <span className="main-tools-sep" />
+              <button
+                className={`icon-btn ${toolsMenuOpen ? 'active' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setToolsMenuOpen(current => !current)
+                }}
+                aria-label="更多工具"
+                aria-haspopup="menu"
+                aria-expanded={toolsMenuOpen}
+                title="更多工具"
+              >
+                <MoreIcon size={16} />
+              </button>
+              {toolsMenuOpen
+                ? (
+                  <div className="main-tools-menu" role="menu" onClick={event => event.stopPropagation()}>
+                    <button
+                      role="menuitem"
+                      onClick={() => { setToolsMenuOpen(false); toggleSidebar() }}
+                    >
+                      切换工作区栏
+                      <span className="menu-key">{modKeyLabel()}B</span>
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => { setToolsMenuOpen(false); openSettings('behavior') }}
+                    >
+                      打开设置
+                      <span className="menu-key">{modKeyLabel()},</span>
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setToolsMenuOpen(false)
+                        setPreference(theme === 'dark' ? 'light' : 'dark')
+                      }}
+                    >
+                      切换主题
+                    </button>
+                  </div>
+                )
+                : null}
+            </div>
           </div>
         </header>
         {harness.error

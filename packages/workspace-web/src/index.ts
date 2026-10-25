@@ -305,25 +305,35 @@ async function openInEditor(target: string) {
     ['zed', [target]],
   ]
   for (const [command, args] of editors) {
-    try {
-      await execFile(command, ['--version'], { timeout: 2_000 })
-      spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
-      return command
-    } catch {
-      // try the next editor
-    }
+    // `execFile` must go through the promisified runner: a raw ChildProcess
+    // resolves immediately, so a missing editor would be spawned unchecked.
+    if (!(await commandExists(command))) continue
+    launch(command, args)
+    return command
   }
   const [command, args] = process.platform === 'darwin'
     ? ['open', ['-t', target]]
     : process.platform === 'win32'
       ? ['cmd', ['/c', 'start', '', target]]
       : ['xdg-open', [target]]
+  launch(command, args)
+  return 'system'
+}
+
+async function commandExists(command: string) {
   try {
-    spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
-    return 'system'
+    await run(command, ['--version'], { timeout: 2_000 })
+    return true
   } catch {
-    throw new HttpError(500, `cannot open ${target}`)
+    return false
   }
+}
+
+/** A failed spawn reports through `error`; without a listener Node exits. */
+function launch(command: string, args: string[]) {
+  const child = spawn(command, args, { detached: true, stdio: 'ignore' })
+  child.on('error', () => undefined)
+  child.unref()
 }
 
 export default { name, inject, apply }
