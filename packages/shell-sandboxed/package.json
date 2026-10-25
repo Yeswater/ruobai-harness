@@ -1,0 +1,21 @@
+{
+  "name": "@ruobai/shell-sandboxed",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/sandbox": "workspace:*",
+    "@ruobai/sandbox-denial": "workspace:*",
+    "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/shell": "workspace:*"
+  },
+  "devDependencies": {
+    "@ruobai/approval": "workspace:*",
+    "@ruobai/sandbox-escalation": "workspace:*"
+  }
+}

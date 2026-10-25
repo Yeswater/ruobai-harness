@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import ApprovalService from '@ruobai/approval'
 import { Context } from '@ruobai/cordis'
+import ShellService from '@ruobai/shell'
+import DirectShell from '@ruobai/shell-direct'
 import ToolRegistry from '@ruobai/tools'
 import BashTools, { type Config } from '../src/index.ts'
 
@@ -22,6 +24,10 @@ async function setup(config: Config = {}) {
   await tools
   const approval = ctx.plugin(ApprovalService)
   await approval
+  const shell = ctx.plugin(ShellService)
+  await shell
+  const direct = ctx.plugin(DirectShell, { shell: '/bin/sh' })
+  await direct
   const bash = ctx.plugin(BashTools, {
     root,
     timeoutMs: 2_000,
@@ -29,7 +35,7 @@ async function setup(config: Config = {}) {
     ...config,
   })
   await bash
-  cleanups.push(() => bash.dispose(), () => approval.dispose(), () => tools.dispose())
+  cleanups.push(() => bash.dispose(), () => direct.dispose(), () => shell.dispose(), () => approval.dispose(), () => tools.dispose())
   return { ctx, root }
 }
 

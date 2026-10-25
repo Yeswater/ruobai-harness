@@ -20,6 +20,9 @@ importers:
       '@ruobai/approval':
         specifier: workspace:*
         version: link:packages/approval
+      '@ruobai/approval-deadline':
+        specifier: workspace:*
+        version: link:packages/approval-deadline
       '@ruobai/chat':
         specifier: workspace:*
         version: link:packages/chat
@@ -104,6 +107,27 @@ importers:
       '@ruobai/permissions':
         specifier: workspace:*
         version: link:packages/permissions
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:packages/sandbox
+      '@ruobai/sandbox-denial':
+        specifier: workspace:*
+        version: link:packages/sandbox-denial
+      '@ruobai/sandbox-escalation':
+        specifier: workspace:*
+        version: link:packages/sandbox-escalation
+      '@ruobai/sandbox-guards':
+        specifier: workspace:*
+        version: link:packages/sandbox-guards
+      '@ruobai/sandbox-macos':
+        specifier: workspace:*
+        version: link:packages/sandbox-macos
+      '@ruobai/sandbox-native-log':
+        specifier: workspace:*
+        version: link:packages/sandbox-native-log
+      '@ruobai/sandbox-policy':
+        specifier: workspace:*
+        version: link:packages/sandbox-policy
       '@ruobai/session':
         specifier: workspace:*
         version: link:packages/session
@@ -116,6 +140,15 @@ importers:
       '@ruobai/settings-web':
         specifier: workspace:*
         version: link:packages/settings-web
+      '@ruobai/shell':
+        specifier: workspace:*
+        version: link:packages/shell
+      '@ruobai/shell-direct':
+        specifier: workspace:*
+        version: link:packages/shell-direct
+      '@ruobai/shell-sandboxed':
+        specifier: workspace:*
+        version: link:packages/shell-sandboxed
       '@ruobai/skills':
         specifier: workspace:*
         version: link:packages/skills
@@ -252,6 +285,18 @@ importers:
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
+
+  packages/approval-deadline:
+    dependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
 
   packages/chat:
     dependencies:
@@ -531,6 +576,85 @@ importers:
         specifier: workspace:*
         version: link:../tools
 
+  packages/sandbox:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+    devDependencies:
+      '@ruobai/sandbox-policy':
+        specifier: workspace:*
+        version: link:../sandbox-policy
+
+  packages/sandbox-denial:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+
+  packages/sandbox-escalation:
+    dependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/sandbox-denial':
+        specifier: workspace:*
+        version: link:../sandbox-denial
+
+  packages/sandbox-guards:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/sandbox-policy':
+        specifier: workspace:*
+        version: link:../sandbox-policy
+
+  packages/sandbox-macos:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+
+  packages/sandbox-native-log:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox-denial':
+        specifier: workspace:*
+        version: link:../sandbox-denial
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+
+  packages/sandbox-policy:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+
   packages/session:
     dependencies:
       '@ruobai/cordis':
@@ -572,6 +696,52 @@ importers:
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
+
+  packages/shell:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+
+  packages/shell-direct:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/shell':
+        specifier: workspace:*
+        version: link:../shell
+
+  packages/shell-sandboxed:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/sandbox-denial':
+        specifier: workspace:*
+        version: link:../sandbox-denial
+      '@ruobai/sandbox-policy':
+        specifier: workspace:*
+        version: link:../sandbox-policy
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/shell':
+        specifier: workspace:*
+        version: link:../shell
+    devDependencies:
+      '@ruobai/approval':
+        specifier: workspace:*
+        version: link:../approval
+      '@ruobai/sandbox-escalation':
+        specifier: workspace:*
+        version: link:../sandbox-escalation
 
   packages/skills:
     dependencies:

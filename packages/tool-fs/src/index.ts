@@ -87,7 +87,26 @@ async function snapshot(target: string, maxBytes: number): Promise<Snapshot> {
   }
 }
 
-function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): ToolDefinition[] {
+/**
+ * In-process execution point for the sandbox guard table.
+ *
+ * Seatbelt only sees child processes, so `tool-fs` runs entirely outside the
+ * kernel boundary. Without this check the `.git`, `.ssh` and `.env` guards
+ * would hold for `bash` but not for `write_file`/`read_file`. Resolved lazily
+ * so a sandbox mounted later (or unmounted) is honoured without a restart.
+ */
+export type GuardLookup = () => { check(path: string, access: 'read' | 'write'): void } | undefined
+
+function guardCheck(lookup: GuardLookup | undefined, target: string, access: 'read' | 'write') {
+  try {
+    lookup?.()?.check(target, access)
+  } catch (error) {
+    // Surface as a tool error: the model must see the guard id and reason.
+    throw error instanceof Error ? error : new Error(String(error))
+  }
+}
+
+function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn, guard?: GuardLookup): ToolDefinition[] {
   const rootFor = (run?: ToolRunContext) => run?.workspace ? resolve(run.workspace) : fallbackRoot
 
   const pathSubject = (args: any, run?: ToolRunContext) => {
@@ -110,6 +129,7 @@ function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): Too
       async execute(args, run) {
         const root = rootFor(run)
         const target = resolveInside(root, args?.path)
+        guardCheck(guard, target, 'read')
         const info = await stat(target)
         if (!info.isFile()) throw new Error(`not a file: ${args?.path}`)
         if (info.size > maxBytes) throw new Error(`file is larger than ${maxBytes} bytes`)
@@ -167,6 +187,7 @@ function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): Too
         const target = resolveInside(root, args?.path)
         const content = String(args?.content ?? '')
         if (Buffer.byteLength(content) > maxBytes) throw new Error(`content is larger than ${maxBytes} bytes`)
+        guardCheck(guard, target, 'write')
         const before = await snapshot(target, maxBytes)
         await writeAtomic(target, content)
 
@@ -220,6 +241,7 @@ function tools(fallbackRoot: string, maxBytes: number, capture?: CaptureFn): Too
       async execute(args, run) {
         const root = rootFor(run)
         const target = resolveInside(root, args?.path)
+        guardCheck(guard, target, 'write')
         const before = await snapshot(target, maxBytes)
         const beforeText = before.buffer && !before.buffer.includes(0)
           ? before.buffer.toString('utf8')
@@ -278,7 +300,15 @@ export default class FsTools {
       }
     }
 
-    const definitions = tools(resolve(config.root ?? '.'), config.maxBytes ?? 65_536, capture)
+    const definitions = tools(resolve(config.root ?? '.'), config.maxBytes ?? 65_536, capture, () => {
+      // Optional: harness tests mount the fs tools without a sandbox, and a
+      // hot-unloaded sandbox must stop guarding immediately.
+      const policy = ctx.get('sandboxPolicy', false) as
+        | { check?(path: string, access: 'read' | 'write'): void }
+        | undefined
+      if (!policy?.check) return undefined
+      return { check: (path, access) => policy.check!(path, access) }
+    })
     ctx.effect(() => {
       const disposers = definitions.map(definition => ctx.tools.register(definition))
       return () => disposers.forEach(dispose => dispose())

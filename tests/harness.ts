@@ -27,6 +27,8 @@ import ModeService from '@ruobai/modes'
 import PermissionService from '@ruobai/permissions'
 import SessionService from '@ruobai/session'
 import SettingsService from '@ruobai/settings'
+import ShellService from '@ruobai/shell'
+import DirectShell from '@ruobai/shell-direct'
 import SettingsWeb from '@ruobai/settings-web'
 import SkillsService from '@ruobai/skills'
 import SkillsWeb from '@ruobai/skills-web'
@@ -77,6 +79,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     store: join(dir, 'checkpoints'),
   }))
   await mount(ctx.plugin(ToolRegistry))
+  // The web tests exercise the direct executor: they assert on real command
+  // output, not on Seatbelt behaviour (which has its own integration suite).
+  await mount(ctx.plugin(ShellService))
+  await mount(ctx.plugin(DirectShell, { shell: '/bin/sh' }))
   await mount(ctx.plugin(FsTools, { root: process.cwd() }))
   await mount(ctx.plugin(BashTools, { root: process.cwd() }))
   await mount(ctx.plugin(SettingsService, { path: join(dir, 'settings.json') }))

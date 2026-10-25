@@ -34,6 +34,65 @@
 - id: checkpoints-web
   name: '@ruobai/checkpoints-web'
 
+# Shell execution surface. `tool-bash` only knows `ctx.shell`, so swapping the
+# executor (sandboxed vs direct) is a change here, not in code.
+- id: shell
+  name: '@ruobai/shell'
+
+# Sandbox plugins. Removing `sandbox-macos` makes the sandbox unavailable, and
+# `shell-sandboxed` then refuses to run commands instead of falling back to an
+# unconfined spawn. To accept that risk explicitly, drop `shell-sandboxed` and
+# mount `@ruobai/shell-direct` instead (see the note at the bottom).
+- id: sandbox
+  name: '@ruobai/sandbox'
+
+- id: sandbox-policy
+  name: '@ruobai/sandbox-policy'
+  config:
+    root: !!js "process.cwd()"
+    network:
+      # Network is off by default: the harness itself (LLM, MCP, A2A, web) does
+      # not go through the shell sandbox, so closing it costs no functionality.
+      mode: deny
+      allow: []
+    limits:
+      timeoutMs: 120000
+      maxOutputBytes: 32768
+
+- id: sandbox-guards
+  name: '@ruobai/sandbox-guards'
+  config:
+    includeDefaults: true
+
+- id: sandbox-macos
+  name: '@ruobai/sandbox-macos'
+  config:
+    selfCheck: true
+    # These three must stay `allow`; each was measured to break real commands
+    # (see docs/sandbox-macos-appendix-f.md A15/A18):
+    #   processFork  - without it no pipeline, `&&` or toolchain can start
+    #   processInfo  - curl SIGTRAPs when `process-info-pidinfo self` is denied
+    #   machLookup   - node/npm rely on mach services
+    processFork: allow
+    processInfo: allow
+    machLookup: allow
+
+- id: sandbox-denial
+  name: '@ruobai/sandbox-denial'
+  config:
+    repeatWindowMs: 300000
+    repeatThreshold: 2
+
+# Attributes denials to operation/target via the kernel log. Without it denials
+# still classify, but with low confidence, so escalation asks instead of relaxing.
+- id: sandbox-native-log
+  name: '@ruobai/sandbox-native-log'
+
+- id: shell-sandboxed
+  name: '@ruobai/shell-sandboxed'
+  config:
+    escalate: auto
+
 # Tool registry and the workspace tools (writes and shell require approval).
 - id: tools
   name: '@ruobai/tools'
@@ -56,6 +115,22 @@
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'
+
+# Tunable deadline. `onTimeout` is always deny: a sandbox escalation or a tool
+# request that nobody answers fails closed.
+- id: approval-deadline
+  name: '@ruobai/approval-deadline'
+  config:
+    timeoutMs: 180000
+
+# Turns sandbox denials into approvals. One-way dependency on approval, so the
+# sandbox core never appears in the approval plugin's graph.
+- id: sandbox-escalation
+  name: '@ruobai/sandbox-escalation'
+  config:
+    relaxable: [fs-read-guarded, fs-write-guarded, fs-write-outside]
+    neverRelaxable: [network-outbound, process-control, mach-lookup, appleevent]
+    retrySafeCommands: [cat, ls, head, tail, wc, grep, git, node]
 
 # Per-session permission presets enforced by the agent, tools and approvals.
 - id: permissions

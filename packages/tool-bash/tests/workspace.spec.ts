@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import ApprovalService from '@ruobai/approval'
 import { Context } from '@ruobai/cordis'
+import ShellService from '@ruobai/shell'
+import DirectShell from '@ruobai/shell-direct'
 import ToolRegistry from '@ruobai/tools'
 import BashTools from '../src/index.ts'
 
@@ -27,9 +29,13 @@ describe('bash per-session workspace', () => {
     await tools
     const approval = ctx.plugin(ApprovalService)
     await approval
+    const shell = ctx.plugin(ShellService)
+    await shell
+    const direct = ctx.plugin(DirectShell, { shell: '/bin/sh' })
+    await direct
     const bash = ctx.plugin(BashTools, { root: fallback, timeoutMs: 2_000 })
     await bash
-    cleanups.push(() => bash.dispose(), () => approval.dispose(), () => tools.dispose())
+    cleanups.push(() => bash.dispose(), () => direct.dispose(), () => shell.dispose(), () => approval.dispose(), () => tools.dispose())
     ctx.on('approval/requested', (request: any) => ctx.approval.resolve(request.id, 'allow'))
 
     const pwd = await ctx.tools.invoke('bash', { command: 'pwd' }, { sessionId: 's1', workspace })
