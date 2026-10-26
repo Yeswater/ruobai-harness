@@ -10,6 +10,27 @@ import type { SessionEvent } from '@ruobai/session'
 
 export const SUMMARY_EVENT = 'context/summary'
 
+/** A committed pruning decision; projections never revisit events at or below it. */
+export const PRUNE_EVENT = 'context/prune'
+
+export interface PruneEpoch {
+  /** Newest pruned event. Every oversized tool result at or below it is pruned. */
+  upToSeq: number
+  at: number
+  reason: 'pressure' | 'manual'
+  freedChars: number
+  /** Model-visible characters after the earliest rewritten event. */
+  invalidatedChars: number
+}
+
+/** Latest committed epoch, or undefined when the session has never pruned. */
+export function latestPrune(events: SessionEvent[]): PruneEpoch | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!
+    if (event.type === PRUNE_EVENT) return event.data
+  }
+}
+
 /** Provider-reported usage anchors a request; this is the fallback estimate. */
 export const IMAGE_TOKENS = 2_000
 
@@ -18,7 +39,7 @@ const CONVERSATION_EVENTS = new Set(['message/user', 'message/assistant', 'tool/
 
 export interface PruneConfig {
   enabled: boolean
-  /** Newest tool results kept verbatim. */
+  /** Newest tool results excluded from any prune epoch. */
   keepRecent: number
   /** Results shorter than this are not worth pruning. */
   thresholdChars: number
@@ -111,25 +132,108 @@ export function pruneToolOutput(content: string, config: PruneConfig) {
 }
 
 /**
- * Old tool outputs are the cheapest context to shed: they are reproducible
- * (re-read the file, rerun the command) and usually dominate the window.
- * Projection-only, so the transcript and the UI keep the full result.
+ * The committed projection. A fixed epoch yields the same map no matter how
+ * many events are appended later, which is what keeps the cached prefix
+ * byte-identical step over step.
  */
-export function pruneToolResults(events: SessionEvent[], config: PruneConfig) {
+export function pruneByEpoch(
+  events: SessionEvent[],
+  epoch: PruneEpoch | undefined,
+  config: PruneConfig,
+) {
   const pruned = new Map<number, string>()
-  if (!config.enabled) return pruned
-  let kept = 0
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]!
+  if (!config.enabled || !epoch || epoch.upToSeq < 0) return pruned
+  for (const event of events) {
+    if (event.seq > epoch.upToSeq) break
     if (event.type !== 'tool/result') continue
-    kept += 1
-    if (kept <= config.keepRecent) continue
     const content = event.data?.content
     if (typeof content !== 'string') continue
     const text = pruneToolOutput(content, config)
     if (text !== null) pruned.set(event.seq, text)
   }
   return pruned
+}
+
+export interface PrunePlan {
+  /** Newest event the epoch would cover. */
+  upToSeq: number
+  freedChars: number
+  invalidatedChars: number
+  decisions: Map<number, string>
+}
+
+/**
+ * Choose the next prune epoch, if any.
+ *
+ * Candidates are oversized tool results older than the newest `keepRecent`.
+ * The whole batch is committed at once so pruning rewrites the prefix once
+ * instead of once per step.
+ */
+export function planPruneEpoch(
+  events: SessionEvent[],
+  config: PruneConfig,
+  options: { afterSeq: number; keepRecent: number },
+): PrunePlan | undefined {
+  if (!config.enabled) return undefined
+  const results = events.filter(event => event.type === 'tool/result' && event.seq > options.afterSeq)
+  const keep = Math.max(0, options.keepRecent)
+  const candidates = results.slice(0, Math.max(0, results.length - keep))
+
+  const decisions = new Map<number, string>()
+  let freedChars = 0
+  let earliest = Number.POSITIVE_INFINITY
+  for (const event of candidates) {
+    const content = event.data?.content
+    if (typeof content !== 'string') continue
+    const text = pruneToolOutput(content, config)
+    if (text === null) continue
+    decisions.set(event.seq, text)
+    freedChars += content.length - text.length
+    earliest = Math.min(earliest, event.seq)
+  }
+  if (!decisions.size) return undefined
+
+  let invalidatedChars = 0
+  for (const event of events) {
+    if (event.seq <= earliest) continue
+    invalidatedChars += modelChars(event)
+  }
+
+  return {
+    upToSeq: Math.max(...decisions.keys()),
+    freedChars,
+    invalidatedChars,
+    decisions,
+  }
+}
+
+/** Characters one event contributes to the model view. */
+function modelChars(event: SessionEvent) {
+  if (event.type === 'message/user') {
+    let chars = String(event.data?.text ?? '').length
+    for (const attachment of (event.data?.attachments ?? []) as Array<{
+      kind?: string
+      text?: string
+      name?: string
+    }>) {
+      chars += attachment.kind === 'image'
+        ? IMAGE_TOKENS * 3
+        : String(attachment.text ?? attachment.name ?? '').length
+    }
+    return chars
+  }
+  if (event.type === 'message/assistant') {
+    let chars = 0
+    for (const part of (event.data?.parts ?? []) as Message['content']) {
+      if (part.type === 'text') chars += part.text.length
+      else if (part.type === 'tool-call') chars += part.name.length + part.arguments.length
+      else if (part.type === 'file') chars += part.text.length
+      else if (part.type === 'image') chars += IMAGE_TOKENS * 3
+    }
+    return chars
+  }
+  if (event.type === 'tool/result') return String(event.data?.content ?? '').length
+  return 0
 }
 
 /** Approximate model-visible size of one event, honoring pruned tool output. */

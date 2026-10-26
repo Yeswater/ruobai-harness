@@ -8,8 +8,9 @@ import ContextService from '../src/index.ts'
 import {
   extractSummary,
   isContextOverflow,
+  planPruneEpoch,
+  pruneByEpoch,
   pruneToolOutput,
-  pruneToolResults,
   selectCompactionCut,
 } from '../src/compaction.ts'
 
@@ -101,20 +102,54 @@ describe('compaction helpers', () => {
     })).toBeNull()
   })
 
-  it('keeps the newest tool results unpruned', () => {
+  it('keeps the newest tool results out of a prune epoch', () => {
     const events = [
       event(0, 'tool/result', { callId: 'a', name: 'read_file', content: 'x'.repeat(500) }),
       event(1, 'tool/result', { callId: 'b', name: 'read_file', content: 'y'.repeat(500) }),
     ]
-    const pruned = pruneToolResults(events, {
+    const plan = planPruneEpoch(events, {
       enabled: true,
       keepRecent: 1,
       thresholdChars: 100,
       headChars: 10,
       tailChars: 10,
+    }, { afterSeq: -1, keepRecent: 1 })
+    expect(plan?.decisions.has(0)).toBe(true)
+    expect(plan?.decisions.has(1)).toBe(false)
+    expect(plan?.upToSeq).toBe(0)
+  })
+
+  it('never revisits a committed decision when new results arrive', () => {
+    const config = {
+      enabled: true,
+      keepRecent: 1,
+      thresholdChars: 100,
+      headChars: 10,
+      tailChars: 10,
+    }
+    const result = (seq: number) => event(seq, 'tool/result', {
+      callId: `c${seq}`,
+      name: 'read_file',
+      content: String.fromCharCode(97 + seq).repeat(500),
     })
-    expect(pruned.has(0)).toBe(true)
-    expect(pruned.has(1)).toBe(false)
+    const first = [result(0), result(1), result(2)]
+    const plan = planPruneEpoch(first, config, { afterSeq: -1, keepRecent: 1 })!
+    const epoch = {
+      upToSeq: plan.upToSeq,
+      at: 1,
+      reason: 'pressure' as const,
+      freedChars: plan.freedChars,
+      invalidatedChars: plan.invalidatedChars,
+    }
+    const before = pruneByEpoch(first, epoch, config)
+    expect(before.has(0)).toBe(true)
+    expect(before.has(1)).toBe(true)
+
+    const grown = [...first, result(3), result(4)]
+    const after = pruneByEpoch(grown, epoch, config)
+    expect([...after.entries()]).toEqual([...before.entries()])
+    expect(after.has(3)).toBe(false)
+    expect(after.has(4)).toBe(false)
   })
 
   it('never cuts a tool result away from its call', () => {
@@ -151,7 +186,9 @@ describe('compaction helpers', () => {
 describe('context compaction', () => {
   it('prunes old tool output for the model while the log stays intact', async () => {
     const { ctx } = await mountContext({
-      compactAt: 1_000_000,
+      compactAt: 100,
+      pruneAtPercent: 1,
+      pruneMinFreedRatio: 0,
       pruneKeepRecent: 0,
       pruneThreshold: 100,
       pruneHead: 20,
@@ -172,6 +209,9 @@ describe('context compaction', () => {
       at: 3,
     })
 
+    const epoch = await ctx.context.maybePrune(session.id)
+    expect(epoch?.upToSeq).toBe(2)
+
     const built = await ctx.context.build(session.id)
     const tool = built.messages.find(message => message.role === 'tool')
     const part = tool?.content[0]
@@ -180,9 +220,12 @@ describe('context compaction', () => {
       expect(part.content.length).toBeLessThan(content.length)
       expect(part.content).toContain('已省略')
     }
-    expect(ctx.sessions.get(session.id)!.events.at(-1)!.data.content).toBe(content)
+    // The log keeps the full result; only the projection is trimmed.
+    const logged = ctx.sessions.get(session.id)!.events.find(event => event.type === 'tool/result')!
+    expect(logged.data.content).toBe(content)
     const info = await ctx.context.info(session.id)
     expect(info.prunedToolResults).toBe(1)
+    expect(info.prune?.upToSeq).toBe(2)
   })
 
   it('compacts below the threshold on demand with a structured prompt', async () => {

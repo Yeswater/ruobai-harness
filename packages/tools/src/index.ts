@@ -87,11 +87,16 @@ export class ToolRegistry extends Service {
   }
 
   list(): ToolSchema[] {
-    return [...this.tools.values()].map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    }))
+    // Tool definitions render at the front of the prompt, so their byte order
+    // is part of the cache key. Registration order follows plugin load order;
+    // sorting makes the rendered set independent of it.
+    return [...this.tools.values()]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }))
   }
 
   async invoke(name: string, args: any, run: ToolRunContext = {}): Promise<ToolResult> {

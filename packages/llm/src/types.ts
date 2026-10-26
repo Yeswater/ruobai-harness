@@ -80,12 +80,26 @@ export interface Usage {
   cacheWriteInputTokens?: number
 }
 
+/**
+ * How a request wants its prompt prefix cached. Adapters map this onto their
+ * provider's mechanism or ignore it when caching is automatic.
+ */
+export interface CacheIntent {
+  /** Stable routing identity for providers that bucket requests by prefix. */
+  key?: string
+  /** Cache only the static prefix; the tail is read once (side calls). */
+  staticOnly?: boolean
+  /** Preferred retention tier, when the provider offers more than one. */
+  ttl?: '5m' | '1h'
+}
+
 export interface ModelRequest {
   model?: string
   messages: Message[]
   tools?: ToolSchema[]
   temperature?: number
   maxTokens?: number
+  cache?: CacheIntent
   signal?: AbortSignal
 }
 

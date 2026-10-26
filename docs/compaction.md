@@ -46,7 +46,7 @@
 
 ### 3.1 分层
 
-1. **投影裁剪（无需模型）**：`pruneToolResults()` 对最近 8 条之外的、超过 8k 字符的工具结果保留头 3k + 尾 2k，中间标记省略字数。只影响模型视图，会话日志和 UI 仍是完整内容。
+1. **投影裁剪（无需模型，按 epoch 提交）**：当上下文超过阈值的 50%、且释放量足以抵偿一次前缀重写时，写入一条 `context/prune`，把最近 8 条之外、超过 8k 字符的工具结果一次性保留头 3k + 尾 2k。同一 epoch 内投影不再变化——否则每来一条新结果就改写更早的旧前缀，会让 KV cache 在几乎每一步失效。只影响模型视图，会话日志和 UI 仍是完整内容。
 2. **结构化摘要**：超过阈值时，按 token 预算保留尾部（默认窗口的 16%，无窗口时阈值的 25%），其余折叠为 checkpoint。
 3. **溢出恢复**：适配层返回 `context_length_exceeded` 一类错误时，强制压缩并重试该步骤一次。
 
@@ -96,8 +96,10 @@
 | `keepRecent` | 12 | 至少保留的事件条数 |
 | `retainPercent` | 16 | 已知窗口时保留尾部的百分比 |
 | `retainTokens` | — | 绝对保留预算，优先于 `retainPercent` |
-| `pruneToolResults` | true | 是否启用投影裁剪 |
-| `pruneKeepRecent` | 8 | 最近多少条工具结果不裁剪 |
+| `pruneToolResults` | true | 是否允许提交裁剪 epoch |
+| `pruneKeepRecent` | 8 | 任何 epoch 都不裁的最近工具结果数 |
+| `pruneAtPercent` | 50 | 上下文达到阈值的该比例后才评估裁剪 |
+| `pruneMinFreedRatio` | 0.3 | 释放量 / 被作废后缀的下限，低于则等压缩 |
 | `pruneThreshold` | 8000 | 超过多少字符才裁剪 |
 | `pruneHead` / `pruneTail` | 3000 / 2000 | 保留的头尾字符数 |
 | `compactionRetries` | 1 | 摘要不缩小或失败后的额外尝试 |

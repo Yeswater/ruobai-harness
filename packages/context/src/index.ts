@@ -5,7 +5,15 @@ import type { SessionEvent, SessionRecord } from '@ruobai/session'
 import type {} from '@ruobai/workspace'
 import { globalRuobaiDir, instructionsSignature, loadInstructions, type InstructionFile } from './instructions.ts'
 import {
+  buildFingerprint,
+  cacheKeyOf,
+  diffPrefix,
+  type PrefixDivergence,
+  type PrefixFingerprint,
+} from './cache.ts'
+import {
   DEFAULT_PRUNE,
+  PRUNE_EVENT,
   SUMMARY_EVENT,
   SUMMARY_PREAMBLE,
   SUMMARY_SYSTEM,
@@ -13,15 +21,19 @@ import {
   eventTokens,
   extractSummary,
   isContextOverflow,
-  pruneToolResults,
+  latestPrune,
+  planPruneEpoch,
+  pruneByEpoch,
   renderTranscript,
   selectCompactionCut,
   summaryInstruction,
   type CompactionSelection,
   type PruneConfig,
+  type PruneEpoch,
 } from './compaction.ts'
 
 export * from './compaction.ts'
+export * from './cache.ts'
 export { globalRuobaiDir, discoverInstructionFiles, loadInstructions } from './instructions.ts'
 export type { InstructionFile } from './instructions.ts'
 
@@ -44,10 +56,15 @@ export interface Config {
   retainTokens?: number
   /** Projection-time head/tail pruning of old tool output. */
   pruneToolResults?: boolean
+  /** Newest tool results excluded from every prune epoch. */
   pruneKeepRecent?: number
   pruneThreshold?: number
   pruneHead?: number
   pruneTail?: number
+  /** Context pressure (percent of the threshold) above which pruning is considered. */
+  pruneAtPercent?: number
+  /** Freed / invalidated characters a prune epoch must reach to be worth a rewrite. */
+  pruneMinFreedRatio?: number
   /** Extra summarization attempts when a summary does not shrink the context. */
   compactionRetries?: number
   /** Read files restored after a compaction (0 disables). */
@@ -69,12 +86,24 @@ export interface BuildOptions {
   modePrompt?: string
   extraMessages?: Message[]
   tools?: ToolSchema[]
+  /**
+   * Set only when the result is about to be sent as a real request. The
+   * fingerprint is then compared with the previous request and a cache break
+   * is recorded; estimates and previews must leave it unset.
+   */
+  record?: boolean
 }
 
 export interface BuiltContext {
   system: string
   messages: Message[]
   estimatedTokens: number
+  /** What the rendered prefix consisted of, for cache attribution. */
+  fingerprint: PrefixFingerprint
+  /** Present only for `record: true` when the prefix changed in a way that misses. */
+  divergence?: PrefixDivergence
+  /** Stable routing identity derived from tools + system. */
+  cacheKey: string
 }
 
 export interface ContextInfo {
@@ -102,6 +131,10 @@ export interface ContextInfo {
   pruned: Array<{ seq: number; name: string; before: number; after: number; text: string }>
   /** Rolling memory checkpoint used to skip a summarization call. */
   memory?: { at: number; upToSeq: number; chars: number }
+  /** Latest committed pruning epoch. */
+  prune?: PruneEpoch
+  /** Last observed prefix break, with the reason it happened. */
+  cache?: { at: number; divergence: PrefixDivergence }
   compaction: {
     failures: number
     disabled: boolean
@@ -224,6 +257,8 @@ export class ContextService extends Service {
     pruneThreshold: z.number().min(100).default(DEFAULT_PRUNE.thresholdChars),
     pruneHead: z.number().min(0).default(DEFAULT_PRUNE.headChars),
     pruneTail: z.number().min(0).default(DEFAULT_PRUNE.tailChars),
+    pruneAtPercent: z.number().min(0).max(100).default(50),
+    pruneMinFreedRatio: z.number().min(0).default(0.3),
     compactionRetries: z.number().min(0).max(3).default(1),
     restoreFiles: z.number().min(0).max(20).default(4),
     restoreFileChars: z.number().min(200).default(4_000),
@@ -241,6 +276,10 @@ export class ContextService extends Service {
   private calibration = new Map<string, number>()
   private memoryRunning = new Set<string>()
   private memoryRefreshedAt = new Map<string, number>()
+  /** Last request prefix per session, for cache-break attribution. */
+  private prefixes = new Map<string, PrefixFingerprint>()
+  /** Most recent cache break per session, surfaced through `info()`. */
+  private breaks = new Map<string, { at: number; divergence: PrefixDivergence }>()
   /** Sessions whose log changed since the last projection prune audit. */
   private prunedDetails = new Map<string, Array<{
     seq: number
@@ -278,7 +317,8 @@ export class ContextService extends Service {
     ].filter(Boolean).join('\n\n')
 
     const visible = record.events.filter(event => event.seq > (summary?.upToSeq ?? -1))
-    const pruned = pruneToolResults(visible, this.pruneConfig())
+    const epoch = latestPrune(record.events)
+    const pruned = pruneByEpoch(visible, epoch, this.pruneConfig())
     this.prunedDetails.set(sessionId, visible
       .filter(event => event.type === 'tool/result' && pruned.has(event.seq))
       .map(event => ({
@@ -304,11 +344,39 @@ export class ContextService extends Service {
       })
     }
 
+    const fingerprint = buildFingerprint({
+      tools: options.tools,
+      system,
+      messages,
+      mode: record.meta.mode,
+      summaryUpToSeq: summary?.upToSeq ?? -1,
+      pruneUpToSeq: epoch?.upToSeq ?? -1,
+    })
+    const divergence = options.record ? this.observePrefix(sessionId, fingerprint) : undefined
+
     return {
       system,
       messages,
       estimatedTokens: estimate(system, messages, options.tools, this.factor(sessionId)),
+      fingerprint,
+      cacheKey: cacheKeyOf(fingerprint),
+      ...(divergence ? { divergence } : {}),
     }
+  }
+
+  /**
+   * Compare a request prefix with the previous one. Appends are not breaks;
+   * a real break is persisted as `context/cache-break` so the cost of the
+   * next step can be explained without reading the provider's bill.
+   */
+  private observePrefix(sessionId: string, fingerprint: PrefixFingerprint) {
+    const divergence = diffPrefix(this.prefixes.get(sessionId), fingerprint)
+    this.prefixes.set(sessionId, fingerprint)
+    if (!divergence) return undefined
+    const at = Date.now()
+    this.breaks.set(sessionId, { at, divergence })
+    this.ctx.sessions.append(sessionId, 'context/cache-break', { at, ...divergence })
+    return divergence
   }
 
   async info(sessionId: string): Promise<ContextInfo> {
@@ -325,13 +393,11 @@ export class ContextService extends Service {
       list(): ToolSchema[]
       get(name: string): unknown
     } | undefined
-    const permissions = this.ctx.get('permissions', false) as
-      | { allowsTool(sessionId: string | undefined, tool: unknown): boolean }
-      | undefined
+    // The offered tool set is deliberately independent of the permission
+    // preset: filtering it per request changes the prompt prefix and voids the
+    // cache. Permission is enforced when a tool is invoked and approved.
     const tools = cached?.tools
-      ?? registry?.list()?.filter(tool =>
-        (modes?.allows(modeId, tool.name) ?? true)
-        && (!permissions || permissions.allowsTool(sessionId, registry.get(tool.name))))
+      ?? registry?.list()?.filter(tool => modes?.allows(modeId, tool.name) ?? true)
       ?? []
     const built = await this.build(sessionId, {
       basePrompt: cached?.basePrompt ?? agent?.config?.systemPrompt,
@@ -349,6 +415,8 @@ export class ContextService extends Service {
     const model = this.modelInfo(record)
     const state = this.state(sessionId)
     const memory = latestMemory(record)
+    const prune = latestPrune(record.events)
+    const cacheBreak = this.breaks.get(sessionId)
     return {
       estimatedTokens: breakdown.messages + breakdown.systemPrompt
         + breakdown.systemTools + breakdown.mcpTools,
@@ -364,6 +432,8 @@ export class ContextService extends Service {
       ...(memory
         ? { memory: { at: memory.at, upToSeq: memory.upToSeq, chars: memory.text.length } }
         : {}),
+      ...(prune ? { prune } : {}),
+      ...(cacheBreak ? { cache: cacheBreak } : {}),
       compaction: {
         failures: state.failures,
         disabled: state.disabled,
@@ -380,10 +450,58 @@ export class ContextService extends Service {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) return
     const state = this.state(sessionId)
-    if (state.running || state.disabled) return
+    if (state.running) return
     const built = await this.build(sessionId, options)
-    if (built.estimatedTokens < this.threshold(sessionId)) return
-    return this.compact(sessionId, options, 'auto', built.estimatedTokens)
+    if (!state.disabled && built.estimatedTokens >= this.threshold(sessionId)) {
+      return this.compact(sessionId, options, 'auto', built.estimatedTokens)
+    }
+    // Below the compaction threshold old tool output can still be shed, but
+    // only when the one-off rewrite it causes is paid back by later reads.
+    await this.maybePrune(sessionId, options, built.estimatedTokens)
+    return undefined
+  }
+
+  /**
+   * Commit a prune epoch when pressure is high and the rewrite pays off.
+   *
+   * Pruning rewrites the prefix from its first pruned result onward, so the
+   * freed characters must be a large share of the invalidated suffix;
+   * otherwise the rewrite costs more than the tokens it saves.
+   */
+  async maybePrune(
+    sessionId: string,
+    options: CompactOptions & { reason?: 'pressure' | 'manual' } = {},
+    estimate?: number,
+  ): Promise<PruneEpoch | undefined> {
+    const record = this.ctx.sessions.get(sessionId)
+    if (!record) return
+    const config = this.pruneConfig()
+    if (!config.enabled) return
+    const percent = this.config.pruneAtPercent ?? 50
+    if (percent <= 0) return
+    const tokens = estimate ?? (await this.build(sessionId, options)).estimatedTokens
+    if (tokens < this.threshold(sessionId) * (percent / 100)) return
+
+    const summary = latestSummary(record)
+    const visible = record.events.filter(event => event.seq > (summary?.upToSeq ?? -1))
+    const previous = latestPrune(record.events)
+    const plan = planPruneEpoch(visible, config, {
+      afterSeq: previous?.upToSeq ?? -1,
+      keepRecent: config.keepRecent,
+    })
+    if (!plan) return
+    const ratio = plan.invalidatedChars > 0 ? plan.freedChars / plan.invalidatedChars : 1
+    if (ratio < (this.config.pruneMinFreedRatio ?? 0.3)) return
+
+    const epoch: PruneEpoch = {
+      upToSeq: plan.upToSeq,
+      at: Date.now(),
+      reason: options.reason ?? 'pressure',
+      freedChars: plan.freedChars,
+      invalidatedChars: plan.invalidatedChars,
+    }
+    this.ctx.sessions.append(sessionId, PRUNE_EVENT, epoch)
+    return epoch
   }
 
   /** Explicit `/compact`: summarize useful history even below the threshold. */
@@ -446,7 +564,7 @@ export class ContextService extends Service {
     this.memoryRunning.add(sessionId)
     try {
       const target = this.targetFor(record)
-      const pruned = pruneToolResults(visible, this.pruneConfig())
+      const pruned = pruneByEpoch(visible, latestPrune(record.events), this.pruneConfig())
       // Bound the background request: keep the newest events by token budget.
       const budget = Math.max(1_000, Math.floor(this.threshold(sessionId) * 0.7))
       let start = visible.length
@@ -462,6 +580,9 @@ export class ContextService extends Service {
         signal: options.signal,
         model: options.model ?? target.model,
         maxTokens: 1_024,
+        // The tail of a one-shot prompt is never read again: never pay a
+        // cache write for it.
+        cache: { staticOnly: true },
         messages: [
           { role: 'system', content: [{ type: 'text', text: MEMORY_SYSTEM }] },
           { role: 'user', content: [{ type: 'text', text: `${prior}${transcript}\n\n${memoryInstruction()}` }] },
@@ -516,7 +637,7 @@ export class ContextService extends Service {
       const previous = latestSummary(record)
       const memory = latestMemory(record)
       const memoryTtl = this.config.memoryTtlMs ?? 600_000
-      const pruned = pruneToolResults(record.events, this.pruneConfig())
+      const pruned = pruneByEpoch(record.events, latestPrune(record.events), this.pruneConfig())
       const window = this.modelInfo(record)?.contextWindow
       const threshold = this.threshold(sessionId)
       // Never retain as much as the threshold itself: a 10%-window threshold
@@ -652,6 +773,7 @@ export class ContextService extends Service {
         signal: options.signal,
         model: options.model,
         maxTokens: 4_096,
+        cache: { staticOnly: true },
         messages: [
           { role: 'system', content: [{ type: 'text', text: SUMMARY_SYSTEM }] },
           { role: 'user', content: [{ type: 'text', text: `${prior}${transcript}\n\n${instruction}` }] },

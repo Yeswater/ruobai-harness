@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
-import { isContextOverflow } from '@ruobai/context'
+import { isContextOverflow, type PrefixDivergence } from '@ruobai/context'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart, Usage } from '@ruobai/llm'
 import type { ModeDefinition } from '@ruobai/modes'
 import type { SessionRecord } from '@ruobai/session'
-import type { ToolDefinition } from '@ruobai/tools'
 
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
 
@@ -225,7 +224,7 @@ export class AgentService extends Service {
         signal: controller.signal,
         basePrompt: this.config.systemPrompt,
         modePrompt: mode?.systemPrompt,
-        tools: this.toolsFor(sessionId, mode, options.denyTools),
+        tools: this.toolsFor(mode, options.denyTools),
       })
 
       // `/compact [focus]` is a maintenance gesture: summarize now and end the
@@ -461,7 +460,7 @@ export class AgentService extends Service {
    */
   private recordContext(
     sessionId: string,
-    built: { request: ModelRequest; estimatedTokens: number },
+    built: { request: ModelRequest; estimatedTokens: number; divergence?: PrefixDivergence },
     mode: ModeDefinition | undefined,
   ) {
     const record = this.ctx.sessions.get(sessionId)
@@ -493,6 +492,7 @@ export class AgentService extends Service {
       estimatedTokens: built.estimatedTokens,
       ...(summary?.data?.upToSeq !== undefined ? { summaryUpToSeq: summary.data.upToSeq } : {}),
       ...(memory?.data?.upToSeq !== undefined ? { memoryUpToSeq: memory.data.upToSeq } : {}),
+      ...(built.divergence ? { cacheBreak: built.divergence } : {}),
       focus: String(lastUser?.data?.text ?? '').replace(/\s+/g, ' ').slice(0, 200),
     })
   }
@@ -503,16 +503,17 @@ export class AgentService extends Service {
     mode: ModeDefinition | undefined,
     extra: Message[],
     denyTools?: string[],
-  ): Promise<{ request: ModelRequest; estimatedTokens: number }> {
+  ): Promise<{ request: ModelRequest; estimatedTokens: number; divergence?: PrefixDivergence }> {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
-    const tools = this.toolsFor(sessionId, mode, denyTools)
+    const tools = this.toolsFor(mode, denyTools)
     const built = await this.ctx.context.build(sessionId, {
       basePrompt: this.config.systemPrompt,
       modePrompt: mode?.systemPrompt,
       extraMessages: extra,
       tools,
+      record: true,
     })
     const messages: Message[] = built.system
       ? [{ role: 'system', content: [{ type: 'text', text: built.system }] }, ...built.messages]
@@ -526,8 +527,14 @@ export class AgentService extends Service {
         model: this.modelFor(record),
         temperature: this.config.temperature,
         maxTokens: this.maxTokensFor(record),
+        // A stable routing identity: sessions that render the same tools and
+        // system share a cache bucket, and forked sub-agents inherit it.
+        cache: {
+          key: `${this.providerName(record)}|${this.modelFor(record)}|${built.cacheKey}`,
+        },
       },
       estimatedTokens: built.estimatedTokens,
+      ...(built.divergence ? { divergence: built.divergence } : {}),
     }
   }
 
@@ -601,15 +608,14 @@ export class AgentService extends Service {
     }
   }
 
-  private toolsFor(sessionId: string, mode: ModeDefinition | undefined, denyTools?: string[]) {
-    const permissions = this.ctx.get('permissions', false) as
-      | { allowsTool(sessionId: string | undefined, tool: ToolDefinition | undefined): boolean }
-      | undefined
+  private toolsFor(mode: ModeDefinition | undefined, denyTools?: string[]) {
+    // Permission presets do not filter the offered set: it renders at position
+    // zero of the prompt, so a per-request filter would void the cache. The
+    // registry refuses a disallowed call and approval decides the rest.
     return this.ctx.tools.list().filter((tool) => {
       if (!this.ctx.modes.allows(mode?.id, tool.name)) return false
       if (denyTools?.includes(tool.name)) return false
-      if (!permissions) return true
-      return permissions.allowsTool(sessionId, this.ctx.tools.get(tool.name))
+      return true
     })
   }
 

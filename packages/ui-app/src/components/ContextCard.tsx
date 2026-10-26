@@ -13,6 +13,15 @@ const SLICES = [
   { key: 'systemPrompt', label: '系统提示' },
 ] as const
 
+const BREAK_LABELS: Record<string, string> = {
+  mode: '模式切换',
+  compaction: '压缩',
+  prune: '裁剪',
+  tools: '工具集变化',
+  system: '系统提示变化',
+  messages: '历史改写',
+}
+
 export function formatTokens(tokens: number) {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1).replace(/\.0$/, '')}k`
@@ -65,6 +74,15 @@ export function ContextCard({ context }: ContextCardProps) {
             : null}
           {context.prunedToolResults
             ? <span className="ctx-hint">已裁剪 {context.prunedToolResults} 条旧工具输出</span>
+            : null}
+          {context.cache
+            ? (
+              <span className="ctx-hint">
+                上次前缀中断：{BREAK_LABELS[context.cache.divergence.reason] ?? context.cache.divergence.reason}
+                {' · 作废 '}
+                {formatTokens(Math.ceil(context.cache.divergence.invalidatedChars / 3))}
+              </span>
+            )
             : null}
           {Math.abs(context.calibration - 1) >= 0.05
             ? <span className="ctx-hint">估算校准 ×{context.calibration.toFixed(2)}</span>

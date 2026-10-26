@@ -12,6 +12,11 @@ export interface Config {
   model?: string
   headers?: Record<string, string>
   timeoutMs?: number
+  /**
+   * Send `prompt_cache_key` as a routing hint. Off by default: the field is a
+   * Responses-API parameter and strict compatible servers reject unknown keys.
+   */
+  promptCacheKey?: boolean
 }
 
 interface OpenAiToolCall {
@@ -147,6 +152,7 @@ export class OpenAiProvider implements LlmProvider {
       // compatible servers reject the field outright, so retry without it
       // instead of losing the whole turn.
       stream_options: { include_usage: true },
+      ...(config.promptCacheKey && request.cache?.key ? { prompt_cache_key: request.cache.key } : {}),
       ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
       ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
     }
@@ -373,6 +379,7 @@ export default class OpenAiProviderPlugin {
     model: z.string(),
     headers: z.dict(z.string()),
     timeoutMs: z.number().min(1),
+    promptCacheKey: z.boolean().default(false),
   })
 
   constructor(ctx: Context, config: Config) {

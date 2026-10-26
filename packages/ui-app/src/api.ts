@@ -285,6 +285,24 @@ export interface ContextInfo {
   pruned: Array<{ seq: number; name: string; before: number; after: number; text?: string }>
   /** Rolling memory checkpoint used to skip a summarization call. */
   memory?: { at: number; upToSeq: number; chars: number }
+  /** Latest committed pruning epoch. */
+  prune?: {
+    upToSeq: number
+    at: number
+    reason: 'pressure' | 'manual'
+    freedChars: number
+    invalidatedChars: number
+  }
+  /** Most recent prefix break, with the reason it happened. */
+  cache?: {
+    at: number
+    divergence: {
+      region: 'tools' | 'system' | 'messages'
+      index?: number
+      reason: 'mode' | 'compaction' | 'prune' | 'tools' | 'system' | 'messages'
+      invalidatedChars: number
+    }
+  }
   compaction: {
     failures: number
     disabled: boolean
