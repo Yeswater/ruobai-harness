@@ -195,15 +195,18 @@ export class LintService extends Service {
     }
     const startedAt = Date.now()
     try {
-      const result = await this.ctx.shell.run({
-        command,
-        cwd: input.cwd,
-        root: input.root,
-        timeoutMs,
-        maxOutputBytes: 512 * 1024,
-        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-        ...(input.signal ? { signal: input.signal } : {}),
-      })
+      const result = await this.ctx.shell.run(
+        {
+          command,
+          cwd: input.cwd,
+          root: input.root,
+          timeoutMs,
+          maxOutputBytes: 512 * 1024,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+          ...(input.signal ? { signal: input.signal } : {}),
+        },
+        checker.executor,
+      )
       report.exitCode = result.exitCode
       report.durationMs = Date.now() - startedAt
       const stdout = sectionOf(result.content, 'stdout')

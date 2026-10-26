@@ -28,6 +28,11 @@ export interface CheckerConfig {
   parser?: CheckerParser
   /** A formatter may rewrite files; linters never do. */
   writes?: boolean
+  /**
+   * Shell executor id. Harness-owned checks use the host executor so they are
+   * not affected by the agent's sandbox; unset means the default executor.
+   */
+  executor?: string
   timeoutMs?: number
   enabled?: boolean
 }

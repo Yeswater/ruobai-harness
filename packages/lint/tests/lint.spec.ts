@@ -67,12 +67,16 @@ function diagnostic(overrides: Partial<Diagnostic> = {}): Diagnostic {
   }
 }
 
-function fakeExecutor(content: string | (() => string), exitCode = 0) {
+function fakeExecutor(
+  content: string | (() => string),
+  exitCode = 0,
+  id = 'fake',
+) {
   const specs: ShellRunSpec[] = []
   return {
     specs,
     executor: {
-      id: 'fake',
+      id,
       async run(spec: ShellRunSpec): Promise<ShellRunResult> {
         specs.push(spec)
         return {
@@ -82,7 +86,7 @@ function fakeExecutor(content: string | (() => string), exitCode = 0) {
           durationMs: 1,
           truncated: false,
           denials: [],
-          executor: 'fake',
+          executor: id,
         }
       },
     },
@@ -268,5 +272,34 @@ describe('lint service', () => {
         level: 'error',
       }),
     ])
+  })
+
+  it('runs harness checks through the configured executor', async () => {
+    const ctx = new Context()
+    const shell = ctx.plugin(ShellService)
+    await shell
+    cleanups.push(shell)
+    const payload = JSON.stringify({ diagnostics: [] })
+    const host = fakeExecutor(payload, 0, 'host')
+    const sandbox = fakeExecutor(payload, 0, 'sandbox')
+    ctx.shell.register(host.executor)
+    ctx.shell.register(sandbox.executor, { default: true })
+    const lint = ctx.plugin(LintService, {
+      checkers: [
+        {
+          id: 'host-check',
+          scope: 'stop',
+          command: 'check',
+          parser: 'biome',
+          executor: 'host',
+        },
+      ],
+    })
+    await lint
+    cleanups.push(lint)
+
+    await ctx.lint.run({ scope: 'stop', cwd: '/repo', root: '/repo' })
+    expect(host.specs).toHaveLength(1)
+    expect(sandbox.specs).toHaveLength(0)
   })
 })

@@ -146,6 +146,8 @@ packages/context/src/cache.ts:42 [noRestrictedImports]
 
 检查器本身不可用（二进制缺失、启动失败、超时）默认**放行并记录**，不阻断回合；只有把该层 `failure` 设为 `close` 时，基础设施失败才进入阻断路径。这样本地没装工具链时门禁是"哑"的而不是"死"的，运行记录里能看到原因。
 
+检查命令是 harness 自己的固定命令，不在 agent 的沙箱里跑：`lint` 的 checker 配 `executor: direct`，走 `shell-direct` 注册的宿主执行器；agent 的 `bash` 仍走默认的沙箱执行器，工具层不会选择执行器。这样 Biome/tsc 不会因为 `.git`、网络或凭据守卫失败，也不会看到 agent 的沙箱边界。
+
 事件：`hooks/run-start`、`hooks/run-end`、`hooks/blocked`、`hooks/escalated`、`hooks/violation`。全部进会话日志，由 trajectory 投影展示，并提供 `GET /api/hooks/metrics`。
 
 ## 6. 安全
@@ -345,6 +347,7 @@ jobs:
 
 - guard 在 permissions 之前执行；拒绝原因作为该次工具结果返回，并记 `hooks/violation`。
 - 编辑层反馈是**临时消息**（下一步请求带上，不落盘）；Stop 层反馈落成 `message/user` 且 `source.kind = 'hook'`，对话流隐藏、模型与日志可见。
+- 检查命令走宿主执行器（`executor: direct`），不经过 agent 的沙箱；agent 的 `bash` 仍走沙箱。
 - 连续 2 轮未通过，或诊断指纹集合与上一轮完全相同 → 升级（`hooks/escalated`），不再阻断。
 - L2 审计只在 `trigger: stop` 且确定性检查全绿后自动运行；`manual` 由设置页按钮触发；结果为 `hooks/audit` 事件，永不阻断。
 

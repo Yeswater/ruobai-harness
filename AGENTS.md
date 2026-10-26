@@ -63,6 +63,7 @@ cordis.yml     插件的组合方式（唯一应用定义）
 - 豁免必须与拒绝同粒度（`write-file` 单文件，不是 `dirname`）；网络、进程控制、mach、AppleEvent 永不放宽。
 - 修改 macOS 沙箱前先读 `docs/sandbox-macos.md` 与附录 F；**任何"Seatbelt 支持 X"的判断都要在本机实测**，语法有效 ≠ 能应用 ≠ 会匹配。
 - 保留 `shell-direct` 作为逃生舱；沙箱出问题时它必须还能跑（`cordis.yml` 一行切换）。
+- harness 自己的检查（lint/typecheck）走 `shell-direct` 注册的非默认 `direct` 执行器，不经过 agent 沙箱；agent 的 bash 仍走默认沙箱执行器，工具层不得选择执行器。
 - 热卸载：先摘 provider 表，再 abort 全部 run，最后 `destroyAll()`；不得留下孤儿 `sandbox-exec` / `log stream`。
 
 ## 6. Web 与客户端

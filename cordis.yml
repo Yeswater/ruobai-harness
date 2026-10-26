@@ -103,6 +103,16 @@
   config:
     escalate: auto
 
+# Harness-owned checks (lint / typecheck) are fixed commands run by the
+# harness, not by the agent: they use this host executor so the agent's
+# sandbox cannot break or observe them. Agent bash still uses the default
+# (sandboxed) executor; the tool layer never selects an executor.
+- id: shell-host
+  name: '@ruobai/shell-direct'
+  config:
+    default: false
+    shell: /bin/sh
+
 # Status panel: sandbox state, guard list, denial timeline, session switch.
 # Served over HTTP by the harness process (never a file the agent can write).
 - id: sandbox-web
@@ -162,21 +172,25 @@
         command: node_modules/.bin/biome check --write
         parser: plain
         writes: true
+        executor: direct
         enabled: true
       - id: biome-lint
         scope: edit
         command: node_modules/.bin/biome check --reporter=json
         parser: biome
+        executor: direct
         enabled: true
       - id: biome-stop
         scope: stop
         command: node_modules/.bin/biome check --reporter=json
         parser: biome
+        executor: direct
         enabled: true
       - id: typecheck
         scope: stop
         command: node_modules/.bin/tsc -p tsconfig.json --pretty false && node_modules/.bin/tsc -p packages/ui-app/tsconfig.json --pretty false
         parser: tsc
+        executor: direct
         enabled: true
 
 - id: hooks
