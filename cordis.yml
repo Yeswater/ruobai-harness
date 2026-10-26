@@ -159,23 +159,23 @@
     checkers:
       - id: biome-format
         scope: edit
-        command: pnpm exec biome check --write
+        command: node_modules/.bin/biome check --write
         parser: plain
         writes: true
         enabled: true
       - id: biome-lint
         scope: edit
-        command: pnpm exec biome check --reporter=json
+        command: node_modules/.bin/biome check --reporter=json
         parser: biome
         enabled: true
       - id: biome-stop
         scope: stop
-        command: pnpm exec biome check --reporter=json
+        command: node_modules/.bin/biome check --reporter=json
         parser: biome
         enabled: true
       - id: typecheck
         scope: stop
-        command: pnpm typecheck
+        command: node_modules/.bin/tsc -p tsconfig.json --pretty false && node_modules/.bin/tsc -p packages/ui-app/tsconfig.json --pretty false
         parser: tsc
         enabled: true
 

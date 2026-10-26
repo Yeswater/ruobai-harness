@@ -237,4 +237,36 @@ describe('lint service', () => {
     expect(result.diagnostics).toEqual([])
     expect(result.checkers[0]?.error).toContain('not found')
   })
+
+  it('reads tsc diagnostics from stdout when stderr only has the runner banner', async () => {
+    const ctx = new Context()
+    const shell = ctx.plugin(ShellService)
+    await shell
+    cleanups.push(shell)
+    const fake = fakeExecutor(
+      'exit code: 2 · 1ms\n--- stdout ---\npackages/a.ts(3,7): error TS2322: bad type\n--- stderr ---\n$ tsc -p tsconfig.json',
+      2,
+    )
+    ctx.shell.register(fake.executor)
+    const lint = ctx.plugin(LintService, {
+      checkers: [{ id: 'tsc', scope: 'stop', command: 'tsc', parser: 'tsc' }],
+    })
+    await lint
+    cleanups.push(lint)
+
+    const result = await ctx.lint.run({
+      scope: 'stop',
+      cwd: '/repo',
+      root: '/repo',
+    })
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        path: 'packages/a.ts',
+        line: 3,
+        column: 7,
+        rule: 'TS2322',
+        level: 'error',
+      }),
+    ])
+  })
 })

@@ -51,7 +51,7 @@ export const DEFAULT_CHECKERS: CheckerConfig[] = [
   {
     id: 'biome-format',
     scope: 'edit',
-    command: 'pnpm exec biome check --write',
+    command: 'node_modules/.bin/biome check --write',
     parser: 'plain',
     writes: true,
     enabled: false,
@@ -59,21 +59,21 @@ export const DEFAULT_CHECKERS: CheckerConfig[] = [
   {
     id: 'biome-lint',
     scope: 'edit',
-    command: 'pnpm exec biome check --reporter=json',
+    command: 'node_modules/.bin/biome check --reporter=json',
     parser: 'biome',
     enabled: false,
   },
   {
     id: 'biome-stop',
     scope: 'stop',
-    command: 'pnpm exec biome check --reporter=json',
+    command: 'node_modules/.bin/biome check --reporter=json',
     parser: 'biome',
     enabled: false,
   },
   {
     id: 'tsc',
     scope: 'stop',
-    command: 'pnpm exec tsc -p tsconfig.json --noEmit --pretty false',
+    command: 'node_modules/.bin/tsc -p tsconfig.json --pretty false',
     parser: 'tsc',
     enabled: false,
   },
@@ -215,7 +215,7 @@ export class LintService extends Service {
         : parser === 'biome'
           ? parseBiome(stdout || stderr, input.root)
           : parser === 'tsc'
-            ? parseTsc(stderr || stdout, input.root)
+            ? parseTsc(`${stdout}\n${stderr}`, input.root)
             : result.exitCode === 0
               ? []
               : parsePlain(stderr || stdout, input.root, checker.id)
