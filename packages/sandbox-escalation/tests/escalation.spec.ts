@@ -123,4 +123,28 @@ describe('escalation exemptions', () => {
     expect(plan.reason).toContain('置信度低')
     await dispose()
   })
+
+  it('never relaxes guards that carry persistence or credentials', async () => {
+    const { escalation, dispose } = await setup()
+    for (const guard of ['git-hooks', 'git-config', 'harness-state']) {
+      const plan = escalation.plan(denial({
+        kind: 'fs-write-guarded',
+        guard,
+        target: '/Users/x/ws/.git/hooks/pre-commit',
+        confidence: 'high',
+      }), 1)
+      expect(plan.relaxable).toBe(false)
+      expect(plan.reason).toContain('永不放宽')
+      expect(plan.exemption).toBeUndefined()
+    }
+
+    const ordinary = escalation.plan(denial({
+      kind: 'fs-write-guarded',
+      guard: 'project-guard',
+      target: '/Users/x/ws/build/out.txt',
+      confidence: 'high',
+    }), 1)
+    expect(ordinary.relaxable).toBe(true)
+    await dispose()
+  })
 })

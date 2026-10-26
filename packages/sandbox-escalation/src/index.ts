@@ -9,6 +9,8 @@ export interface Config {
   relaxable?: DenialKind[]
   /** Kinds that can never be relaxed, whatever the user answers. */
   neverRelaxable?: DenialKind[]
+  /** Guard ids that can never be relaxed, whatever the user answers. */
+  neverRelaxableGuards?: string[]
   /** Commands whose retry is side-effect free (used for the "safe" label). */
   retrySafeCommands?: string[]
   /** Total attempts per run, including the first. */
@@ -48,6 +50,31 @@ const CONTROL_CHARACTERS = /[;&|<>`$()\\\n\r]/
 /** Hard-coded policy: neither config nor a user answer can relax these. */
 const ABSOLUTELY_NOT_RELAXABLE: readonly DenialKind[] = ['network-outbound', 'process-control', 'mach-lookup', 'appleevent']
 
+/**
+ * Guards that carry persistence or credentials. Relaxing one for a single
+ * retry would be enough to install a git hook, rewrite git config, or read a
+ * token — the one-shot exemption is still a durable capability.
+ */
+const ABSOLUTELY_NOT_RELAXABLE_GUARDS: readonly string[] = [
+  'git-hooks',
+  'git-config',
+  'git-config-worktree',
+  'git-alternates',
+  'git-http-alternates',
+  'git-info-attributes',
+  'git-module-hooks',
+  'git-module-config',
+  'git-worktree-commondir',
+  'git-worktree-gitdir',
+  'git-worktree-pointer',
+  'harness-state',
+  'harness-policy',
+  'launch-agents',
+  'shell-rc',
+  'shell-profile',
+  'shell-profile-alt',
+]
+
 declare module '@ruobai/cordis' {
   interface Context {
     escalation: EscalationService
@@ -85,6 +112,10 @@ export class EscalationService extends Service {
     this.config = {
       relaxable: config.relaxable ?? ['fs-read-guarded', 'fs-write-guarded', 'fs-write-outside'],
       neverRelaxable: config.neverRelaxable ?? [...ABSOLUTELY_NOT_RELAXABLE],
+      neverRelaxableGuards: [...new Set([
+        ...ABSOLUTELY_NOT_RELAXABLE_GUARDS,
+        ...(config.neverRelaxableGuards ?? []),
+      ])],
       retrySafeCommands: config.retrySafeCommands ?? ['cat', 'ls', 'head', 'tail', 'wc', 'grep', 'git', 'node'],
       maxAttempts: config.maxAttempts ?? 2,
       defaultMode: config.defaultMode ?? 'auto',
@@ -109,6 +140,9 @@ export class EscalationService extends Service {
     if (!this.config.relaxable.includes(denialKind)) {
       return { relaxable: false, retry, reason: `${denialKind} 不在可放宽白名单内` }
     }
+    if (denial.guard && this.config.neverRelaxableGuards.includes(denial.guard)) {
+      return { relaxable: false, retry, reason: `守卫 ${denial.guard} 永不放宽（持久化/凭据边界）` }
+    }
     if (attempt >= this.config.maxAttempts) {
       return { relaxable: false, retry, reason: `已达重跑上限（${this.config.maxAttempts}）` }
     }
@@ -130,6 +164,11 @@ export class EscalationService extends Service {
    */
   async escalate(denial: Denial, request: EscalationRequest): Promise<EscalationOutcome> {
     const plan = this.plan(denial, request.attempt)
+    // A session grant must not outlive a policy decision: protected guards are
+    // rejected before the grant table is consulted.
+    if (denial.guard && this.config.neverRelaxableGuards.includes(denial.guard)) {
+      return { approved: false, retry: plan.retry, reason: `守卫 ${denial.guard} 永不放宽` }
+    }
     const granted = this.grants.get(this.grantKey(denial))
 
     if (!plan.relaxable && !granted) {

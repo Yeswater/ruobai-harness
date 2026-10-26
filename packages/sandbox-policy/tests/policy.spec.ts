@@ -1,10 +1,16 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context, Service } from '@ruobai/cordis'
 import { PathGuardError } from '@ruobai/sandbox'
-import SandboxPolicyService, { canonicalPath, globToRegExp, guardMatches } from '../src/index.ts'
+import SandboxPolicyService, {
+  canonicalPath,
+  globToRegExp,
+  guardMatches,
+  resolveGitPaths,
+} from '../src/index.ts'
 
 const cleanups: Array<() => Promise<void> | void> = []
 
@@ -146,14 +152,75 @@ describe('policy service', () => {
 })
 
 describe('sandbox-guards defaults', () => {
-  it('guards .git writes, .env reads and harness state', async () => {
+  it('guards git persistence points, .env reads and harness state', async () => {
     const { defaultGuards } = await import('@ruobai/sandbox-guards')
     const guards = defaultGuards('/w', '/home/u')
     const ids = guards.map(guard => guard.id)
-    expect(ids).toEqual(expect.arrayContaining(['git-dir', 'env-file', 'harness-state', 'ssh-keys', 'shell-rc']))
+    expect(ids).toEqual(expect.arrayContaining([
+      'git-hooks', 'git-config', 'git-alternates', 'env-file', 'harness-state', 'ssh-keys', 'shell-rc',
+    ]))
+    expect(ids).not.toContain('git-dir')
     expect(guards.find(guard => guard.id === 'ssh-keys')?.access).toBe('read')
-    expect(guards.find(guard => guard.id === 'git-dir')?.path).toBe('/w/.git')
+    expect(guards.find(guard => guard.id === 'git-hooks')?.path).toBe('/w/.git/hooks')
     await writeFile(join(tmpdir(), 'rbu-guard-probe'), '')
     await rm(join(tmpdir(), 'rbu-guard-probe'), { force: true })
+  })
+
+  it('keeps normal git data writable while guarding persistence points', async () => {
+    const { defaultGuards } = await import('@ruobai/sandbox-guards')
+    const { guardMatches } = await import('@ruobai/sandbox-policy')
+    const writeGuards = defaultGuards('/w', '/home/u').filter(guard => guard.access === 'write')
+    const guarded = (path: string) => writeGuards.some(guard => guardMatches(guard, path))
+
+    expect(guarded('/w/.git/index')).toBe(false)
+    expect(guarded('/w/.git/index.lock')).toBe(false)
+    expect(guarded('/w/.git/objects/ab/cdef')).toBe(false)
+    expect(guarded('/w/.git/refs/heads/main')).toBe(false)
+    expect(guarded('/w/.git/COMMIT_EDITMSG')).toBe(false)
+
+    expect(guarded('/w/.git/hooks/pre-commit')).toBe(true)
+    expect(guarded('/w/.git/config')).toBe(true)
+    expect(guarded('/w/.git/objects/info/alternates')).toBe(true)
+    expect(guarded('/w/.git/info/attributes')).toBe(true)
+  })
+})
+
+describe('linked worktrees', () => {
+  it('resolves the common git dir, grants both dirs and guards the pointer', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'rbh-worktree-'))
+    cleanups.push(() => rm(base, { recursive: true, force: true }))
+    const main = join(base, 'main')
+    const wt = join(base, 'wt')
+    await mkdir(main, { recursive: true })
+    execFileSync('git', ['init', '-q'], { cwd: main })
+    execFileSync('git', ['config', 'user.email', 'probe@example.com'], { cwd: main })
+    execFileSync('git', ['config', 'user.name', 'probe'], { cwd: main })
+    execFileSync('git', ['commit', '--allow-empty', '-q', '-m', 'init'], { cwd: main })
+    execFileSync('git', ['worktree', 'add', '-q', wt, '-b', 'probe'], { cwd: main })
+
+    const mainReal = await realpath(main)
+    const paths = resolveGitPaths(wt)
+    expect(paths?.commonDir).toBe(join(mainReal, '.git'))
+    expect(paths?.gitDir.startsWith(join(mainReal, '.git', 'worktrees'))).toBe(true)
+
+    const ctx = new Context()
+    const fiber = ctx.plugin(SandboxPolicyService, { root: wt })
+    await fiber
+    cleanups.push(() => fiber.dispose())
+    const write = ctx.sandboxPolicy.forSession().fs.write.map(grant => grant.path)
+    expect(write).toContain(join(mainReal, '.git'))
+    expect(write.some(path => path.startsWith(join(mainReal, '.git', 'worktrees')))).toBe(true)
+
+    const { defaultGuards } = await import('@ruobai/sandbox-guards')
+    const guards = defaultGuards(wt, '/home/u')
+    expect(guards.find(guard => guard.id === 'git-hooks')?.path)
+      .toBe(join(mainReal, '.git', 'hooks'))
+    expect(guards.find(guard => guard.id === 'git-worktree-pointer')?.path)
+      .toBe(join(wt, '.git'))
+
+    const writeGuards = guards.filter(guard => guard.access === 'write')
+    const guarded = (path: string) => writeGuards.some(guard => guardMatches(guard, path))
+    expect(guarded(join(mainReal, '.git', 'worktrees', 'probe', 'index'))).toBe(false)
+    expect(guarded(join(mainReal, '.git', 'hooks', 'pre-commit'))).toBe(true)
   })
 })

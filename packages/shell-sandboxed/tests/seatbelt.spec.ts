@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -47,11 +48,13 @@ interface SetupOptions {
   escalate?: 'auto' | 'never'
   network?: 'deny' | 'allowlist'
   decide?: 'allow' | 'deny' | 'always'
+  /** Reuse an existing directory (e.g. a linked worktree) instead of a temp one. */
+  root?: string
 }
 
 async function setup(options: SetupOptions = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'rbh-sandbox-'))
-  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  const root = options.root ?? await mkdtemp(join(tmpdir(), 'rbh-sandbox-'))
+  if (!options.root) cleanups.push(() => rm(root, { recursive: true, force: true }))
   const ctx = new Context()
 
   const shell = ctx.plugin(ShellService)
@@ -145,6 +148,56 @@ describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
     expect(result.exitCode).not.toBe(0)
     expect(result.denials.length).toBeGreaterThan(0)
     expect(result.content).toContain('[sandbox]')
+  })
+
+  it('lets ordinary git add/commit run while keeping hooks and config read-only', async () => {
+    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    // The repo is created outside the sandbox: `git init` writes sample hooks,
+    // which the agent-facing boundary deliberately denies.
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    execFileSync('git', ['config', 'user.email', 'probe@example.com'], { cwd: root })
+    execFileSync('git', ['config', 'user.name', 'probe'], { cwd: root })
+    await writeFile(join(root, 'file.txt'), 'hello\n')
+
+    const identity = 'GIT_AUTHOR_NAME=probe GIT_AUTHOR_EMAIL=probe@example.com '
+      + 'GIT_COMMITTER_NAME=probe GIT_COMMITTER_EMAIL=probe@example.com'
+
+    const add = await run(ctx, `${identity} git add file.txt`, root)
+    expect(add.exitCode).toBe(0)
+
+    const commit = await run(ctx, `${identity} git commit -m probe`, root)
+    expect(commit.exitCode).toBe(0)
+    expect(commit.content).toContain('probe')
+
+    const hooks = await run(ctx, 'echo x > .git/hooks/pre-commit', root)
+    expect(hooks.exitCode).not.toBe(0)
+    expect(hooks.denials.length).toBeGreaterThan(0)
+
+    const config = await run(ctx, 'git config user.name other', root)
+    expect(config.exitCode).not.toBe(0)
+  })
+
+  it('lets git add/commit run in a linked worktree', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'rbh-sandbox-wt-'))
+    cleanups.push(() => rm(base, { recursive: true, force: true }))
+    const main = join(base, 'main')
+    const wt = join(base, 'wt')
+    await mkdir(main, { recursive: true })
+    execFileSync('git', ['init', '-q'], { cwd: main })
+    execFileSync('git', ['config', 'user.email', 'probe@example.com'], { cwd: main })
+    execFileSync('git', ['config', 'user.name', 'probe'], { cwd: main })
+    execFileSync('git', ['commit', '--allow-empty', '-q', '-m', 'init'], { cwd: main })
+    execFileSync('git', ['worktree', 'add', '-q', wt, '-b', 'probe'], { cwd: main })
+    await writeFile(join(wt, 'file.txt'), 'hello\n')
+
+    const { ctx } = await setup({ root: wt, selfCheck: false, escalate: 'never' })
+    const identity = 'GIT_AUTHOR_NAME=probe GIT_AUTHOR_EMAIL=probe@example.com '
+      + 'GIT_COMMITTER_NAME=probe GIT_COMMITTER_EMAIL=probe@example.com'
+
+    const add = await run(ctx, `${identity} git add file.txt`, wt)
+    expect(add.exitCode).toBe(0)
+    const commit = await run(ctx, `${identity} git commit -m probe`, wt)
+    expect(commit.exitCode).toBe(0)
   })
 
   it('denies reading a guarded file', async () => {

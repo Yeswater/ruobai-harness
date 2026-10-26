@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize as normalizePath, resolve, sep } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
@@ -105,6 +105,49 @@ export function guardMatches(guard: PathGuard, target: string): boolean {
   } catch {
     return false
   }
+}
+
+export interface GitPaths {
+  /** The worktree's own git dir (index, HEAD for a linked worktree). */
+  gitDir: string
+  /** Shared git dir (objects, refs, logs, hooks, config). */
+  commonDir: string
+}
+
+/**
+ * Resolve the real git directories for a workspace that may be a linked
+ * worktree. A normal checkout has `<root>/.git` as a directory; a linked
+ * worktree has a `.git` file pointing at `<common>/worktrees/<name>`.
+ */
+export function resolveGitPaths(root: string): GitPaths | undefined {
+  const dotGit = join(root, '.git')
+  let info
+  try {
+    info = statSync(dotGit)
+  } catch {
+    return undefined
+  }
+  if (info.isDirectory()) return { gitDir: dotGit, commonDir: dotGit }
+  if (!info.isFile()) return undefined
+
+  let text: string
+  try {
+    text = readFileSync(dotGit, 'utf8').trim()
+  } catch {
+    return undefined
+  }
+  const match = /^gitdir:\s*(.+)$/.exec(text)
+  if (!match) return undefined
+
+  const gitDir = isAbsolute(match[1]!) ? match[1]! : resolve(root, match[1]!)
+  let commonDir = gitDir
+  try {
+    const common = readFileSync(join(gitDir, 'commondir'), 'utf8').trim()
+    if (common) commonDir = isAbsolute(common) ? common : resolve(gitDir, common)
+  } catch {
+    // Not a linked worktree.
+  }
+  return { gitDir: resolve(gitDir), commonDir: resolve(commonDir) }
 }
 
 declare module '@ruobai/cordis' {
@@ -228,6 +271,20 @@ export class SandboxPolicyService extends Service {
     if (this.config.toolchain !== false) {
       for (const path of TOOLCHAIN_READ) {
         if (existsSync(path)) readGrants.push({ path, recursive: true })
+      }
+    }
+
+    // A linked worktree writes its index/HEAD into its own git dir and the
+    // objects/refs/logs into the common dir; both usually sit outside the
+    // workspace root. The persistence guards still deny hooks/config there.
+    const git = resolveGitPaths(root)
+    if (git) {
+      const inRoot = (path: string) => path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`)
+      for (const path of new Set([git.gitDir, git.commonDir])) {
+        if (!inRoot(path)) writeGrants.push({ path, recursive: true })
+        if (!readGrants.some(grant => grant.path === path)) {
+          readGrants.push({ path, recursive: true })
+        }
       }
     }
 

