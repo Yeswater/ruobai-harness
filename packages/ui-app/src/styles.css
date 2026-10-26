@@ -6850,6 +6850,21 @@ body.resizing .file-side-resizer::after {
   background: var(--panel);
 }
 
+/* 承载离屏渲染台的定位容器，自身不产生任何视觉。 */
+.mermaid-host {
+  position: relative;
+}
+
+/* Mermaid 需要一个已挂载、能测量文字的容器；放到视口外，
+   免得临时 SVG 在页面底部闪一下（不要用 display:none，否则 getBBox 全为 0）。 */
+.mermaid-stage {
+  position: absolute;
+  top: 0;
+  left: -100000px;
+  width: 1000px;
+  pointer-events: none;
+}
+
 .mermaid-block svg {
   max-width: 100%;
   height: auto;
