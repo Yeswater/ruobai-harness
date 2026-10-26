@@ -68,8 +68,8 @@ export interface UserMessageData {
   text: string
   at: number
   attachments?: AttachmentMeta[]
-  /** Host-side context injected for a user gesture; hidden from the transcript. */
-  source?: { kind: 'skill'; name: string; forMessageId: string }
+  /** Host-injected context; hidden from the transcript. */
+  source?: { kind: 'skill' | 'hook'; name: string; forMessageId: string }
 }
 
 export interface Config {
@@ -378,6 +378,29 @@ export class AgentService extends Service {
             })
             continue
           }
+          // Deterministic gate: a turn may not finish with unbaselined errors.
+          // Feedback is persisted so the diagnostics survive a reload.
+          const hooks = this.ctx.get('hooks', false) as
+            | { beforeStop(sessionId: string): Promise<{ blocked: boolean; feedback?: string }> }
+            | undefined
+          if (hooks && !controller.signal.aborted) {
+            try {
+              const gate = await hooks.beforeStop(sessionId)
+              if (gate.blocked && gate.feedback) {
+                this.ctx.sessions.append(sessionId, 'message/user', {
+                  id: randomUUID(),
+                  text: gate.feedback,
+                  at: Date.now(),
+                  source: { kind: 'hook', name: 'stop', forMessageId: messageId },
+                })
+                continue
+              }
+            } catch (error) {
+              this.ctx.logger('agent').warn('stop gate failed: %s',
+                error instanceof Error ? error.message : String(error))
+            }
+          }
+
           reason = stop === 'aborted' || controller.signal.aborted ? 'stopped' : 'done'
           break
         }
@@ -407,6 +430,30 @@ export class AgentService extends Service {
             content: result.content,
             isError: result.isError,
           })
+          // Edit-time gate: formatter + incremental lint, fed back before the
+          // next step. Ephemeral by design; the stop gate is the persisted one.
+          const hooks = this.ctx.get('hooks', false) as
+            | {
+              afterTool(
+                call: { name: string; args: Record<string, unknown>; sessionId?: string },
+                result: { isError?: boolean },
+              ): Promise<{ feedback?: string }>
+            }
+            | undefined
+          if (hooks) {
+            try {
+              const check = await hooks.afterTool(
+                { name: call.name, args: args as Record<string, unknown>, sessionId },
+                { isError: result.isError },
+              )
+              if (check.feedback) {
+                extra.push({ role: 'user', content: [{ type: 'text', text: check.feedback }] })
+              }
+            } catch (error) {
+              this.ctx.logger('agent').warn('edit hook failed: %s',
+                error instanceof Error ? error.message : String(error))
+            }
+          }
           if (call.name === 'goal_complete') goalComplete = true
         }
 
@@ -470,9 +517,9 @@ export class AgentService extends Service {
     const summary = latest('context/summary')
     const memory = latest('context/memory')
     const lastUser = [...events].reverse().find(event =>
-      event.type === 'message/user' && event.data?.source?.kind !== 'skill')
+      event.type === 'message/user' && !event.data?.source?.kind)
     const turns = events.filter(event =>
-      event.type === 'message/user' && event.data?.source?.kind !== 'skill').length
+      event.type === 'message/user' && !event.data?.source?.kind).length
     const system = built.request.messages[0]
     const systemChars = system?.role === 'system'
       ? system.content.reduce((sum, part) => sum + (part.type === 'text' ? part.text.length : 0), 0)
@@ -562,7 +609,7 @@ export class AgentService extends Service {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) return
     const lastUser = [...record.events].reverse().find(event =>
-      event.type === 'message/user' && event.data?.source?.kind !== 'skill')
+      event.type === 'message/user' && !event.data?.source?.kind)
     if (!lastUser) return
     const match = /^\/compact(?:\s+([\s\S]+))?$/i.exec(String(lastUser.data?.text ?? '').trim())
     if (!match) return
@@ -584,7 +631,7 @@ export class AgentService extends Service {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) return
     const lastUser = [...record.events].reverse().find(event =>
-      event.type === 'message/user' && event.data?.source?.kind !== 'skill')
+      event.type === 'message/user' && !event.data?.source?.kind)
     if (!lastUser) return
     const text = String(lastUser.data?.text ?? '')
     const names = [...text.matchAll(/(^|\s)\/([a-z0-9][a-z0-9-]*)/gi)]

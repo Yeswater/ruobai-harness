@@ -12,6 +12,9 @@ import ContextService from '@ruobai/context'
 import { Context } from '@ruobai/cordis'
 import GitService from '@ruobai/git'
 import GitWeb from '@ruobai/git-web'
+import HooksService from '@ruobai/hooks'
+import HooksWeb from '@ruobai/hooks-web'
+import LintService from '@ruobai/lint'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
 import MockProvider from '@ruobai/llm-mock'
@@ -125,6 +128,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   }))
   await mount(ctx.plugin(ApprovalService))
   await mount(ctx.plugin(PermissionService))
+  // Gates with no configured checkers: guard and lifecycle paths are exercised,
+  // but no external toolchain runs in unit tests.
+  await mount(ctx.plugin(LintService, { checkers: [] }))
+  await mount(ctx.plugin(HooksService))
   await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(ChatService))
@@ -134,6 +141,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(Trajectory))
   await mount(ctx.plugin(TrajectoryWeb))
   await mount(ctx.plugin(UiApi))
+  await mount(ctx.plugin(HooksWeb))
   await mount(ctx.plugin(WorkspaceWeb))
   await mount(ctx.plugin(GitWeb))
   await mount(ctx.plugin(CheckpointsWeb))

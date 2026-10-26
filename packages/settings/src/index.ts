@@ -163,6 +163,48 @@ export interface SettingsData {
   agent?: AgentSettings
   approval?: ApprovalSettings
   mcp?: McpSettings
+  hooks?: HookSettings
+}
+
+export type HookFailurePolicy = 'open' | 'close'
+export type HookAuditTrigger = 'stop' | 'manual' | 'off'
+
+export interface HookLayerSettings {
+  enabled?: boolean
+  timeoutMs?: number
+  failure?: HookFailurePolicy
+  /** Cap on diagnostics handed back to the model in one round. */
+  maxDiagnostics?: number
+  /** Stop layer only: blocking rounds before escalation. */
+  maxRounds?: number
+}
+
+export interface HookGuardSettings {
+  enabled?: boolean
+  /** Workspace-relative globs the agent may not write. */
+  denyWrite?: string[]
+  /** Command fragments rejected before execution. */
+  denyCommand?: string[]
+}
+
+export interface HookAuditSettings {
+  enabled?: boolean
+  provider?: string
+  model?: string
+  trigger?: HookAuditTrigger
+  prompt?: string
+  maxFiles?: number
+  dailyBudget?: number
+  /** Hand audit findings back to the model on the next round. */
+  feedback?: boolean
+}
+
+export interface HookSettings {
+  enabled?: boolean
+  edit?: HookLayerSettings
+  stop?: HookLayerSettings
+  guard?: HookGuardSettings
+  audit?: HookAuditSettings
 }
 
 export interface PublicProvider {
@@ -186,6 +228,7 @@ export interface PublicSettings {
   agent?: AgentSettings
   approval?: { rules: ApprovalRule[]; guard: { enabled: boolean } }
   mcp?: PublicMcpSettings
+  hooks?: HookSettings
 }
 
 export interface Config {
@@ -285,6 +328,7 @@ export class SettingsService extends Service {
         servers: (this.data.mcp.servers ?? []).map(entry => this.publicMcpServer(entry)),
       }
     }
+    if (this.data.hooks) result.hooks = structuredClone(this.data.hooks)
     return result
   }
 
@@ -475,6 +519,29 @@ export class SettingsService extends Service {
     const approval = this.data.approval ??= {}
     const guard = approval.guard ??= { enabled: true }
     if (input.enabled !== undefined) guard.enabled = Boolean(input.enabled)
+    return this.commit()
+  }
+
+  async updateHooks(patch: HookSettings): Promise<PublicSettings> {
+    const current = this.data.hooks ?? {}
+    const next: HookSettings = { ...current }
+    if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled)
+    if (patch.edit) next.edit = mergeHookLayer(current.edit, patch.edit)
+    if (patch.stop) next.stop = { ...mergeHookLayer(current.stop, patch.stop) }
+    if (patch.guard) {
+      next.guard = {
+        ...current.guard,
+        ...(patch.guard.enabled !== undefined ? { enabled: Boolean(patch.guard.enabled) } : {}),
+        ...(patch.guard.denyWrite !== undefined
+          ? { denyWrite: normalizeStringList(patch.guard.denyWrite) }
+          : {}),
+        ...(patch.guard.denyCommand !== undefined
+          ? { denyCommand: normalizeStringList(patch.guard.denyCommand) }
+          : {}),
+      }
+    }
+    if (patch.audit) next.audit = mergeAuditSettings(current.audit, patch.audit)
+    this.data.hooks = next
     return this.commit()
   }
 
@@ -797,6 +864,53 @@ function normalizeTimeout(value: number) {
 
 function normalizeApproval(value: McpApproval | undefined): McpApproval {
   return value === 'always' || value === 'never' ? value : 'auto'
+}
+
+function mergeHookLayer(current: HookLayerSettings | undefined, patch: HookLayerSettings): HookLayerSettings {
+  const next: HookLayerSettings = { ...current }
+  if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled)
+  if (patch.timeoutMs !== undefined) next.timeoutMs = clampInt(patch.timeoutMs, 100, 600_000, 4000)
+  if (patch.failure === 'open' || patch.failure === 'close') next.failure = patch.failure
+  if (patch.maxDiagnostics !== undefined) next.maxDiagnostics = clampInt(patch.maxDiagnostics, 1, 100, 20)
+  if (patch.maxRounds !== undefined) next.maxRounds = clampInt(patch.maxRounds, 0, 5, 2)
+  return next
+}
+
+function mergeAuditSettings(
+  current: HookAuditSettings | undefined,
+  patch: HookAuditSettings,
+): HookAuditSettings {
+  const next: HookAuditSettings = { ...current }
+  if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled)
+  if (patch.provider !== undefined) next.provider = patch.provider.trim() || undefined
+  if (patch.model !== undefined) next.model = patch.model.trim() || undefined
+  if (patch.trigger === 'stop' || patch.trigger === 'manual' || patch.trigger === 'off') {
+    next.trigger = patch.trigger
+  }
+  if (patch.prompt !== undefined) next.prompt = patch.prompt.slice(0, 4000).trim() || undefined
+  if (patch.maxFiles !== undefined) next.maxFiles = clampInt(patch.maxFiles, 1, 200, 20)
+  if (patch.dailyBudget !== undefined) next.dailyBudget = clampInt(patch.dailyBudget, 0, 10_000, 50)
+  if (patch.feedback !== undefined) next.feedback = Boolean(patch.feedback)
+  return next
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const trimmed = item.trim()
+    if (!trimmed || trimmed.length > 200) continue
+    seen.add(trimmed)
+    if (seen.size >= 100) break
+  }
+  return [...seen]
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(max, Math.max(min, Math.round(number)))
 }
 
 export default SettingsService

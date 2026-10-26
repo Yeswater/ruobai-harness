@@ -105,6 +105,28 @@ export class ToolRegistry extends Service {
 
     const call: ToolCallInfo = { name, args, sessionId: run.sessionId }
 
+    // Configuration protection runs before policy: a permission preset must
+    // not be able to re-enable writes to hook/lint files.
+    const hooks = this.ctx.get('hooks', false) as
+      | {
+        guard(call: { name: string; args: Record<string, unknown>; sessionId?: string }):
+          | { deny: true; reason: string }
+          | undefined
+      }
+      | undefined
+    if (hooks) {
+      const decision = hooks.guard({
+        name,
+        args: (args ?? {}) as Record<string, unknown>,
+        ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+      })
+      if (decision) {
+        const result: ToolResult = { content: decision.reason, isError: true }
+        this.ctx.emit('tool/after', call, result)
+        return result
+      }
+    }
+
     // Defense in depth: the agent already hides unavailable tools, but a
     // model may still emit a call for one it saw earlier in the turn.
     const permissions = this.ctx.get('permissions', false) as

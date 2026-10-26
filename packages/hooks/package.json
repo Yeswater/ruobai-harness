@@ -1,0 +1,18 @@
+{
+  "name": "@ruobai/hooks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/lint": "workspace:*",
+    "@ruobai/llm": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/settings": "workspace:*"
+  }
+}

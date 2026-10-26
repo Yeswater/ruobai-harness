@@ -16,6 +16,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.3",
     "@ruobai/a2a": "workspace:*",
     "@ruobai/a2a-web": "workspace:*",
     "@ruobai/agent": "workspace:*",
@@ -35,6 +36,9 @@
     "@ruobai/cordis-plugin-timer": "workspace:*",
     "@ruobai/git": "workspace:*",
     "@ruobai/git-web": "workspace:*",
+    "@ruobai/hooks": "workspace:*",
+    "@ruobai/hooks-web": "workspace:*",
+    "@ruobai/lint": "workspace:*",
     "@ruobai/llm": "workspace:*",
     "@ruobai/llm-catalog": "workspace:*",
     "@ruobai/llm-mock": "workspace:*",

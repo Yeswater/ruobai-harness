@@ -323,7 +323,7 @@ export class ChatService extends Service {
       if (message) this.ctx.emit('chat/event', { type: 'message-added', sessionId: id, message })
       // A user turn opens a fresh stats window; publish the empty fold so the
       // strip stops showing the previous turn's numbers.
-      if (event.data.source?.kind !== 'skill') {
+      if (event.data.source?.kind !== 'skill' && event.data.source?.kind !== 'hook') {
         this.ctx.emit('chat/event', { type: 'session-stats', sessionId: id })
       }
     } else if (event.type === 'turn/error') {
@@ -350,7 +350,7 @@ export class ChatService extends Service {
     if (event.type === 'message/user') {
       // Skill bodies are injected for the model only; the user's `/name` message
       // is the visible half of the gesture.
-      if (event.data.source?.kind === 'skill') {
+      if (event.data.source?.kind === 'skill' || event.data.source?.kind === 'hook') {
         session.updatedAt = Math.max(session.updatedAt, event.ts)
         return
       }

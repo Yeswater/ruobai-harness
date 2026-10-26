@@ -151,6 +151,37 @@
 - id: permissions
   name: '@ruobai/permissions'
 
+# Deterministic gates. Commands are git-managed; the settings panel may toggle
+# layers and budgets but cannot edit what runs.
+- id: lint
+  name: '@ruobai/lint'
+  config:
+    checkers:
+      - id: biome-format
+        scope: edit
+        command: pnpm exec biome check --write
+        parser: plain
+        writes: true
+        enabled: true
+      - id: biome-lint
+        scope: edit
+        command: pnpm exec biome check --reporter=json
+        parser: biome
+        enabled: true
+      - id: biome-stop
+        scope: stop
+        command: pnpm exec biome check --reporter=json
+        parser: biome
+        enabled: true
+      - id: typecheck
+        scope: stop
+        command: pnpm typecheck
+        parser: tsc
+        enabled: true
+
+- id: hooks
+  name: '@ruobai/hooks'
+
 # System prompt assembly, token estimate, and LLM compaction.
 - id: context
   name: '@ruobai/context'
@@ -194,6 +225,10 @@
 # Browser-facing projection consumed by ui-server.
 - id: chat
   name: '@ruobai/chat'
+
+# Gate status API, SSE channel and the Settings → 门禁 panel.
+- id: hooks-web
+  name: '@ruobai/hooks-web'
 
 - id: timer
   name: '@ruobai/cordis-plugin-timer'

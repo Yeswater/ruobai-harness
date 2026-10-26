@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useEscapeKey } from '../useEscapeKey.ts'
 import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type ProviderModel, type PublicProvider, type PublicSettings, type RuntimeInfo, type ThemePreference } from '../api.ts'
 import {
-  BotIcon, CloseIcon, CommandIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
+  BotIcon, CheckIcon, CloseIcon, CommandIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
 } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
 import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
@@ -22,7 +22,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols'
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks'
 
 const NAV_GROUPS: Array<{
   label: string
@@ -36,6 +36,7 @@ const NAV_GROUPS: Array<{
       { id: 'mcp', label: 'MCP 连接器', icon: <PlugIcon size={15} />, keywords: '服务器 工具 连接' },
       { id: 'protocols', label: '协议', icon: <CommandIcon size={15} />, keywords: 'AGENTS skill 技能 mcp a2a .ruobai 指令' },
       { id: 'permissions', label: '权限', icon: <ShieldIcon size={15} />, keywords: '审批 规则 危险命令' },
+      { id: 'hooks', label: '门禁', icon: <CheckIcon size={15} />, keywords: 'hook lint 检查 门禁 格式化 阻断 审计 biome' },
     ],
   },
   {
@@ -780,6 +781,10 @@ export function SettingsDialog({
         ) : tab === 'sandbox' ? (
           <div className="settings-page-body scroll">
             <Slot name="settings.sandbox" props={{ sessionId }} />
+          </div>
+        ) : tab === 'hooks' ? (
+          <div className="settings-page-body scroll">
+            <Slot name="settings.hooks" props={{ sessionId }} />
           </div>
         ) : (
           <div className="settings-page-body scroll plugins-page">
