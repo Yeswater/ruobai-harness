@@ -39,6 +39,25 @@ export function MoonIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /></svg>
 }
 
+export function BrandMarkIcon({ size }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'block' }}>
+      <rect width="24" height="24" rx="7.5" fill="var(--accent)" />
+      <ellipse cx="12" cy="15" rx="5.8" ry="4.4" fill="#fff" />
+      <ellipse cx="9.6" cy="15" rx="1.15" ry="1.5" fill="var(--accent-strong)" />
+      <ellipse cx="14.4" cy="15" rx="1.15" ry="1.5" fill="var(--accent-strong)" />
+      <path
+        d="M9.4 7.8c.6.7 1.3.7 1.9 0M12.7 7.8c.6.7 1.3.7 1.9 0"
+        fill="none" stroke="#fff" strokeWidth="1.35" strokeLinecap="round" opacity=".95"
+      />
+      <path
+        d="M17.6 4.1h3.1a1.35 1.35 0 0 0 0-2.7 1.9 1.9 0 0 0-3.6-.4 1.3 1.3 0 0 0 .5 3.1Z"
+        fill="#fff" opacity=".9"
+      />
+    </svg>
+  )
+}
+
 export function PanelIcon({ size }: IconProps) {
   return <svg {...base(size)}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg>
 }

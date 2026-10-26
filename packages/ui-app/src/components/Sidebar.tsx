@@ -5,7 +5,7 @@ import {
   UNGROUPED_KEY, type ManualOrder, type SidebarView,
 } from '../sidebar-model.ts'
 import {
-  ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PanelLeftIcon, PlusIcon, SearchIcon,
+  BrandMarkIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PanelLeftIcon, PlusIcon, SearchIcon,
 } from './Icons.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
@@ -361,7 +361,7 @@ export function Sidebar(props: SidebarProps) {
         <div className="sidebar-head">
           <div className="sidebar-brand-row">
             <div className="brand" title="RuoBai Harness">
-              <span className="brand-mark" aria-hidden="true">R</span>
+              <span className="brand-mark" aria-hidden="true"><BrandMarkIcon /></span>
               <span className="brand-text">
                 <span className="brand-name">RuoBai</span>
                 <span className="brand-sub">Harness</span>

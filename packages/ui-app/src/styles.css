@@ -149,15 +149,13 @@ button {
 .brand-mark {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
   display: grid;
   place-items: center;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--serif);
-  font-size: 17px;
-  font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25);
+}
+
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
 }
 
 .brand-text {
@@ -2356,10 +2354,6 @@ body {
 .brand-mark {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
-  font-family: var(--sans);
-  font-size: 13px;
-  box-shadow: none;
 }
 
 .brand-name {
