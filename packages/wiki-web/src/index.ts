@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
-import { parsePage } from '@ruobai/wiki'
+import { createDiff, parsePage } from '@ruobai/wiki'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'wiki-web'
@@ -65,10 +65,42 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
       return true
     }
     const proposal = /^\/api\/wiki\/proposals\/([^/]+)$/.exec(path)
-    if (proposal && req.method === 'DELETE') {
-      await ctx.wiki.rejectProposal(decodeURIComponent(proposal[1]!), sessionId)
-      sendJson(res, 200, { ok: true })
-      return true
+    if (proposal) {
+      const id = decodeURIComponent(proposal[1]!)
+      if (req.method === 'GET') {
+        const doc = await ctx.wiki.proposal(id, sessionId)
+        if (!doc) throw new HttpError(404, 'no such proposal')
+        const existingRaw = await ctx.wiki.raw(id, sessionId)
+        const existing = existingRaw ? parsePage(existingRaw) : undefined
+        // Body-only diff: timestamps, status and confidence always differ for
+        // a proposal and would bury the actual edit.
+        const diff = createDiff(existing?.body ?? '', doc.body, `pages/${id}.md`) ?? ''
+        sendJson(res, 200, {
+          id,
+          path: `.proposals/${id}.md`,
+          meta: doc.meta,
+          body: doc.body,
+          existing: existing ? { meta: existing.meta, body: existing.body } : null,
+          diff,
+        })
+        return true
+      }
+      if (req.method === 'PUT' || req.method === 'PATCH') {
+        const body = await readJson(req)
+        await ctx.wiki.updateProposal(id, {
+          ...(typeof body?.title === 'string' ? { title: body.title } : {}),
+          ...(typeof body?.body === 'string' ? { body: body.body } : {}),
+          ...(Array.isArray(body?.tags) ? { tags: body.tags.filter((tag: unknown): tag is string => typeof tag === 'string') } : {}),
+        }, sessionId)
+        sendJson(res, 200, { ok: true })
+        return true
+      }
+      if (req.method === 'DELETE') {
+        await ctx.wiki.rejectProposal(id, sessionId)
+        sendJson(res, 200, { ok: true })
+        return true
+      }
+      throw new HttpError(405, 'method not allowed')
     }
 
     const backlinks = /^\/api\/wiki\/page\/([^/]+)\/backlinks$/.exec(path)
@@ -94,9 +126,20 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
     }
     const diff = /^\/api\/wiki\/page\/([^/]+)\/diff$/.exec(path)
     if (diff && req.method === 'GET') {
+      const id = decodeURIComponent(diff[1]!)
       const from = Number(url.searchParams.get('from'))
       const to = Number(url.searchParams.get('to'))
-      const text = await ctx.wiki.diffVersions(decodeURIComponent(diff[1]!), from, to, sessionId)
+      const currentRaw = await ctx.wiki.raw(id, sessionId)
+      const current = currentRaw ? parsePage(currentRaw) : undefined
+      // The current revision has no file under .versions; compare against the
+      // live page instead so "与当前对比" works for the latest edit.
+      const before = await ctx.wiki.version(id, from, sessionId)
+      const after = current && to === current.meta.revision
+        ? currentRaw
+        : await ctx.wiki.version(id, to, sessionId)
+      const text = before === undefined || after === undefined
+        ? undefined
+        : contentDiff(before, after, `${id}@${from}..${to === current?.meta.revision ? 'current' : to}`)
       if (text === undefined) throw new HttpError(404, 'no such version')
       sendJson(res, 200, { diff: text })
       return true
@@ -155,6 +198,14 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
     }
   }
   return true
+}
+
+function contentDiff(before: string, after: string, path: string) {
+  const left = parsePage(before)
+  const right = parsePage(after)
+  // Frontmatter carries a new timestamp on every write; diff the body so
+  // version review shows the edit, not the clock.
+  return createDiff(left?.body ?? before, right?.body ?? after, path)
 }
 
 export default { name, inject, apply }

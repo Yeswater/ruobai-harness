@@ -17,6 +17,7 @@ import {
   parsePage,
   serializePage,
   summaryOf,
+  type PageDocument,
   type PageMeta,
   type PageSource,
   type PageStatus,
@@ -25,6 +26,7 @@ import {
 export type { PageMeta, PageSource, PageStatus } from './frontmatter.ts'
 export { parsePage, serializePage, summaryOf, overviewOf } from './frontmatter.ts'
 export { chunkPage } from './chunk.ts'
+export { createDiff } from './diff.ts'
 export { tokenize, Bm25Index } from './bm25.ts'
 
 export interface Config {
@@ -280,6 +282,32 @@ export class WikiService extends Service {
       out.push({ id: doc.meta.id, title: doc.meta.title, path: `.proposals/${entry.name}` })
     }
     return out.sort((left, right) => left.id.localeCompare(right.id))
+  }
+
+  /** Read one proposal without accepting it; used by the review panel. */
+  async proposal(id: string, sessionId?: string): Promise<PageDocument | undefined> {
+    if (!PAGE_ID.test(id)) return undefined
+    const raw = await readFile(join(this.root(sessionId), '.proposals', `${id}.md`), 'utf8').catch(() => undefined)
+    return raw === undefined ? undefined : parsePage(raw)
+  }
+
+  /** Edit a proposal in place before deciding; the page is still untouched. */
+  async updateProposal(
+    id: string,
+    patch: { title?: string; body?: string; tags?: string[] },
+    sessionId?: string,
+  ): Promise<PageDocument> {
+    if (!PAGE_ID.test(id)) throw new Error(`invalid page id: ${id}`)
+    const doc = await this.proposal(id, sessionId)
+    if (!doc) throw new Error(`no proposal: ${id}`)
+    const title = patch.title?.trim() || doc.meta.title
+    const meta: PageMeta = { ...doc.meta, title, tags: patch.tags ?? doc.meta.tags, updated: new Date().toISOString() }
+    const body = patch.body ?? doc.body
+    await writeAtomic(
+      join(this.root(sessionId), '.proposals', `${id}.md`),
+      serializePage({ meta, body }),
+    )
+    return { meta, body }
   }
 
   /** Accept a proposal: it becomes a page with a session source. */

@@ -50,14 +50,57 @@ export interface SkillRoot {
   source: 'project' | 'global'
 }
 
+export interface WikiSource {
+  kind: 'file' | 'session' | 'url'
+  path?: string
+  hash?: string
+  session?: string
+  seq?: number[]
+}
+
+export interface WikiPageMeta {
+  id: string
+  title: string
+  tags: string[]
+  sources: WikiSource[]
+  confidence?: 'high' | 'medium' | 'low'
+  status: string
+  revision: number
+  updated?: string
+}
+
 export interface WikiPageSummary {
   id: string
   title: string
   tags?: string[]
   status: string
+  confidence?: 'high' | 'medium' | 'low'
   sourced?: boolean
   summary?: string
   updated?: string
+}
+
+export interface WikiProposalDetail {
+  id: string
+  path: string
+  meta: WikiPageMeta
+  body: string
+  existing: { meta: WikiPageMeta; body: string } | null
+  diff: string
+}
+
+export interface WikiLintFinding {
+  page?: string
+  kind: string
+  detail: string
+}
+
+export interface WikiSearchHit {
+  page: string
+  title: string
+  heading: string
+  summary?: string
+  snippet?: string
 }
 
 export interface SkillHubSkill {
@@ -752,9 +795,33 @@ export const api = {
 
   getWikiPage: async (id: string, sessionId?: string) => {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
-    return request<{ meta: { title: string; revision: number; tags?: string[] }; body: string }>(
+    return request<{ meta: WikiPageMeta; body: string; stale: Array<{ path: string; reason: string }> }>(
       `/api/wiki/page/${encodeURIComponent(id)}${suffix}`,
     )
+  },
+  getWikiProposal: async (id: string, sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<WikiProposalDetail>(`/api/wiki/proposals/${encodeURIComponent(id)}${suffix}`)
+  },
+
+  updateWikiProposal: async (
+    id: string,
+    patch: { title?: string; body?: string; tags?: string[] },
+    sessionId?: string,
+  ) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<{ ok: true }>(`/api/wiki/proposals/${encodeURIComponent(id)}${suffix}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    })
+  },
+
+  getWikiDiff: async (id: string, from: number, to: number, sessionId?: string) => {
+    const params = new URLSearchParams({ from: String(from), to: String(to) })
+    if (sessionId) params.set('sessionId', sessionId)
+    return (await request<{ diff: string }>(
+      `/api/wiki/page/${encodeURIComponent(id)}/diff?${params.toString()}`,
+    )).diff
   },
 
   getSkillHubSkills: async (params: {

@@ -58,6 +58,11 @@ describe('wiki web', () => {
     const versions = await (await fetch(`${base}/page/${id}/versions?${suffix}`)).json() as { versions: number[] }
     expect(versions.versions).toEqual([1])
 
+    const diff = await (await fetch(`${base}/page/${id}/diff?from=1&to=2&${suffix}`)).json() as { diff: string }
+    expect(diff.diff).toContain('-嵌套 sandbox-exec 会 exit 71')
+    expect(diff.diff).toContain('+第二版')
+    expect(diff.diff).not.toContain('updated:')
+
     const found = await (await fetch(`${base}/search?q=${encodeURIComponent('沙箱')}&${suffix}`)).json() as {
       hits: Array<{ page: string }>
     }
@@ -89,6 +94,23 @@ describe('wiki web', () => {
 
     const listed = await (await fetch(`${base}/proposals?${suffix}`)).json() as { proposals: Array<{ id: string }> }
     expect(listed.proposals.map(item => item.id)).toEqual([id])
+
+    const review = await (await fetch(`${base}/proposals/${id}?${suffix}`)).json() as {
+      existing: unknown
+      diff: string
+      body: string
+    }
+    expect(review.existing).toBeNull()
+    expect(review.diff).toContain('+')
+
+    const edited = await fetch(`${base}/proposals/${id}?${suffix}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Sandbox network', body: '## 摘要\n\n编辑后的提案。' }),
+    })
+    expect(edited.status).toBe(200)
+    const reread = await (await fetch(`${base}/proposals/${id}?${suffix}`)).json() as { body: string }
+    expect(reread.body).toContain('编辑后的提案')
 
     const accepted = await fetch(`${base}/proposals/${id}/accept?${suffix}`, { method: 'POST' })
     expect(accepted.status).toBe(200)
