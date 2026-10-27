@@ -18,6 +18,10 @@ describe('shortcuts', () => {
     expect(isSettingsShortcut({ key: ',', ctrlKey: true })).toBe(true)
     // Some layouts report a different character but the same physical key.
     expect(isSettingsShortcut({ key: '＜', code: 'Comma', metaKey: true })).toBe(true)
+    // Windows IMEs may keep Shift in the chord or report a full-width comma.
+    expect(isSettingsShortcut({ key: '<', code: 'Comma', ctrlKey: true, shiftKey: true })).toBe(true)
+    expect(isSettingsShortcut({ key: '，', ctrlKey: true })).toBe(true)
+    expect(isSettingsShortcut({ key: ',', code: 'NumpadComma', ctrlKey: true })).toBe(true)
     expect(isSettingsShortcut({ key: ',', metaKey: true, altKey: true })).toBe(false)
     expect(isSettingsShortcut({ key: ',' })).toBe(false)
     expect(isSettingsShortcut({ key: '.', code: 'Period', metaKey: true })).toBe(false)

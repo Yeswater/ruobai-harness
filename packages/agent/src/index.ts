@@ -110,6 +110,11 @@ export class AgentService extends Service {
     systemPrompt: z.string().default(
       'You are ruobai, a concise assistant running inside the ruobai harness. '
         + 'Use tools when they help, and answer in the user\'s language. '
+        // Independent reads belong in one step (they execute concurrently);
+        // merging unrelated work into one shell line hides failures and loses
+        // per-call attribution.
+        + 'When independent reads or searches can answer the request, issue them together in one step; '
+        + 'keep dependent calls in separate steps instead of chaining unrelated commands into one shell call. '
         // Reasoning models echo the prompt's language; the UI shows the trace
         // to a Chinese-reading user, so ask for it explicitly.
         + 'Write your reasoning in Simplified Chinese (中文) even when the request is in another language.',
@@ -405,8 +410,31 @@ export class AgentService extends Service {
           break
         }
 
+        const executeCall = async (call: ToolCallPart) => {
+          const args = parseArguments(call.arguments)
+          const result = await this.ctx.tools.invoke(call.name, args, {
+            signal: controller.signal,
+            sessionId,
+            callId: call.id,
+            workspace: record.meta.workspace,
+          })
+          return { args, result }
+        }
+
+        // Independent read-only calls from one model step run together; any
+        // writer or approval stays serial so side effects keep their order.
+        const readOnlyBatch = calls.length > 1 && calls.every((call) => {
+          const tool = this.ctx.tools.get(call.name)
+          return this.ctx.modes.allows(mode?.id, call.name)
+            && tool?.readOnly === true
+            && !tool.requiresApproval
+        })
+        const batch = readOnlyBatch && !controller.signal.aborted
+          ? await Promise.all(calls.map(executeCall))
+          : undefined
+
         let goalComplete = false
-        for (const call of calls) {
+        for (const [index, call] of calls.entries()) {
           if (controller.signal.aborted) break
           if (!this.ctx.modes.allows(mode?.id, call.name)) {
             this.ctx.sessions.append(sessionId, 'tool/result', {
@@ -417,13 +445,7 @@ export class AgentService extends Service {
             })
             continue
           }
-          const args = parseArguments(call.arguments)
-          const result = await this.ctx.tools.invoke(call.name, args, {
-            signal: controller.signal,
-            sessionId,
-            callId: call.id,
-            workspace: record.meta.workspace,
-          })
+          const { args, result } = batch ? batch[index]! : await executeCall(call)
           this.ctx.sessions.append(sessionId, 'tool/result', {
             callId: call.id,
             name: call.name,

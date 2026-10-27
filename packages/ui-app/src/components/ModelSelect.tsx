@@ -15,8 +15,8 @@ interface ModelSelectProps {
 
 function formatWindow(tokens?: number) {
   if (!tokens) return undefined
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
-  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`
+  if (tokens >= 1024 * 1024) return `${(tokens / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')}M`
+  if (tokens >= 1024) return `${Math.round(tokens / 1024)}k`
   return String(tokens)
 }
 

@@ -97,4 +97,22 @@ describe('grep and glob tools', () => {
     expect(escape.isError).toBe(true)
     expect(escape.content).toContain('escapes the workspace')
   })
+
+  it('streams files above maxBytes instead of skipping them', async () => {
+    const { ctx, root } = await setup()
+    // Default read cap is 64 KiB; both files sit above it.
+    await writeFile(join(root, 'big.log'), `${'x'.repeat(70_000)}\nneedle near the end\n`)
+    await writeFile(join(root, 'big.bin'), Buffer.concat([
+      Buffer.from([0]),
+      Buffer.alloc(70_000, 0x78),
+      Buffer.from('\nneedle in binary\n'),
+    ]))
+
+    const text = await ctx.tools.invoke('grep', { pattern: 'needle near the end' })
+    expect(text.isError).toBe(false)
+    expect(text.content).toContain('big.log:2:needle near the end')
+
+    const binary = await ctx.tools.invoke('grep', { pattern: 'needle in binary' })
+    expect(binary.content).toContain('No matches')
+  })
 })

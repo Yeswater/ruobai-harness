@@ -22,9 +22,14 @@ const BREAK_LABELS: Record<string, string> = {
   messages: '历史改写',
 }
 
+// K/M match TokenAmountInput's 1024-based factors, so a configured 400K window
+// reads back as 400k instead of 410k.
+const K = 1024
+const M = K * 1024
+
 export function formatTokens(tokens: number) {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1).replace(/\.0$/, '')}k`
+  if (tokens >= M) return `${(tokens / M).toFixed(1).replace(/\.0$/, '')}M`
+  if (tokens >= K) return `${(tokens / K).toFixed(1).replace(/\.0$/, '')}k`
   return `${Math.round(tokens)}`
 }
 

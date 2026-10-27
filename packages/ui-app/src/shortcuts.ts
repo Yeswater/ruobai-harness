@@ -19,9 +19,17 @@ export function isPaletteShortcut(event: KeyLike) {
   return isPlainMod(event) && event.key.toLowerCase() === 'k'
 }
 
-/** ⌘, / Ctrl+,: settings. `code` covers layouts where the comma is shifted. */
+/**
+ * ⌘, / Ctrl+,: settings.
+ *
+ * The physical `code` wins over `key`: Windows reports the comma through an
+ * IME as a full-width character or with Shift held on some layouts, and the
+ * chord must still open settings there.
+ */
 export function isSettingsShortcut(event: KeyLike) {
-  return isPlainMod(event) && (event.key === ',' || event.code === 'Comma')
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return false
+  if (event.code === 'Comma' || event.code === 'NumpadComma') return true
+  return !event.shiftKey && (event.key === ',' || event.key === '，')
 }
 
 /** ⌘N / Ctrl+N: a new session. */

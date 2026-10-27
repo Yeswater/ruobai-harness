@@ -9,6 +9,48 @@ import { SseHub } from './sse.ts'
 
 const STATES = ['PENDING', 'LOADING', 'ACTIVE', 'FAILED', 'DISPOSED', 'UNLOADING'] as const
 
+/**
+ * Plugins behind the control surface itself. Disabling one would take away the
+ * settings page (or the API behind it) before it could be turned back on.
+ */
+const PROTECTED_PLUGINS = new Set([
+  '@ruobai/cordis-plugin-include',
+  '@ruobai/web-server',
+  '@ruobai/web-static',
+  '@ruobai/web-auth',
+  '@ruobai/web-ws',
+  '@ruobai/ui-server',
+  '@ruobai/chat',
+  '@ruobai/session',
+  '@ruobai/modes',
+  '@ruobai/approval',
+  '@ruobai/context',
+  '@ruobai/llm',
+  '@ruobai/agent',
+  '@ruobai/tools',
+  '@ruobai/settings',
+  '@ruobai/settings-web',
+])
+
+interface LoaderEntry {
+  id: string
+  options: { name: string; group?: boolean | null }
+  disabled: boolean
+  /** In-memory update: it must not call the tree's write(), which drops the
+   * hand-written comments in cordis.yml. */
+  update?(options: { disabled: boolean }): Promise<void>
+  fiber?: {
+    uid?: number
+    state?: number
+    store?: Record<string, unknown>
+    runtime?: { callback?: { meta?: { title?: string; description?: string } } }
+  }
+}
+
+interface LoaderLike {
+  entries?(): Iterable<LoaderEntry>
+}
+
 declare module '@ruobai/cordis' {
   interface Context {
     ui: UiApi
@@ -212,6 +254,31 @@ export class UiApi extends Service {
       return true
     }
 
+    const plugin = /^\/api\/plugins\/([^/]+)$/.exec(pathname)
+    if (plugin) {
+      if (method !== 'POST') throw new HttpError(405, 'method not allowed')
+      const loader = this.ctx.get('loader', false) as LoaderLike | undefined
+      if (!loader?.entries) throw new HttpError(503, 'plugin loader is not available')
+      const entryId = decodeURIComponent(plugin[1]!)
+      const body = await readJson(req)
+      if (typeof body.enabled !== 'boolean') throw new HttpError(400, 'enabled must be a boolean')
+      const entry = [...loader.entries()].find(item => item.id === entryId)
+      if (!entry) throw new HttpError(404, 'plugin entry not found')
+      if (PROTECTED_PLUGINS.has(entry.options.name)) {
+        throw new HttpError(400, 'this plugin keeps the control surface running')
+      }
+      if (!entry.update) throw new HttpError(400, 'this plugin entry cannot be toggled')
+      try {
+        // Update the entry directly rather than loader.update(): the latter
+        // writes the entry tree back and strips cordis.yml's comments.
+        await entry.update({ disabled: !body.enabled })
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error))
+      }
+      sendJson(res, 200, this.runtime())
+      return true
+    }
+
     const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact))?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
@@ -366,15 +433,17 @@ export class UiApi extends Service {
   }
 
   private runtime() {
-    const plugins: unknown[] = []
+    const plugins: Array<Record<string, unknown>> = []
+    const seen = new Set<string>()
     for (const runtime of this.ctx.registry.values()) {
       for (const fiber of runtime.fibers) {
         const meta = (fiber.runtime?.callback as {
           meta?: { title?: string; description?: string }
         } | undefined)?.meta
-        const entryId = (fiber as unknown as {
-          entry?: { options?: { id?: string } }
-        }).entry?.options?.id
+        const entry = (fiber as unknown as { entry?: LoaderEntry }).entry
+        const entryId = entry?.id
+        if (entryId) seen.add(entryId)
+        const toggleable = Boolean(entryId) && !PROTECTED_PLUGINS.has(entry?.options.name ?? '')
         const stableId = entryId && !/^[0-9a-f]{8,}$/i.test(entryId)
           ? entryId
           : pluginSlug(fiber.name)
@@ -386,9 +455,33 @@ export class UiApi extends Service {
           ...(meta?.description ? { description: meta.description } : {}),
           state: STATES[fiber.state] ?? 'UNKNOWN',
           services: Object.keys(fiber.store ?? {}),
+          enabled: true,
+          ...(entryId ? { entryId } : {}),
+          ...(toggleable ? { toggleable: true } : {}),
         })
       }
     }
+
+    // A disabled entry has no fiber, so it only exists in the loader tree.
+    const loader = this.ctx.get('loader', false) as LoaderLike | undefined
+    if (loader?.entries) {
+      for (const entry of loader.entries()) {
+        if (entry.fiber || seen.has(entry.id) || entry.options.group) continue
+        if (PROTECTED_PLUGINS.has(entry.options.name)) continue
+        plugins.push({
+          uid: null,
+          id: `ruobai-${pluginSlug(entry.options.name.split('/').pop() ?? entry.options.name)}`,
+          name: entry.options.name,
+          title: entry.options.name.replace(/^@[^/]+\//, ''),
+          state: entry.disabled ? 'DISABLED' : 'PENDING',
+          services: [],
+          entryId: entry.id,
+          enabled: !entry.disabled,
+          toggleable: true,
+        })
+      }
+    }
+
     const services = Object.entries(this.ctx.reflect.props)
       .filter(([, property]) => property.type === 'service')
       .map(([name]) => name)

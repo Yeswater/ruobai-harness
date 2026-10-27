@@ -501,4 +501,54 @@ describe('ui server', () => {
     })
     expect(missing.status).toBe(400)
   })
+
+  it('toggles loader entries and protects the control surface', async () => {
+    const { ctx } = await setup()
+    const updates: Array<{ id: string; disabled: boolean }> = []
+    const state = new Map([['inc:demo', false], ['inc:web', false]])
+    const entries = [
+      { id: 'inc:demo', options: { name: '@ruobai/demo' } },
+      { id: 'inc:web', options: { name: '@ruobai/ui-server' } },
+    ].map(row => ({
+      ...row,
+      get disabled() {
+        return state.get(row.id)!
+      },
+      async update(options: { disabled: boolean }) {
+        updates.push({ id: row.id, disabled: options.disabled })
+        state.set(row.id, options.disabled)
+      },
+    }))
+    const loader = {
+      *entries() {
+        yield* entries
+      },
+    }
+    ctx.effect(() => ctx.reflect.provide('loader', loader))
+
+    const toggle = (id: string, enabled: boolean) => fetch(
+      `${ctx.web.url}/api/plugins/${encodeURIComponent(id)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      },
+    )
+
+    const off = await toggle('inc:demo', false)
+    expect(off.status).toBe(200)
+    expect(updates).toEqual([{ id: 'inc:demo', disabled: true }])
+    const info = await off.json() as {
+      plugins: Array<{ entryId?: string; enabled: boolean; state: string }>
+    }
+    expect(info.plugins.some(plugin =>
+      plugin.entryId === 'inc:demo' && !plugin.enabled && plugin.state === 'DISABLED')).toBe(true)
+
+    expect((await toggle('inc:demo', true)).status).toBe(200)
+    expect(updates[1]).toEqual({ id: 'inc:demo', disabled: false })
+
+    // Turning off the settings surface itself would strand the toggle.
+    expect((await toggle('inc:web', false)).status).toBe(400)
+    expect(updates).toHaveLength(2)
+  })
 })

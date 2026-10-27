@@ -81,6 +81,10 @@ export interface RuntimeInfo {
     description?: string
     state: string
     services: string[]
+    /** Loader row behind this plugin; required to toggle it. */
+    entryId?: string
+    enabled: boolean
+    toggleable?: boolean
   }>
   services: string[]
   url: string
@@ -452,6 +456,12 @@ export const api = {
     request<{ ok: true }>(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
 
   getRuntime: async () => request<RuntimeInfo>('/api/runtime'),
+
+  setPluginEnabled: async (entryId: string, enabled: boolean) =>
+    request<RuntimeInfo>(`/api/plugins/${encodeURIComponent(entryId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
 
   getModes: async () =>
     request<{ modes: ModeInfo[]; default: string }>('/api/modes'),

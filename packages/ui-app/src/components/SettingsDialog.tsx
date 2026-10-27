@@ -97,6 +97,7 @@ export function SettingsDialog({
   const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
   const [compactPercent, setCompactPercent] = useState(80)
   const [pluginQuery, setPluginQuery] = useState('')
+  const [pluginBusy, setPluginBusy] = useState<string | null>(null)
 
   const providers = settings?.llm?.providers ?? []
   const activeProvider = settings?.llm?.activeProvider ?? 'mock'
@@ -168,6 +169,18 @@ export function SettingsDialog({
       clearInterval(timer)
     }
   }, [open, tab])
+
+  const togglePlugin = async (entryId: string, enabled: boolean) => {
+    setPluginBusy(entryId)
+    try {
+      setRuntime(await api.setPluginEnabled(entryId, enabled))
+      setRuntimeError(null)
+    } catch (caught) {
+      setRuntimeError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setPluginBusy(null)
+    }
+  }
 
   if (!open) return null
 
@@ -380,8 +393,10 @@ export function SettingsDialog({
         || (plugin.title ?? '').toLowerCase().includes(pluginTerm)
         || (plugin.description ?? '').toLowerCase().includes(pluginTerm)
     })
-  const sessionPlugins = pluginList.filter(plugin => plugin.name.startsWith('mode-'))
-  const globalPlugins = pluginList.filter(plugin => !plugin.name.startsWith('mode-'))
+  // Disabled entries are listed by package name (`@ruobai/mode-plan`), not by
+  // the fiber name the rest of the list uses.
+  const sessionPlugins = pluginList.filter(plugin => plugin.name.includes('mode-'))
+  const globalPlugins = pluginList.filter(plugin => !plugin.name.includes('mode-'))
 
   const selectTab = (next: SettingsTab) => {
     setTab(next)
@@ -800,6 +815,9 @@ export function SettingsDialog({
                 ? <button onClick={() => setPluginQuery('')} aria-label="清除插件搜索">×</button>
                 : null}
             </div>
+            <p className="settings-section-note">
+              开关作用于当前进程，重启后按 cordis.yml 恢复。
+            </p>
 
             {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
             {runtime
@@ -812,7 +830,12 @@ export function SettingsDialog({
                         <p className="settings-section-note">按会话选择的模式插件。</p>
                         <div className="plugin-cards">
                           {sessionPlugins.map(plugin => (
-                            <PluginCard key={`${plugin.name}-${plugin.uid}`} plugin={plugin} />
+                            <PluginCard
+                              key={`${plugin.name}-${plugin.uid ?? plugin.entryId}`}
+                              plugin={plugin}
+                              busy={pluginBusy === plugin.entryId}
+                              onToggle={togglePlugin}
+                            />
                           ))}
                         </div>
                       </>
@@ -823,7 +846,12 @@ export function SettingsDialog({
                   <p className="settings-section-note">系统与所有会话共用。</p>
                   <div className="plugin-cards">
                     {globalPlugins.map(plugin => (
-                      <PluginCard key={`${plugin.name}-${plugin.uid}`} plugin={plugin} />
+                      <PluginCard
+                        key={`${plugin.name}-${plugin.uid ?? plugin.entryId}`}
+                        plugin={plugin}
+                        busy={pluginBusy === plugin.entryId}
+                        onToggle={togglePlugin}
+                      />
                     ))}
                   </div>
                   {pluginList.length ? null : <div className="detail-note">没有匹配的插件。</div>}
@@ -846,15 +874,34 @@ function runtimeState(state: string) {
   return 'off'
 }
 
-function PluginCard({ plugin }: { plugin: RuntimeInfo['plugins'][number] }) {
+function PluginCard({ plugin, busy, onToggle }: {
+  plugin: RuntimeInfo['plugins'][number]
+  busy: boolean
+  onToggle: (entryId: string, enabled: boolean) => void
+}) {
   const title = plugin.title || plugin.name
   const description = plugin.description || ''
   return (
-    <article className="plugin-card">
+    <article className={`plugin-card ${plugin.enabled ? '' : 'off'}`}>
       <header className="plugin-card-head">
         <span className={`status-dot ${runtimeState(plugin.state)}`} />
         <span className="plugin-card-name">{title}</span>
         <span className={`state state-${runtimeState(plugin.state)}`}>{plugin.state.toLowerCase()}</span>
+        {plugin.toggleable && plugin.entryId
+          ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={plugin.enabled}
+              aria-label={`${plugin.enabled ? '停用' : '启用'} ${title}`}
+              className={`plugin-switch ${plugin.enabled ? 'on' : ''}`}
+              disabled={busy}
+              onClick={() => onToggle(plugin.entryId!, !plugin.enabled)}
+            >
+              <span />
+            </button>
+          )
+          : null}
       </header>
       {description ? <p className="plugin-card-desc">{description}</p> : null}
       <div className="plugin-card-meta">

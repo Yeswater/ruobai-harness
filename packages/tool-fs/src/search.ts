@@ -1,5 +1,7 @@
-import { opendir, readFile, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { open, opendir, readFile, stat } from 'node:fs/promises'
 import { join, matchesGlob, relative, resolve, sep } from 'node:path'
+import { createInterface } from 'node:readline'
 import type { ToolDefinition, ToolRunContext } from '@ruobai/tools'
 
 export interface SearchContext {
@@ -85,6 +87,20 @@ function capped(value: number, fallback: number, max: number) {
   return Math.min(Math.floor(number), max)
 }
 
+const SNIFF_BYTES = 8_192
+
+/** Inspect only the head of a large file; streaming a binary blob is wasted work. */
+async function looksBinary(target: string) {
+  const handle = await open(target, 'r')
+  try {
+    const head = Buffer.alloc(SNIFF_BYTES)
+    const { bytesRead } = await handle.read(head, 0, head.length, 0)
+    return head.subarray(0, bytesRead).includes(0)
+  } finally {
+    await handle.close()
+  }
+}
+
 export function searchTools(context: SearchContext): ToolDefinition[] {
   return [
     {
@@ -135,20 +151,46 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
           const path = toPosix(root, target)
           if (fileGlob && !matchesGlob(path, fileGlob)) return
 
-          const details = await stat(target)
-          if (details.size > context.maxBytes) return
-          const buffer = await readFile(target)
-          if (buffer.includes(0)) return
-          const text = buffer.toString('utf8')
-          const lines = text.split('\n')
-          for (let index = 0; index < lines.length; index += 1) {
-            const line = lines[index]!
-            if (!matcher.test(line)) continue
-            matches.push(`${path}:${index + 1}:${line.slice(0, MAX_LINE).trimEnd()}`)
-            if (matches.length >= maxResults) {
-              more = true
+          try {
+            const details = await stat(target)
+            if (details.size <= context.maxBytes) {
+              const buffer = await readFile(target)
+              if (buffer.includes(0)) return
+              const lines = buffer.toString('utf8').split('\n')
+              for (let index = 0; index < lines.length; index += 1) {
+                const line = lines[index]!
+                if (!matcher.test(line)) continue
+                matches.push(`${path}:${index + 1}:${line.slice(0, MAX_LINE).trimEnd()}`)
+                if (matches.length >= maxResults) {
+                  more = true
+                  return
+                }
+              }
               return
             }
+
+            // Big files are streamed, not skipped: a read cap for read_file
+            // must not make grep silently miss every large log.
+            if (await looksBinary(target)) return
+            const stream = createReadStream(target, { encoding: 'utf8' })
+            const lines = createInterface({ input: stream, crlfDelay: Infinity })
+            let lineNumber = 0
+            try {
+              for await (const line of lines) {
+                lineNumber += 1
+                if (!matcher.test(line)) continue
+                matches.push(`${path}:${lineNumber}:${line.slice(0, MAX_LINE).trimEnd()}`)
+                if (matches.length >= maxResults) {
+                  more = true
+                  return
+                }
+              }
+            } finally {
+              lines.close()
+              stream.destroy()
+            }
+          } catch {
+            // A file that vanished or cannot be read must not fail the search.
           }
         }
 
