@@ -817,7 +817,7 @@ ctx.effect(() => {
 
 - 规则来源插件 `approval-rules-{managed,project,user,session}` + `deny→ask→allow` 求值。
 - `sandbox-policy` 支持项目级 `.ruobai/sandbox.json`（额外 write 根、额外 guard），首次信任提示。
-- `sandbox-web`：展示 IR 摘要（不展示 SBPL）、guard 列表、denial 时间线、"本会话放宽过什么"。
+- `sandbox-web`：展示 IR 摘要（不展示 SBPL）、guard 列表、denial 时间线、"本会话放宽过什么"，以及全局「沙箱保护」开关。开关写 `settings.sandbox.enabled`；关闭后 `shell-sandboxed` 每次运行时委托给 `direct` 执行器（没有直连执行器就 fail-closed），审批与危险命令保护不受影响。策略本体（guards / network / write 根）仍然不通过 HTTP 编辑。
 - 验收：D10（热重载规则源）。
 
 ### M4（生产级，2–3 周）

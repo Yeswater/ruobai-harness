@@ -5,8 +5,9 @@ import type { SandboxRunResult } from '@ruobai/sandbox'
 import type { Denial, DenialService } from '@ruobai/sandbox-denial'
 import type { SandboxPolicyService } from '@ruobai/sandbox-policy'
 import type { EscalationService } from '@ruobai/sandbox-escalation'
-import { renderOutput, scrubbedEnv, type ShellRunResult, type ShellRunSpec } from '@ruobai/shell'
+import { renderOutput, scrubbedEnv, ShellUnavailableError, type ShellRunResult, type ShellRunSpec } from '@ruobai/shell'
 import type { Exemption } from '@ruobai/sandbox'
+import type { SettingsService } from '@ruobai/settings'
 
 export interface Config {
   /**
@@ -106,6 +107,19 @@ export default class SandboxedShell {
       id: 'sandbox',
       sandboxed: true,
       async run(spec: ShellRunSpec): Promise<ShellRunResult> {
+        // The settings switch is evaluated per run, so enabling or disabling
+        // the sandbox never needs a restart. Approvals stay in the tool layer.
+        const settings = ctx.get('settings', false) as SettingsService | undefined
+        const sandboxOff = typeof settings?.sandboxEnabled === 'function' && !settings.sandboxEnabled()
+        if (sandboxOff) {
+          const direct = ctx.shell.executor('direct')
+          if (!direct) {
+            throw new ShellUnavailableError('sandbox is disabled but no direct executor is registered')
+          }
+          const result = await direct.run(spec)
+          return { ...result, executor: 'direct', sandboxed: false }
+        }
+
         const attempt = spec.attempt ?? 1
         const first = await runOnce(spec)
         const base: ShellRunResult = {

@@ -4,8 +4,11 @@ import {
   ancestorKeys, DEFAULT_VIEW, filterSessions, FLAT_KEY, groupSessions, moveSession,
   UNGROUPED_KEY, type ManualOrder, type SidebarView,
 } from '../sidebar-model.ts'
+import type { FunctionView } from '../function-views.ts'
+import { FUNCTION_VIEWS } from '../function-views.ts'
 import {
-  BrandMarkIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, GearIcon, PanelLeftIcon, PlusIcon, SearchIcon,
+  BrandMarkIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, FolderTreeIcon, GearIcon,
+  PanelLeftIcon, PlusIcon, SearchIcon, SparkIcon,
 } from './Icons.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
@@ -25,6 +28,8 @@ interface SidebarProps {
   onArchive: (id: string, archived: boolean) => void
   onDelete: (id: string) => void
   onOpenSettings: () => void
+  functionView: FunctionView | null
+  onOpenFunction: (view: FunctionView) => void
 }
 
 interface DragState {
@@ -82,6 +87,10 @@ export function relativeTime(timestamp: number) {
   const months = Math.floor(days / 30)
   if (months < 12) return `${months}个月`
   return `${Math.floor(months / 12)}年`
+}
+
+function functionIcon(id: FunctionView) {
+  return id === 'wiki' ? <FolderTreeIcon size={15} /> : <SparkIcon size={15} />
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -423,6 +432,23 @@ export function Sidebar(props: SidebarProps) {
               </div>
             )}
         </div>
+
+        <nav className="function-rail" aria-label="功能">
+          {FUNCTION_VIEWS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`function-item ${props.functionView === item.id ? 'active' : ''}`}
+              onClick={() => props.onOpenFunction(item.id)}
+              aria-current={props.functionView === item.id ? 'page' : undefined}
+              title={item.description}
+            >
+              <span className="function-icon">{functionIcon(item.id)}</span>
+              <span className="function-label">{item.label}</span>
+              {item.badge ? <span className="function-badge">{item.badge}</span> : null}
+            </button>
+          ))}
+        </nav>
 
         <div className={`session-list ${drag ? 'dragging' : ''}`}>
           {visibleGroups.map(renderGroup)}

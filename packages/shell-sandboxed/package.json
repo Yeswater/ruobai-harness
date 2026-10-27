@@ -12,6 +12,7 @@
     "@ruobai/sandbox-denial": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
     "@ruobai/schemastery": "workspace:*",
+    "@ruobai/settings": "workspace:*",
     "@ruobai/shell": "workspace:*"
   },
   "devDependencies": {

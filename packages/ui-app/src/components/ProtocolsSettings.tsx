@@ -7,7 +7,7 @@ function formatBytes(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** Read-only view of the instructions, skills, MCP files and A2A agents. */
+/** Read-only view of the instruction, MCP config and A2A files. */
 export function ProtocolsSettings({ sessionId }: { sessionId?: string }) {
   const [data, setData] = useState<ProtocolsInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,7 +30,6 @@ export function ProtocolsSettings({ sessionId }: { sessionId?: string }) {
   }, [load])
 
   const instructions = data?.instructions
-  const skills = data?.skills
   const mcp = data?.mcp
   const a2a = data?.a2a
 
@@ -38,7 +37,7 @@ export function ProtocolsSettings({ sessionId }: { sessionId?: string }) {
     <div className="settings-page-body scroll protocols-page">
       <div className="protocols-head">
         <p className="field-help">
-          自动读取 ~/.ruobai 与项目 .ruobai；技能还会扫描 .claude / .agents 下的 skills 目录。此页只读。
+          自动读取 ~/.ruobai 与项目 .ruobai 下的指令、MCP 配置与 A2A 声明。技能与连接器在左侧功能区管理，此页只读。
         </p>
         <button className="btn ghost compact" onClick={() => void load()} disabled={loading}>
           {loading ? '刷新中…' : '刷新'}
@@ -65,41 +64,6 @@ export function ProtocolsSettings({ sessionId }: { sessionId?: string }) {
             {instructions.truncated
               ? <div className="detail-note">内容超出 maxInstructions，已截断。</div>
               : null}
-          </section>
-        )
-        : null}
-
-      {skills
-        ? (
-          <section className="settings-section">
-            <h3>技能 <span className="protocol-count">{skills.items.length}</span></h3>
-            {skills.items.length
-              ? skills.items.map(skill => (
-                <div className="protocol-row" key={skill.name}>
-                  <span className={`protocol-badge ${skill.source}`}>
-                    {skill.source === 'project' ? '项目' : '全局'}
-                  </span>
-                  <div className="protocol-main">
-                    <div className="protocol-title">
-                      /{skill.name}
-                      <span className="protocol-meta">
-                        {skill.modelInvocable ? '模型可用' : '仅用户调用'}
-                        {skill.userInvocable ? '' : ' · 不对用户开放'}
-                      </span>
-                    </div>
-                    <div className="protocol-desc">{skill.description}</div>
-                    <div className="protocol-path mono">{skill.path}</div>
-                  </div>
-                </div>
-              ))
-              : <div className="detail-note">没有发现 SKILL.md。</div>}
-            <div className="protocol-roots">
-              {skills.roots.map(root => (
-                <span className="protocol-root mono" key={root.path} title={root.path}>
-                  {root.source === 'project' ? '项目' : '全局'} · {root.path}
-                </span>
-              ))}
-            </div>
           </section>
         )
         : null}
@@ -161,7 +125,7 @@ export function ProtocolsSettings({ sessionId }: { sessionId?: string }) {
         )
         : null}
 
-      {!loading && !error && !instructions && !skills && !mcp && !a2a
+      {!loading && !error && !instructions && !mcp && !a2a
         ? <div className="detail-note">协议服务未启用。</div>
         : null}
     </div>

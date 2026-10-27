@@ -216,10 +216,12 @@ export function PermissionsSettings() {
       {guardEnabled && builtin.length ? (
         <details className="permission-builtins">
           <summary>查看内置保护规则（{builtin.length} 条，按“询问”处理）</summary>
-          <div className="model-chips">
-            {builtin.map(rule => (
-              <span className="model-chip" key={rule.id} title={rule.sample}>{rule.label}</span>
-            ))}
+          <div className="permission-builtin-body">
+            <div className="model-chips">
+              {builtin.map(rule => (
+                <span className="model-chip" key={rule.id} title={rule.sample}>{rule.label}</span>
+              ))}
+            </div>
           </div>
         </details>
       ) : null}

@@ -15,10 +15,11 @@
     "@ruobai/sandbox-denial": "workspace:*",
     "@ruobai/sandbox-escalation": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/settings": "workspace:*",
+    "@ruobai/shell": "workspace:*",
     "@ruobai/web-server": "workspace:*"
   },
   "devDependencies": {
-    "@ruobai/sandbox-macos": "workspace:*",
-    "@ruobai/shell": "workspace:*"
+    "@ruobai/sandbox-macos": "workspace:*"
   }
 }

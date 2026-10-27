@@ -50,6 +50,45 @@ export interface SkillRoot {
   source: 'project' | 'global'
 }
 
+export interface WikiPageSummary {
+  id: string
+  title: string
+  tags?: string[]
+  status: string
+  sourced?: boolean
+  summary?: string
+  updated?: string
+}
+
+export interface SkillHubSkill {
+  slug: string
+  name: string
+  description?: string
+  description_zh?: string
+  iconUrl?: string | null
+  category?: string
+  source?: string
+  version?: string
+  downloads?: number
+  installs?: number
+  stars?: number
+  namespace?: { canonicalName: string; displayName: string; publicSlug: string }
+  publisher?: { name: string; verified?: boolean }
+  labels?: Record<string, string>
+}
+
+export interface SkillHubCategory {
+  key: string
+  name: string
+  active?: boolean
+  sortOrder?: number
+}
+
+export interface SkillHubPage {
+  skills: SkillHubSkill[]
+  total: number
+}
+
 export interface ProtocolsInfo {
   instructions?: {
     root: string
@@ -706,6 +745,54 @@ export const api = {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
     return request<ProtocolsInfo>(`/api/protocols${suffix}`)
   },
+  getWikiPages: async (sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return (await request<{ pages: WikiPageSummary[] }>(`/api/wiki${suffix}`)).pages
+  },
+
+  getWikiPage: async (id: string, sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<{ meta: { title: string; revision: number; tags?: string[] }; body: string }>(
+      `/api/wiki/page/${encodeURIComponent(id)}${suffix}`,
+    )
+  },
+
+  getSkillHubSkills: async (params: {
+    page?: number
+    pageSize?: number
+    keyword?: string
+    category?: string
+    sortBy?: string
+    order?: string
+  } = {}) => {
+    const query = new URLSearchParams()
+    if (params.page) query.set('page', String(params.page))
+    if (params.pageSize) query.set('pageSize', String(params.pageSize))
+    if (params.keyword?.trim()) query.set('keyword', params.keyword.trim())
+    if (params.category) query.set('category', params.category)
+    if (params.sortBy) query.set('sortBy', params.sortBy)
+    if (params.order) query.set('order', params.order)
+    return request<SkillHubPage>(`/api/skillhub/skills?${query.toString()}`)
+  },
+
+  getSkillHubCategories: async () =>
+    (await request<{ items: SkillHubCategory[] }>('/api/skillhub/categories')).items,
+
+  getSkillHubShowcase: async (section: 'recommended' | 'trending' | 'new' = 'recommended') =>
+    (await request<{ skills: SkillHubSkill[] }>(`/api/skillhub/showcase?section=${section}`)).skills,
+
+  installSkillHubSkill: async (slug: string, sessionId: string) =>
+    request<{ name: string; path: string }>('/api/skillhub/install', {
+      method: 'POST',
+      body: JSON.stringify({ slug, sessionId }),
+    }),
+
+  uninstallSkillHubSkill: async (name: string, sessionId: string) =>
+    request<{ removed: string }>(
+      `/api/skillhub/installed/${encodeURIComponent(name)}?sessionId=${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE' },
+    ),
+
 
   readWorkspaceFile: async (path: string, sessionId?: string) => {
     const params = new URLSearchParams({ path })

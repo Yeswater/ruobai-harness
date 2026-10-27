@@ -59,6 +59,11 @@ export interface UiSettings {
   theme?: 'light' | 'dark'
 }
 
+export interface SandboxSettings {
+  /** Seatbelt confinement for agent commands. Off keeps approvals, drops the OS boundary. */
+  enabled?: boolean
+}
+
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
 /** Extra character accepted as a slash-command trigger, next to `/` and `／`. */
@@ -161,6 +166,7 @@ export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
   agent?: AgentSettings
+  sandbox?: SandboxSettings
   approval?: ApprovalSettings
   mcp?: McpSettings
   hooks?: HookSettings
@@ -245,6 +251,7 @@ export interface PublicSettings {
   }
   ui?: UiSettings
   agent?: AgentSettings
+  sandbox?: SandboxSettings
   approval?: { rules: ApprovalRule[]; guard: { enabled: boolean } }
   mcp?: PublicMcpSettings
   hooks?: HookSettings
@@ -337,6 +344,7 @@ export class SettingsService extends Service {
     }
     if (this.data.ui) result.ui = { ...this.data.ui }
     if (this.data.agent) result.agent = { ...this.data.agent }
+    if (this.data.sandbox) result.sandbox = { ...this.data.sandbox }
     if (this.data.approval) {
       result.approval = {
         rules: structuredClone(this.data.approval.rules ?? []),
@@ -358,7 +366,16 @@ export class SettingsService extends Service {
     return { ...rest, hasApiKey: Boolean(this.apiKeyFor(entry.id)) }
   }
 
-  async update(patch: { llm?: { activeProvider?: string; activeModel?: string }; ui?: UiSettings; agent?: AgentSettings }): Promise<PublicSettings> {
+  sandboxEnabled(): boolean {
+    return this.data.sandbox?.enabled !== false
+  }
+
+  async update(patch: {
+    llm?: { activeProvider?: string; activeModel?: string }
+    ui?: UiSettings
+    agent?: AgentSettings
+    sandbox?: SandboxSettings
+  }): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
     if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || 'mock'
     if (patch.llm?.activeModel !== undefined) llm.activeModel = patch.llm.activeModel || undefined
@@ -380,6 +397,10 @@ export class SettingsService extends Service {
       }
       if (patch.agent.bypassApprovals !== undefined) agent.bypassApprovals = Boolean(patch.agent.bypassApprovals)
       if (patch.agent.compactAt !== undefined) agent.compactAt = Math.max(1000, Number(patch.agent.compactAt) || 0) || undefined
+    }
+    if (patch.sandbox) {
+      const sandbox = this.data.sandbox ??= {}
+      if (patch.sandbox.enabled !== undefined) sandbox.enabled = Boolean(patch.sandbox.enabled)
     }
     return this.commit()
   }

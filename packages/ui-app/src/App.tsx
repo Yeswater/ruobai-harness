@@ -17,8 +17,10 @@ import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
 import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
-import { SettingsDialog, type SettingsTab } from './components/SettingsDialog.tsx'
+import { SettingsDialog, type SettingsTab } from './components/settings/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
+import { FunctionWorkspace } from './components/workspace/FunctionWorkspace.tsx'
+import { functionViewInfo, type FunctionView, type ToolTab } from './function-views.ts'
 import { Slot } from './components/Slot.tsx'
 import { Transcript } from './components/Transcript.tsx'
 import { WorkspacePicker } from './components/WorkspacePicker.tsx'
@@ -88,6 +90,8 @@ export function App() {
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [mainView, setMainView] = useState<MainView>(loadMainView)
+  const [functionView, setFunctionView] = useState<FunctionView | null>(null)
+  const [toolsTab, setToolsTab] = useState<ToolTab>('skills')
 
   useEffect(() => {
     localStorage.setItem(MAIN_VIEW_KEY, mainView)
@@ -240,7 +244,19 @@ export function App() {
         openSettings('providers')
         break
       case 'connectors':
-        openSettings('mcp')
+        setToolsTab('connectors')
+        setFunctionView('tools')
+        break
+      case 'wiki':
+        setFunctionView('wiki')
+        break
+      case 'skills':
+        setToolsTab('skills')
+        setFunctionView('tools')
+        break
+      case 'experts':
+        setToolsTab('experts')
+        setFunctionView('tools')
         break
       case 'permissions':
         openSettings('permissions')
@@ -268,6 +284,8 @@ export function App() {
         break
     }
   }
+
+  const activeFunction = functionView ? functionViewInfo(functionView) : null
 
   return (
     <div
@@ -303,6 +321,7 @@ export function App() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
         onSelect={(id) => {
+          setFunctionView(null)
           harness.select(id)
           setSidebarOpen(false)
         }}
@@ -322,6 +341,11 @@ export function App() {
         onArchive={harness.archiveSession}
         onDelete={harness.deleteSession}
         onOpenSettings={() => openSettings('behavior')}
+        functionView={functionView}
+        onOpenFunction={(view) => {
+          setFunctionView(view)
+          setSidebarOpen(false)
+        }}
       />
 
       <main className="main">
@@ -331,21 +355,40 @@ export function App() {
               <MenuIcon />
             </button>
             <div className="main-title">
-              <h1>{harness.session?.title ?? 'New session'}</h1>
-              <nav className="main-tabs" role="tablist" aria-label="对话视图">
-                {MAIN_TABS.map(tab => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={mainView === tab.id}
-                    className={mainView === tab.id ? 'active' : ''}
-                    onClick={() => setMainView(tab.id)}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </nav>
+              {activeFunction
+                ? (
+                  <>
+                    <div className="main-title-row">
+                      <h1>{activeFunction.label}</h1>
+                      <button className="function-back" onClick={() => setFunctionView(null)}>
+                        返回会话
+                      </button>
+                    </div>
+                    <p className="main-sub">{activeFunction.description}</p>
+                  </>
+                )
+                : (
+                  <>
+                    <h1>{harness.session?.title ?? 'New session'}</h1>
+                    <nav className="main-tabs" role="tablist" aria-label="对话视图">
+                      {MAIN_TABS.map(tab => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={mainView === tab.id}
+                          className={mainView === tab.id ? 'active' : ''}
+                          onClick={() => {
+                            setFunctionView(null)
+                            setMainView(tab.id)
+                          }}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </nav>
+                  </>
+                )}
             </div>
           </div>
 
@@ -437,7 +480,17 @@ export function App() {
           )
           : null}
 
-        {mainView === 'chat'
+        {functionView
+          ? (
+            <FunctionWorkspace
+              view={functionView}
+              toolTab={toolsTab}
+              onToolTabChange={setToolsTab}
+              sessionId={harness.session?.id}
+              onBack={() => setFunctionView(null)}
+            />
+          )
+          : mainView === 'chat'
           ? (
             <>
               <Transcript session={harness.session} onSuggestion={harness.send} />
@@ -477,7 +530,10 @@ export function App() {
                 onSend={harness.send}
                 onStop={harness.stop}
                 onNewSession={() => setWorkspacePickerOpen(true)}
-                onOpenConnectors={() => openSettings('mcp')}
+                onOpenConnectors={() => {
+                  setToolsTab('connectors')
+                  setFunctionView('tools')
+                }}
                 reference={reference}
               />
             </>
@@ -527,6 +583,7 @@ export function App() {
         onClose={() => setWorkspacePickerOpen(false)}
         onPick={(path) => {
           setWorkspacePickerOpen(false)
+          setFunctionView(null)
           harness.createSession(path)
         }}
       />

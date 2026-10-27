@@ -5,19 +5,23 @@ import type { SandboxService } from '@ruobai/sandbox'
 import type { DenialService } from '@ruobai/sandbox-denial'
 import type { EscalationService } from '@ruobai/sandbox-escalation'
 import type { SandboxPolicyService } from '@ruobai/sandbox-policy'
+import type { SettingsService } from '@ruobai/settings'
+import type { ShellService } from '@ruobai/shell'
 
 export const name = 'sandbox-web'
-export const inject = ['web', 'sandbox', 'sandboxPolicy', 'denial']
+export const inject = ['web', 'sandbox', 'sandboxPolicy', 'denial', 'settings', 'shell']
 
 /**
  * Status projection for the sandbox.
  *
- * Deliberately read-mostly: the only write is a *session-scoped* escalation
- * switch. Policy editing (guards, network mode, write roots) is not exposed
- * over HTTP — see docs/sandbox-macos.md §7 for why it belongs in a reviewed
- * file rather than a click.
+ * Read-mostly: the writes are the global enable switch and a *session-scoped*
+ * escalation switch. Policy editing (guards, network mode, write roots) is not
+ * exposed over HTTP — see docs/sandbox-macos.md §7 for why it belongs in a
+ * reviewed file rather than a click.
  */
 export interface SandboxStatus {
+  /** User switch from settings; false means commands run through the direct executor. */
+  enabled: boolean
   /** Whether a provider is registered *and* passed its self-check. */
   active: boolean
   provider?: {
@@ -83,8 +87,10 @@ function statusOf(ctx: Context, sessionId: string): SandboxStatus {
   const provider = sandbox.provider()
   const snapshot = policyService.forSession({ sessionId })
   const recent = denial.recent()
+  const settings = ctx.get('settings', false) as SettingsService | undefined
 
   return {
+    enabled: settings ? settings.sandboxEnabled() : true,
     active: Boolean(provider),
     ...(provider
       ? {
@@ -174,6 +180,29 @@ async function handle(ctx: Context, req: SandboxRequest, res: StatusResponse, ur
     if (req.method !== 'GET') throw new HttpError(405, 'method not allowed')
     json(res, 200, { status: statusOf(ctx, sessionId) })
     return true
+  }
+
+  if (url.pathname === '/api/sandbox/config') {
+    const settings = ctx.get('settings', false) as SettingsService | undefined
+    const shell = ctx.get('shell', false) as ShellService | undefined
+    if (!settings) throw new HttpError(404, 'settings service is not loaded')
+    if (req.method === 'GET') {
+      json(res, 200, { enabled: settings.sandboxEnabled(), executors: shell?.ids() ?? [] })
+      return true
+    }
+    if (req.method === 'PATCH' || req.method === 'PUT') {
+      const body = await bodyOf(req)
+      if (typeof body?.enabled !== 'boolean') throw new HttpError(400, 'enabled must be a boolean')
+      // Turning the sandbox off is only possible when the escape hatch exists;
+      // otherwise the next command would fail closed anyway.
+      if (!body.enabled && !shell?.ids().includes('direct')) {
+        throw new HttpError(409, 'direct executor is not mounted')
+      }
+      await settings.update({ sandbox: { enabled: body.enabled } })
+      json(res, 200, { enabled: settings.sandboxEnabled() })
+      return true
+    }
+    throw new HttpError(405, 'method not allowed')
   }
 
   if (url.pathname === '/api/sandbox/session') {

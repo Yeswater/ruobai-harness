@@ -881,6 +881,12 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:../sandbox-policy
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@ruobai/shell':
+        specifier: workspace:*
+        version: link:../shell
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
@@ -888,9 +894,6 @@ importers:
       '@ruobai/sandbox-macos':
         specifier: workspace:*
         version: link:../sandbox-macos
-      '@ruobai/shell':
-        specifier: workspace:*
-        version: link:../shell
 
   packages/session:
     dependencies:
@@ -969,6 +972,9 @@ importers:
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@ruobai/shell':
         specifier: workspace:*
         version: link:../shell

@@ -39,6 +39,27 @@ const STYLES = `
 .sandbox-denials code { font-family: var(--mono); font-size: 11px; }
 .sandbox-details > summary { cursor: pointer; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
 .sandbox-details > summary:hover { color: var(--text); }
+.sandbox-warn { color: var(--warn); font-size: 11.5px; margin: 6px 0; line-height: 1.55; }
+.sandbox-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel);
+}
+.sandbox-switch-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sandbox-switch-copy strong { font-size: 12.5px; color: var(--text); font-weight: 500; }
+.sandbox-switch-copy p { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.sandbox-toggle {
+  position: relative; flex: none; width: 34px; height: 20px; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--tool-bg);
+  cursor: pointer; transition: background .15s ease, border-color .15s ease;
+}
+.sandbox-toggle span {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--faint); transition: transform .15s ease, background .15s ease;
+}
+.sandbox-toggle.on { border-color: var(--accent); background: var(--accent-soft); }
+.sandbox-toggle.on span { transform: translateX(14px); background: var(--accent); }
+.sandbox-toggle:disabled { opacity: .5; cursor: default; }
 `
 
 function ensureStyles() {
@@ -169,6 +190,19 @@ function SandboxPanel(props) {
     }
   }, [load])
 
+  const toggleSandbox = useCallback(async () => {
+    if (!status) return
+    const next = !status.enabled
+    if (!next && !window.confirm('关闭沙箱后，命令不再受 macOS Seatbelt 限制，只受审批规则约束。确定关闭？')) return
+    try {
+      await patchJson('/api/sandbox/config', { enabled: next })
+      await load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }, [load, status])
+
+  const enabled = status ? status.enabled !== false : true
   const active = Boolean(status && status.active)
   const recent = status ? (compact ? status.denials.recent.slice(0, 3) : status.denials.recent) : []
   const guardLimit = compact ? 6 : undefined
@@ -180,22 +214,46 @@ function SandboxPanel(props) {
       {status
         ? (
           <>
+            {compact
+              ? null
+              : (
+                <div className="sandbox-switch">
+                  <div className="sandbox-switch-copy">
+                    <strong>沙箱保护</strong>
+                    <p>用 macOS Seatbelt 限制命令的文件与网络访问。关闭后命令直连执行，审批仍然生效。</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    aria-label={enabled ? '关闭沙箱' : '启用沙箱'}
+                    className={`sandbox-toggle${enabled ? ' on' : ''}`}
+                    onClick={toggleSandbox}
+                  >
+                    <span />
+                  </button>
+                </div>
+              )}
+
             <div className="sandbox-card-head">
               <span className="sandbox-status">
-                <span className={active ? 'sandbox-dot ok' : 'sandbox-dot'} />
-                {active ? '生效' : '未生效'}
-                {' · '}{status.guards.length} 守卫
-                {' · '}{status.denials.total} 拒绝
+                <span className={enabled && active ? 'sandbox-dot ok' : 'sandbox-dot'} />
+                {!enabled ? '已关闭 · 直连执行' : active ? '生效' : '未生效'}
+                {enabled ? ` · ${status.guards.length} 守卫 · ${status.denials.total} 拒绝` : ''}
               </span>
               <span className="sandbox-mono" title={status.provider?.profileDigest}>
                 {status.provider?.id ?? 'no provider'}
               </span>
             </div>
-            <p className="sandbox-line">
-              <span className="sandbox-mono">profile {shortDigest(status.provider?.profileDigest)}</span>
-              <span>网络 {status.policy.network.mode}</span>
-            </p>
-            {!active
+
+            {!enabled
+              ? (
+                <p className="sandbox-warn">
+                  沙箱已关闭：命令不受 Seatbelt 限制，只受审批规则与危险命令保护约束。
+                </p>
+              )
+              : null}
+            {enabled && !active
               ? (
                 <p className="sandbox-danger">
                   没有可用后端，命令会被拒绝（fail-closed）。请检查 @ruobai/sandbox-macos。
@@ -203,46 +261,62 @@ function SandboxPanel(props) {
               )
               : null}
 
-            <h4>本会话升级策略</h4>
-            <p className="sandbox-line">
-              <button
-                type="button"
-                className={status.escalation.mode === 'auto' ? 'sandbox-btn sandbox-btn-on' : 'sandbox-btn'}
-                disabled={!sessionId}
-                onClick={() => setMode('auto')}
-              >升级审批</button>
-              <button
-                type="button"
-                className={status.escalation.mode === 'never' ? 'sandbox-btn sandbox-btn-warn' : 'sandbox-btn'}
-                disabled={!sessionId}
-                onClick={() => setMode('never')}
-              >只报告</button>
-              <span className="sandbox-hint">
-                {sessionId ? '仅本会话，不写设置；沙箱本身始终生效' : '打开一个会话后可按会话切换'}
-              </span>
-            </p>
-
-            {status.escalation.sessionGrants.length
+            {enabled
               ? (
-                <p className="sandbox-line">
-                  已授权 {status.escalation.sessionGrants.length} 项
-                  <button type="button" className="sandbox-link" onClick={revoke}>全部撤销</button>
-                </p>
+                <>
+                  <p className="sandbox-line">
+                    <span className="sandbox-mono">profile {shortDigest(status.provider?.profileDigest)}</span>
+                    <span>网络 {status.policy.network.mode}</span>
+                  </p>
+
+                  <h4>本会话升级策略</h4>
+                  <p className="sandbox-line">
+                    <button
+                      type="button"
+                      className={status.escalation.mode === 'auto' ? 'sandbox-btn sandbox-btn-on' : 'sandbox-btn'}
+                      disabled={!sessionId}
+                      onClick={() => setMode('auto')}
+                    >升级审批</button>
+                    <button
+                      type="button"
+                      className={status.escalation.mode === 'never' ? 'sandbox-btn sandbox-btn-warn' : 'sandbox-btn'}
+                      disabled={!sessionId}
+                      onClick={() => setMode('never')}
+                    >只报告</button>
+                    <span className="sandbox-hint">
+                      {sessionId ? '仅本会话，不写设置' : '打开一个会话后可按会话切换'}
+                    </span>
+                  </p>
+
+                  {status.escalation.sessionGrants.length
+                    ? (
+                      <p className="sandbox-line">
+                        已授权 {status.escalation.sessionGrants.length} 项
+                        <button type="button" className="sandbox-link" onClick={revoke}>全部撤销</button>
+                      </p>
+                    )
+                    : null}
+
+                  <h4>守卫（{status.guards.length}）</h4>
+                  {compact
+                    ? (
+                      <details className="sandbox-details">
+                        <summary>展开守卫清单</summary>
+                        <GuardList guards={status.guards} />
+                      </details>
+                    )
+                    : <GuardList guards={status.guards} limit={guardLimit} />}
+
+                  <h4>拒绝记录（{status.denials.total}）</h4>
+                  <DenialList denials={recent} />
+                </>
               )
-              : null}
-
-            <h4>守卫（{status.guards.length}）</h4>
-            {compact
-              ? (
+              : (
                 <details className="sandbox-details">
-                  <summary>展开守卫清单</summary>
+                  <summary>查看已配置的守卫（关闭时不生效，{status.guards.length} 项）</summary>
                   <GuardList guards={status.guards} />
                 </details>
-              )
-              : <GuardList guards={status.guards} limit={guardLimit} />}
-
-            <h4>拒绝记录（{status.denials.total}）</h4>
-            <DenialList denials={recent} />
+              )}
           </>
         )
         : null}

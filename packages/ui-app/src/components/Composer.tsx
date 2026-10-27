@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent 
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import {
   api, type CommandPrefix, type ContextInfo, type ModeInfo, type ModelProvider, type PermissionMode,
-  type SkillSummary, type WorkspaceMatch,
+  type SkillSummary, type WikiPageSummary, type WorkspaceMatch,
 } from '../api.ts'
 import { applyCompletion, detectTrigger } from '../composer-triggers.ts'
 import { tokenizeComposer } from '../composer-tokens.ts'
@@ -10,6 +10,7 @@ import { useComposerAttachments } from '../useComposerAttachments.ts'
 import { clearDraft, readDraft, writeDraft } from '../composer-drafts.ts'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { ComposerPlusMenu } from './ComposerPlusMenu.tsx'
+import { KnowledgePicker } from './KnowledgePicker.tsx'
 import { MentionMenu } from './MentionMenu.tsx'
 import { ModelSelect } from './ModelSelect.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
@@ -44,7 +45,7 @@ interface ComposerProps {
   reference?: { path: string; token: number } | null
 }
 
-type OpenMenu = 'plus' | 'permission' | 'model' | null
+type OpenMenu = 'plus' | 'permission' | 'model' | 'knowledge' | null
 
 const FILE_ACCEPT = [
   'image/png', 'image/jpeg', 'image/webp', 'image/gif',
@@ -82,6 +83,27 @@ export function Composer({
   textRef.current = text
   attachmentsRef.current = attachments.attachments
   const tokens = useMemo(() => tokenizeComposer(text), [text])
+
+  const attachKnowledge = async (page: WikiPageSummary) => {
+    if (!sessionId) return
+    const target = sessionId
+    try {
+      const detail = await api.getWikiPage(page.id, sessionId)
+      if (sessionRef.current !== target) return
+      const text = detail.body
+      attachments.addOne({
+        id: globalThis.crypto?.randomUUID?.() ?? `k-${Date.now()}`,
+        kind: 'file',
+        name: `${detail.meta.title || page.title}.md`,
+        mime: 'text/markdown',
+        size: new TextEncoder().encode(text).length,
+        text,
+        path: `wiki:${page.id}`,
+      })
+    } catch (caught) {
+      attachments.setError(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
 
   const attachFile = useCallback(async (path: string, name: string) => {
     if (!sessionId) return false
@@ -507,6 +529,13 @@ export function Composer({
                 />
               )
               : null}
+            <KnowledgePicker
+              open={openMenu === 'knowledge'}
+              sessionId={sessionId}
+              disabled={disabled}
+              onOpenChange={open => setOpenMenu(open ? 'knowledge' : null)}
+              onPick={page => { void attachKnowledge(page) }}
+            />
           </div>
           <div className="composer-actions">
             <ModelSelect

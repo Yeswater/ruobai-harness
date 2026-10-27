@@ -39,6 +39,24 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     keywords: 'mcp server tool 工具 连接器',
   },
   {
+    id: 'wiki',
+    label: '打开知识库',
+    description: '项目知识页面、检索、提案与目录',
+    keywords: 'wiki knowledge 知识库 资料库 页面 检索',
+  },
+  {
+    id: 'skills',
+    label: '打开技能',
+    description: '查看技能目录与待审提案',
+    keywords: 'skill 技能 命令 提案',
+  },
+  {
+    id: 'experts',
+    label: '专家（规划中）',
+    description: '把常用工作流固化成可复用的专家',
+    keywords: 'expert 专家 角色 工作流',
+  },
+  {
     id: 'permissions',
     label: '权限与审批',
     description: '审批规则、危险命令与权限模式',
