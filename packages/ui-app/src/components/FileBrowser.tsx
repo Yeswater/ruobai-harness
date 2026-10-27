@@ -92,6 +92,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
   const [error, setError] = useState<string | null>(null)
   const [wrap, setWrap] = useState(true)
   const [markdownPreview, setMarkdownPreview] = useState(true)
+  const [svgPreview, setSvgPreview] = useState(true)
   const [treeWidth, setTreeWidth] = useState(loadTreeWidth)
   const [compact, setCompact] = useState(loadCompact)
   const [copiedPath, setCopiedPath] = useState(false)
@@ -253,8 +254,9 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     activate(path)
     setLineTarget(line ?? null)
     setError(null)
-    // Markdown opens rendered; a content-search jump needs the source line view.
+    // Markdown/SVG open rendered; a content-search jump needs the source line view.
     if (/\.(md|markdown|mdx)$/i.test(path)) setMarkdownPreview(line === undefined)
+    if (/\.svg$/i.test(path)) setSvgPreview(line === undefined)
     setTabs(current => current.some(tab => tab.path === path)
       ? current
       : [...current, { path, content: '', size: 0, loading: true }])
@@ -324,6 +326,7 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
 
   const tab = useMemo(() => tabs.find(item => item.path === active) ?? null, [tabs, active])
   const markdown = tab ? /\.(md|markdown|mdx)$/i.test(tab.path) : false
+  const svg = tab ? /\.svg$/i.test(tab.path) : false
   const visible = useMemo (
     () => (tab ? tab.content.split('\n').slice(0, MAX_LINES) : []),
     [tab],
@@ -333,6 +336,15 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
     () => (tab ? highlightLines(visible.join('\n'), tab.path) : null),
     [tab?.path, visible],
   )
+  const svgUrl = useMemo(
+    () => (svg && svgPreview && tab && !tab.loading
+      ? URL.createObjectURL(new Blob([tab.content], { type: 'image/svg+xml' }))
+      : null),
+    [svg, svgPreview, tab?.path, tab?.content, tab?.loading],
+  )
+  useEffect(() => () => {
+    if (svgUrl) URL.revokeObjectURL(svgUrl)
+  }, [svgUrl])
 
   useEffect(() => {
     if (lineTarget === null || !tab || tab.loading) return
@@ -665,6 +677,18 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                         </button>
                       )
                       : null}
+                    {svg
+                      ? (
+                        <button
+                          className={`icon-btn subtle ${svgPreview ? 'active' : ''}`}
+                          title={svgPreview ? '查看源码' : '预览 SVG'}
+                          aria-label="SVG 预览"
+                          onClick={() => setSvgPreview(value => !value)}
+                        >
+                          <EyeIcon size={13} />
+                        </button>
+                      )
+                      : null}
                     <button
                       className={`icon-btn subtle ${wrap ? 'active' : ''}`}
                       title={wrap ? '取消自动换行' : '自动换行'}
@@ -678,17 +702,28 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
                 <div className="file-view-meta">
                   {languageLabel(tab.path)} · {formatBytes(tab.size)}
                   {markdown && markdownPreview ? ' · 预览' : ''}
+                  {svg && svgPreview ? ' · 预览' : ''}
                   {copiedPath ? ' · 已复制路径' : null}
                 </div>
-                {markdown && markdownPreview
+                {svg && svgPreview
                   ? (
-                    <div className="file-markdown" ref={codeRef} onContextMenu={codeMenu}>
+                    <div className="file-svg" ref={codeRef} onContextMenu={codeMenu}>
                       {tab.loading
                         ? <div className="file-hint">正在读取…</div>
-                        : <MarkdownPreview content={tab.content} />}
+                        : svgUrl
+                          ? <img src={svgUrl} alt={tab.path.split('/').at(-1) ?? 'SVG'} />
+                          : null}
                     </div>
                   )
-                  : (
+                  : markdown && markdownPreview
+                    ? (
+                      <div className="file-markdown" ref={codeRef} onContextMenu={codeMenu}>
+                        {tab.loading
+                          ? <div className="file-hint">正在读取…</div>
+                          : <MarkdownPreview content={tab.content} />}
+                      </div>
+                    )
+                    : (
                     <div className={`file-code ${wrap ? 'wrap' : ''}`} ref={codeRef} onContextMenu={codeMenu}>
                       {tab.loading
                         ? <div className="file-hint">正在读取…</div>
@@ -781,6 +816,7 @@ function basename(path: string) {
 }
 
 function languageLabel(path: string) {
+  if (/\.svg$/i.test(path)) return 'SVG'
   const language = languageOf(path)
   if (language) return LANGUAGE_LABELS[language] ?? language
   const extension = path.split('.').at(-1)

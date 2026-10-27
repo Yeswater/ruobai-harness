@@ -10824,3 +10824,30 @@ body.resizing .file-side-resizer::after {
   flex: none;
   font-size: 10px;
 }
+
+/* SVG file preview */
+
+.file-svg {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--border) 30%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--border) 30%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--border) 30%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--border) 30%, transparent) 75%);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.file-svg img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 6px 24px rgba(24, 23, 21, .12);
+}

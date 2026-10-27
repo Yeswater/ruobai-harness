@@ -24,7 +24,7 @@ export function fileType(path: string): FileType | undefined {
 
 /** Compact, color-coded file badge; images fall back to an outline icon. */
 export function FileTypeIcon({ path, size = 12 }: { path: string; size?: number }) {
-  if (/\.(png|jpe?g|gif|webp|ico|bmp)$/i.test(path)) {
+  if (/\.(png|jpe?g|gif|webp|ico|bmp|svg)$/i.test(path)) {
     return <span className="ft-icon ft-image"><ImageIcon size={size} /></span>
   }
   const type = fileType(path)
