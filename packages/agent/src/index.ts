@@ -220,6 +220,15 @@ export class AgentService extends Service {
       let nudges = 0
       let overflowRetries = 0
 
+      // A registered slash command is a maintenance gesture: run it and end
+      // the turn without a model call. It wins over `/<skill>` gestures.
+      const commands = this.ctx.get('commands', false) as
+        | { dispatch(sessionId: string): Promise<boolean> }
+        | undefined
+      if (commands && await commands.dispatch(sessionId)) {
+        return { reason: 'done', text: '' }
+      }
+
       // `/name` in the user's message loads that skill for this turn.
       await this.injectSkillGestures(sessionId)
 

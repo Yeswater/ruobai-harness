@@ -59,6 +59,12 @@ function isCounted(event: SessionEvent): boolean {
     || event.type === 'context/memory'
     || event.type === 'turn/error'
     || event.type === 'turn/notice'
+    || event.type === 'memory/injected'
+    || event.type === 'memory/commit'
+    || event.type === 'memory/distill'
+    || event.type === 'wiki/injected'
+    || event.type === 'wiki/updated'
+    || event.type === 'wiki/indexed'
 }
 
 function countRecords(event: SessionEvent): number {
@@ -232,10 +238,76 @@ function contextRecord(event: SessionEvent, turn: number, step: number): Traject
   if (event.type === 'turn/error') {
     return { id: recordId('context', event), seq: event.seq, turn, step, kind: 'context', time: event.ts, preview: compact(data.message) || '回合错误', detail: clip(data.message) }
   }
+  if (event.type.startsWith('memory/')) {
+    return memoryRecord(event, turn, step)
+  }
+  if (event.type.startsWith('wiki/')) {
+    return wikiRecord(event, turn, step)
+  }
   if (event.type === 'turn/notice') {
     return { id: recordId('context', event), seq: event.seq, turn, step, kind: 'compacted', time: event.ts, preview: compact(data.message ?? data.kind) || '提示' }
   }
   return undefined
+}
+
+function memoryRecord(event: SessionEvent, turn: number, step: number): TrajectoryRecord {
+  const data = event.data ?? {}
+  const base = {
+    id: recordId('memory', event),
+    seq: event.seq,
+    turn,
+    step,
+    kind: 'memory' as const,
+    time: event.ts,
+  }
+  if (event.type === 'memory/injected') {
+    const count = Array.isArray(data.ids) ? data.ids.length : 0
+    return { ...base, preview: `注入 ${count} 条 · ${Number(data.bytes ?? 0)} 字符`, detail: clip(data.text) }
+  }
+  if (event.type === 'memory/added') {
+    return { ...base, preview: `新增 ${data.id ?? ''} · ${compact(data.item?.text)}`, detail: clip(data.item?.text) }
+  }
+  if (event.type === 'memory/updated') return { ...base, preview: `更新 ${data.id ?? ''}` }
+  if (event.type === 'memory/forgot') return { ...base, preview: `遗忘 ${data.id ?? ''}` }
+  if (event.type === 'memory/commit') {
+    return {
+      ...base,
+      preview: `提交 ${data.status ?? ''} · +${Number(data.added ?? 0)} ~${Number(data.updated ?? 0)} −${Number(data.skipped ?? 0)}`,
+      ...(data.error ? { detail: clip(data.error) } : {}),
+    }
+  }
+  if (event.type === 'memory/distill') {
+    return {
+      ...base,
+      preview: `蒸馏 ${data.provider ?? ''}/${data.model ?? ''} · ${Number(data.inputTokens ?? 0)} → ${Number(data.outputTokens ?? 0)} tokens`,
+    }
+  }
+  return { ...base, preview: event.type }
+}
+
+function wikiRecord(event: SessionEvent, turn: number, step: number): TrajectoryRecord {
+  const data = event.data ?? {}
+  const base = {
+    id: recordId('wiki', event),
+    seq: event.seq,
+    turn,
+    step,
+    kind: 'wiki' as const,
+    time: event.ts,
+  }
+  if (event.type === 'wiki/injected') {
+    return { ...base, preview: `目录 ${Number(data.pages ?? 0)} 页 · ${Number(data.bytes ?? 0)} 字符`, detail: clip(data.text) }
+  }
+  if (event.type === 'wiki/updated') {
+    return { ...base, preview: `页面 ${data.page ?? ''} · r${Number(data.revision ?? 0)}${data.created ? ' · 新建' : ''}` }
+  }
+  if (event.type === 'wiki/indexed') {
+    return {
+      ...base,
+      preview: `索引 ${Number(data.pages ?? 0)} 页 / ${Number(data.chunks ?? 0)} 块${data.rebuilt ? ` · 重建 ${Number(data.rebuilt)}` : ''}`,
+    }
+  }
+  return { ...base, preview: event.type }
 }
 
 export const recordsProjection: ProjectionDefinition<RecordsState> = {

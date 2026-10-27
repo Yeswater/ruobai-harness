@@ -1,0 +1,17 @@
+{
+  "name": "@ruobai/memory-distill",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/agent": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/llm": "workspace:*",
+    "@ruobai/memory": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/session": "workspace:*"
+  }
+}

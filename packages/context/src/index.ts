@@ -134,7 +134,8 @@ export interface RenderedSection {
   truncated: boolean
 }
 
-export interface ContextInfo {  estimatedTokens: number
+export interface ContextInfo {
+  estimatedTokens: number
   compactAt: number
   summaries: number
   /** Configured model context window, when the provider settings define one. */
@@ -160,6 +161,26 @@ export interface ContextInfo {  estimatedTokens: number
   memory?: { at: number; upToSeq: number; chars: number }
   /** Latest committed pruning epoch. */
   prune?: PruneEpoch
+  /** Long-term memory state, when the memory plugin is mounted. */
+  longMemory?: {
+    items: number
+    dormant: number
+    global: number
+    project: number
+    injectedChars: number
+    budgetTokens: number
+    revision: string
+    dropped: number
+  }
+  /** Wiki catalog state, when the wiki plugin is mounted. */
+  wiki?: {
+    pages: number
+    chunks: number
+    ready: number
+    unready: number
+    catalogChars: number
+    revision: string
+  }
   /** Last observed prefix break, with the reason it happened. */
   cache?: { at: number; divergence: PrefixDivergence }
   compaction: {
@@ -504,6 +525,8 @@ export class ContextService extends Service {
     const memory = latestMemory(record)
     const prune = latestPrune(record.events)
     const cacheBreak = this.breaks.get(sessionId)
+    const longMemory = await statsOf(this.ctx.get('memory', false), sessionId)
+    const wiki = await statsOf(this.ctx.get('wiki', false), sessionId)
     return {
       estimatedTokens: breakdown.messages + breakdown.systemPrompt
         + breakdown.systemTools + breakdown.mcpTools,
@@ -521,6 +544,8 @@ export class ContextService extends Service {
         : {}),
       ...(prune ? { prune } : {}),
       ...(cacheBreak ? { cache: cacheBreak } : {}),
+      ...(longMemory ? { longMemory: longMemory as NonNullable<ContextInfo['longMemory']> } : {}),
+      ...(wiki ? { wiki: wiki as NonNullable<ContextInfo['wiki']> } : {}),
       compaction: {
         failures: state.failures,
         disabled: state.disabled,
@@ -1061,6 +1086,19 @@ export class ContextService extends Service {
 }
 
 export default ContextService
+
+/** Optional plugin statistics; a missing or failing service contributes nothing. */
+async function statsOf(service: unknown, sessionId: string) {
+  const candidate = service as
+    | { stats?(sessionId?: string): Promise<Record<string, unknown>> }
+    | undefined
+  if (!candidate?.stats) return undefined
+  try {
+    return await candidate.stats(sessionId)
+  } catch {
+    return undefined
+  }
+}
 
 function latestSummary(record: SessionRecord): { upToSeq: number; text: string } | undefined {
   for (let index = record.events.length - 1; index >= 0; index -= 1) {

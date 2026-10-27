@@ -1,7 +1,8 @@
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
+import type { CommandService } from '@ruobai/commands'
 import type { PromptSection } from '@ruobai/context'
 import type {} from '@ruobai/session'
 import type { ToolDefinition } from '@ruobai/tools'
@@ -54,6 +55,8 @@ export interface IndexedPage {
   mtime: number
   size: number
   hash: string
+  /** `[[page-id]]` targets found in the body. */
+  links: string[]
   chunks: WikiChunk[]
 }
 
@@ -85,6 +88,23 @@ export interface WikiHit {
 export interface SearchResult {
   hits: WikiHit[]
   truncated: boolean
+}
+
+export interface LintFinding {
+  page?: string
+  kind: 'broken-link' | 'orphan' | 'missing-summary' | 'stale-source' | 'duplicate-title'
+  detail: string
+}
+
+/** Optional semantic half; BM25 stays the default and the fallback. */
+export interface SemanticRetriever {
+  id: string
+  search(query: string, limit: number, sessionId?: string): Promise<Array<{
+    page: string
+    heading: string
+    text: string
+    score: number
+  }>>
 }
 
 export interface WriteInput {
@@ -140,6 +160,7 @@ export class WikiService extends Service {
 
   private readonly cache = new Map<string, CacheEntry>()
   private readonly refreshNeeded = new Set<string>()
+  private readonly retrievers = new Map<string, SemanticRetriever>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'wiki')
@@ -172,6 +193,164 @@ export class WikiService extends Service {
     }
 
     ctx.on('context/compacted', info => this.refreshNeeded.add(info.sessionId))
+
+    this.registerCommands()
+  }
+
+  private registerCommands() {
+    const register = (host: CommandService) => {
+      const dispose = host.register({
+        name: 'wiki',
+        description: '检索项目知识库，或从当前会话生成页面提案',
+        usage: '/wiki <查询> | /wiki read <id> | /wiki save [标题]',
+        run: ({ sessionId, args }) => this.commandWiki(sessionId, args),
+      })
+      return dispose
+    }
+    const commands = this.ctx.get('commands', false) as CommandService | undefined
+    if (commands) this.ctx.effect(() => register(commands), 'wiki.commands')
+    else this.ctx.inject(['commands'], cb => cb.effect(() => register(cb.commands), 'wiki.commands'))
+  }
+
+  private async commandWiki(sessionId: string, args: string) {
+    const [head, ...rest] = args.trim().split(/\s+/)
+    if (!head) {
+      const index = await this.indexFor(this.root(sessionId))
+      return index.pages.length
+        ? index.pages.map(page => `- ${page.id}: ${page.title}`).join('\n')
+        : '知识库还是空的。用 /wiki save [标题] 从当前会话生成提案。'
+    }
+    if (head === 'read') {
+      const page = rest[0]
+      if (!page) throw new Error('用法：/wiki read <id>')
+      return (await this.read(page, 'overview', sessionId)) ?? `找不到页面：${page}`
+    }
+    if (head === 'save') {
+      const title = rest.join(' ').trim() || undefined
+      const proposal = await this.propose({ sessionId, ...(title ? { title } : {}) })
+      return `已生成提案 ${proposal.path}。审阅后可在知识库面板接受。`
+    }
+    const result = await this.search(args.trim(), {}, sessionId)
+    if (!result.hits.length) return `没有匹配「${args.trim()}」的页面。`
+    return result.hits
+      .slice(0, 5)
+      .map(hit => `- ${hit.page} > ${hit.heading}：${hit.summary}`)
+      .join('\n')
+  }
+
+  /**
+   * A session-derived proposal is a draft page, never a direct write. It
+   * carries the session as its source and stays out of the catalog until a
+   * person accepts it.
+   */
+  async propose(input: { sessionId?: string; title?: string; body?: string }): Promise<{ id: string; path: string }> {
+    const record = input.sessionId ? this.ctx.sessions.get(input.sessionId) : undefined
+    const title = input.title?.trim() || record?.meta.title || '未命名页面'
+    const id = slugify(title)
+    const root = this.root(input.sessionId)
+    const path = join(root, '.proposals', `${id}.md`)
+    const body = input.body ?? (record ? proposalBody(record.events) : '## 摘要\n\n')
+    const text = serializePage({
+      meta: {
+        id,
+        title,
+        tags: [],
+        sources: input.sessionId ? [{ kind: 'session', session: input.sessionId }] : [],
+        updated: new Date().toISOString(),
+        confidence: 'low',
+        status: 'draft',
+        revision: 1,
+      },
+      body,
+    })
+    await writeAtomic(path, text)
+    return { id, path: `.proposals/${id}.md` }
+  }
+
+  async proposals(sessionId?: string): Promise<Array<{ id: string; title: string; path: string }>> {
+    const root = this.root(sessionId)
+    const dir = join(root, '.proposals')
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    const out: Array<{ id: string; title: string; path: string }> = []
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+      const raw = await readFile(join(dir, entry.name), 'utf8').catch(() => undefined)
+      const doc = raw ? parsePage(raw) : undefined
+      if (!doc) continue
+      out.push({ id: doc.meta.id, title: doc.meta.title, path: `.proposals/${entry.name}` })
+    }
+    return out.sort((left, right) => left.id.localeCompare(right.id))
+  }
+
+  /** Accept a proposal: it becomes a page with a session source. */
+  async acceptProposal(id: string, sessionId?: string): Promise<{ id: string; path: string }> {
+    if (!PAGE_ID.test(id)) throw new Error(`invalid page id: ${id}`)
+    const root = this.root(sessionId)
+    const raw = await readFile(join(root, '.proposals', `${id}.md`), 'utf8').catch(() => undefined)
+    if (raw === undefined) throw new Error(`no proposal: ${id}`)
+    const doc = parsePage(raw)
+    if (!doc) throw new Error(`invalid proposal: ${id}`)
+    const result = await this.write({
+      id,
+      title: doc.meta.title,
+      body: doc.body,
+      tags: doc.meta.tags,
+      sources: doc.meta.sources,
+      status: 'ready',
+      confidence: 'medium',
+    }, sessionId)
+    await unlink(join(root, '.proposals', `${id}.md`)).catch(() => undefined)
+    return { id, path: result.path }
+  }
+
+  async rejectProposal(id: string, sessionId?: string): Promise<void> {
+    if (!PAGE_ID.test(id)) throw new Error(`invalid page id: ${id}`)
+    await unlink(join(this.root(sessionId), '.proposals', `${id}.md`))
+  }
+
+  /** Move a page to `.archive/`; the index drops it on the next rebuild. */
+  async archive(id: string, sessionId?: string): Promise<{ path: string }> {
+    if (!PAGE_ID.test(id)) throw new Error(`invalid page id: ${id}`)
+    const root = this.root(sessionId)
+    const target = join(root, 'pages', `${id}.md`)
+    const raw = await readFile(target, 'utf8').catch(() => undefined)
+    if (raw === undefined) throw new Error(`no such page: ${id}`)
+    await writeAtomic(join(root, '.archive', `${id}-${Date.now()}.md`), raw)
+    await unlink(target)
+    this.cache.delete(root)
+    await this.indexFor(root).catch(() => undefined)
+    return { path: `.archive/${id}.md` }
+  }
+
+  /** Page list for panels; bodies are read separately. */
+  async pages(sessionId?: string) {
+    const index = await this.indexFor(this.root(sessionId))
+    return index.pages.map(page => ({
+      id: page.id,
+      title: page.title,
+      tags: page.tags,
+      status: page.status,
+      confidence: page.confidence,
+      sourced: page.sourced,
+      summary: page.summary,
+      ...(page.updated ? { updated: page.updated } : {}),
+      links: page.links,
+    }))
+  }
+
+  /** Counts and sizes for the context card and the wiki panel. */
+  async stats(sessionId?: string) {
+    const index = await this.indexFor(this.root(sessionId))
+    const record = sessionId ? this.ctx.sessions.get(sessionId) : undefined
+    const injected = latestInjected(record)?.text ?? ''
+    return {
+      pages: index.pages.length,
+      chunks: index.pages.reduce((total, page) => total + page.chunks.length, 0),
+      ready: index.pages.filter(page => page.status === 'ready').length,
+      unready: index.pages.filter(page => page.status !== 'ready').length,
+      catalogChars: injected.length,
+      revision: hashContent(injected),
+    }
   }
 
   root(sessionId?: string) {
@@ -281,18 +460,41 @@ export class WikiService extends Service {
     const maxChars = Math.max(1, options.maxChars ?? this.config.searchMaxChars ?? 6_000)
     const deadline = Date.now() + Math.max(1, options.timeoutMs ?? this.config.searchTimeoutMs ?? 150)
     // A tag filter runs after ranking, so over-fetch to keep the page full.
-    const ranked = searcher.bm25.search(query, {
-      limit: options.tag ? limit * 4 : limit,
-      deadline,
-    })
+    const over = options.tag ? limit * 4 : Math.max(limit * 2, limit)
+    const ranked = searcher.bm25.search(query, { limit: over, deadline })
+    const candidates: RawCandidate[] = ranked
+      .map((entry, rank) => ({
+        ref: searcher.refs[entry.index]!,
+        list: 'lexical',
+        rank,
+        score: entry.score,
+      }))
+      .filter(candidate => candidate.ref)
+
+    if (this.retrievers.size && query.trim()) {
+      for (const retriever of this.retrievers.values()) {
+        try {
+          const semantic = await retriever.search(query, over, sessionId)
+          semantic.forEach((hit, rank) => {
+            const ref = searcher.refs.find(entry =>
+              entry.page.id === hit.page
+              && entry.chunk.heading === hit.heading
+              && (entry.chunk.text === hit.text || entry.chunk.text.startsWith(hit.text.slice(0, 40))))
+            if (ref) candidates.push({ ref, list: retriever.id, rank, score: hit.score })
+          })
+        } catch (error) {
+          // Semantic retrieval is an enhancement; lexical results still serve.
+          this.ctx.logger('wiki').warn('retriever %s failed: %s', retriever.id,
+            error instanceof Error ? error.message : String(error))
+        }
+      }
+    }
 
     const hits: WikiHit[] = []
     let chars = 0
     let truncated = Date.now() > deadline
-    for (const { index: position, score } of ranked) {
-      const entry = searcher.refs[position]
-      if (!entry) continue
-      const { page, chunk } = entry
+    for (const entry of fuseCandidates(candidates)) {
+      const { page, chunk } = entry.ref
       if (options.tag && !page.tags.includes(options.tag)) continue
       const snippet = chunk.text.length > 400 ? `${chunk.text.slice(0, 399)}…` : chunk.text
       const cost = snippet.length + page.summary.length + 80
@@ -304,7 +506,7 @@ export class WikiService extends Service {
         page: page.id,
         title: page.title,
         heading: chunk.heading,
-        score: Number(score.toFixed(3)),
+        score: Number(entry.score.toFixed(3)),
         snippet,
         summary: page.summary,
         status: page.status,
@@ -313,6 +515,29 @@ export class WikiService extends Service {
       chars += cost
     }
     return { hits, truncated }
+  }
+
+  /** Register a semantic half; it is fused with BM25 via reciprocal rank. */
+  registerRetriever(retriever: SemanticRetriever): () => void {
+    if (this.retrievers.has(retriever.id)) {
+      throw new Error(`retriever "${retriever.id}" is already registered`)
+    }
+    this.retrievers.set(retriever.id, retriever)
+    return () => {
+      if (this.retrievers.get(retriever.id) !== retriever) return
+      this.retrievers.delete(retriever.id)
+    }
+  }
+
+  /** Flat chunk list for building an external vector index. */
+  async chunks(sessionId?: string) {
+    const index = await this.indexFor(this.root(sessionId))
+    return index.pages.flatMap(page => page.chunks.map(chunk => ({
+      page: page.id,
+      hash: page.hash,
+      heading: chunk.heading,
+      text: chunk.text,
+    })))
   }
 
   /** Three-level read: summary (L0), overview (L1), full body (L2). */
@@ -341,8 +566,11 @@ export class WikiService extends Service {
     const body = input.body.trim()
     const existingRaw = await readFile(target, 'utf8').catch(() => undefined)
     const existing = existingRaw ? parsePage(existingRaw) : undefined
-    const sources = input.sources ?? existing?.meta.sources ?? (
-      sessionId ? [{ kind: 'session' as const, session: sessionId }] : []
+    const sources = await this.withFileHashes(
+      input.sources ?? existing?.meta.sources ?? (
+        sessionId ? [{ kind: 'session' as const, session: sessionId }] : []
+      ),
+      sessionId,
     )
     const text = serializePage({
       meta: {
@@ -370,6 +598,10 @@ export class WikiService extends Service {
       after: text,
       diff: createDiff(existingRaw ?? '', text, `pages/${id}.md`),
     })
+    if (existingRaw !== undefined && existing) {
+      // Keep the previous revision so a page's history survives an overwrite.
+      await writeAtomic(join(root, '.versions', id, `${existing.meta.revision}.md`), existingRaw)
+    }
     await writeAtomic(target, text)
     this.cache.delete(root)
     // Keep the derived index in step with the write; a failure here must not
@@ -392,6 +624,111 @@ export class WikiService extends Service {
     const root = this.root(sessionId)
     if (!PAGE_ID.test(id)) return undefined
     return readFile(join(root, 'pages', `${id}.md`), 'utf8').catch(() => undefined)
+  }
+
+  private async withFileHashes(sources: PageSource[], sessionId?: string): Promise<PageSource[]> {
+    const workspace = this.ctx.workspace.rootFor(sessionId)
+    const out: PageSource[] = []
+    for (const source of sources) {
+      if (source.kind !== 'file' || !source.path) {
+        out.push(source)
+        continue
+      }
+      const text = await readFile(resolve(workspace, source.path), 'utf8').catch(() => undefined)
+      out.push(text === undefined ? source : { ...source, hash: `sha256:${hashContent(text)}` })
+    }
+    return out
+  }
+
+  /** Pages that link to `id` with `[[id]]`. */
+  async backlinks(id: string, sessionId?: string) {
+    const index = await this.indexFor(this.root(sessionId))
+    return index.pages
+      .filter(page => page.id !== id && page.links.includes(id))
+      .map(page => ({ id: page.id, title: page.title }))
+  }
+
+  /** Previous revision numbers, oldest first. */
+  async versions(id: string, sessionId?: string) {
+    if (!PAGE_ID.test(id)) return []
+    const dir = join(this.root(sessionId), '.versions', id)
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    return entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+      .map(entry => Number(entry.name.slice(0, -3)))
+      .filter(revision => Number.isInteger(revision))
+      .sort((left, right) => left - right)
+  }
+
+  async version(id: string, revision: number, sessionId?: string) {
+    if (!PAGE_ID.test(id) || !Number.isInteger(revision)) return undefined
+    return readFile(join(this.root(sessionId), '.versions', id, `${revision}.md`), 'utf8').catch(() => undefined)
+  }
+
+  async diffVersions(id: string, from: number, to: number, sessionId?: string) {
+    const [before, after] = await Promise.all([
+      this.version(id, from, sessionId),
+      this.version(id, to, sessionId),
+    ])
+    if (before === undefined || after === undefined) return undefined
+    return createDiff(before, after, `${id}@${from}..${to}`)
+  }
+
+  /** File sources whose bytes no longer match the hash recorded on the page. */
+  async staleSources(id: string, sessionId?: string): Promise<Array<{ path: string; reason: 'missing' | 'changed' }>> {
+    const root = this.root(sessionId)
+    const index = await this.indexFor(root)
+    const page = index.pages.find(item => item.id === id)
+    if (!page) return []
+    const raw = await readFile(join(root, page.path), 'utf8').catch(() => undefined)
+    const doc = raw ? parsePage(raw) : undefined
+    if (!doc) return []
+    const workspace = this.ctx.workspace.rootFor(sessionId)
+    const stale: Array<{ path: string; reason: 'missing' | 'changed' }> = []
+    for (const source of doc.meta.sources) {
+      if (source.kind !== 'file' || !source.path || !source.hash) continue
+      const text = await readFile(resolve(workspace, source.path), 'utf8').catch(() => undefined)
+      if (text === undefined) stale.push({ path: source.path, reason: 'missing' })
+      else if (`sha256:${hashContent(text)}` !== source.hash) stale.push({ path: source.path, reason: 'changed' })
+    }
+    return stale
+  }
+
+  /** Broken links, orphans, missing summaries, stale sources, duplicate titles. */
+  async lint(sessionId?: string): Promise<LintFinding[]> {
+    const root = this.root(sessionId)
+    const index = await this.indexFor(root)
+    const manual = await readFile(join(root, 'index.md'), 'utf8').catch(() => '')
+    const ids = new Set(index.pages.map(page => page.id))
+    const findings: LintFinding[] = []
+    const titles = new Map<string, string[]>()
+
+    for (const page of index.pages) {
+      for (const link of page.links) {
+        if (!ids.has(link)) findings.push({ page: page.id, kind: 'broken-link', detail: `[[${link}]] 不存在` })
+      }
+      if (!page.summary) findings.push({ page: page.id, kind: 'missing-summary', detail: '缺少摘要段落' })
+      const list = titles.get(page.title) ?? []
+      list.push(page.id)
+      titles.set(page.title, list)
+      const inbound = index.pages.some(other => other.id !== page.id && other.links.includes(page.id))
+      if (!inbound && !manual.includes(page.id)) {
+        findings.push({ page: page.id, kind: 'orphan', detail: '没有反链，也不在目录中' })
+      }
+      for (const source of await this.staleSources(page.id, sessionId)) {
+        findings.push({
+          page: page.id,
+          kind: 'stale-source',
+          detail: `${source.path}${source.reason === 'missing' ? ' 缺失' : ' 已变化'}`,
+        })
+      }
+    }
+    for (const [title, list] of titles) {
+      if (list.length > 1) {
+        findings.push({ kind: 'duplicate-title', detail: `「${title}」被 ${list.join('、')} 使用` })
+      }
+    }
+    return findings
   }
 
   /** `<wiki_catalog>` block; empty when there is nothing curated to show. */
@@ -473,11 +810,13 @@ function indexPage(path: string, mtime: number, size: number, raw: string, doc: 
     mtime,
     size,
     hash: hashContent(raw),
+    links: linksOf(doc.body),
     chunks: chunkPage(doc.body),
   }
 }
 
-function latestInjected(record: { events: Array<{ type: string; data: any }> }) {
+function latestInjected(record: { events: Array<{ type: string; data: any }> } | undefined) {
+  if (!record) return undefined
   for (let index = record.events.length - 1; index >= 0; index -= 1) {
     const event = record.events[index]!
     if (event.type === 'wiki/injected') return { text: String(event.data?.text ?? '') }
@@ -533,6 +872,75 @@ function slugify(title: string) {
   const ascii = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
   if (PAGE_ID.test(ascii) && ascii.replace(/-/g, '').length >= 3) return ascii
   return `page-${hashContent(title).slice(0, 8)}`
+}
+
+function linksOf(body: string) {
+  return [...new Set(
+    [...body.matchAll(/\[\[([a-z0-9][a-z0-9-]{0,63})\]\]/g)].map(match => match[1]!),
+  )]
+}
+
+interface RawCandidate {
+  ref: { page: IndexedPage; chunk: WikiChunk }
+  list: string
+  rank: number
+  score: number
+}
+
+/**
+ * Reciprocal rank fusion. Scores are not comparable across retrievers, but
+ * ranks are; each hit contributes 1/(k + rank) to the same chunk.
+ */
+function fuseCandidates(candidates: RawCandidate[]) {
+  const groups = new Map<string, { ref: RawCandidate['ref']; rrf: number; score: number }>()
+  for (const candidate of candidates) {
+    const key = `${candidate.ref.page.id}\0${candidate.ref.chunk.heading}\0${candidate.ref.chunk.text.slice(0, 48)}`
+    const entry = groups.get(key)
+    if (entry) {
+      entry.rrf += 1 / (60 + candidate.rank + 1)
+      entry.score = Math.max(entry.score, candidate.score)
+    } else {
+      groups.set(key, {
+        ref: candidate.ref,
+        rrf: 1 / (60 + candidate.rank + 1),
+        score: candidate.score,
+      })
+    }
+  }
+  return [...groups.values()].sort((left, right) => right.rrf - left.rrf || right.score - left.score)
+}
+
+/** Offline draft from a session: excerpts a person can turn into a page. */
+function proposalBody(events: Array<{ type: string; data: any }>) {
+  const lines: string[] = []
+  for (const event of events) {
+    if (event.type === 'message/user') {
+      const text = String(event.data?.text ?? '').trim()
+      if (text && !text.startsWith('/')) lines.push(`- 用户：${clip(text, 400)}`)
+    } else if (event.type === 'message/assistant') {
+      const text = (event.data?.parts ?? [])
+        .filter((part: { type?: string }) => part?.type === 'text')
+        .map((part: { text?: string }) => String(part.text ?? ''))
+        .join(' ')
+        .trim()
+      if (text) lines.push(`- 助手：${clip(text, 400)}`)
+    }
+  }
+  const excerpt = lines.slice(-20).join('\n').slice(0, 4_000)
+  return [
+    '## 摘要',
+    '',
+    '> 由会话生成的草案。接受前请补充结论并核对来源。',
+    '',
+    '## 原始摘录',
+    '',
+    excerpt || '（会话中没有可摘录的文本。）',
+  ].join('\n')
+}
+
+function clip(text: string, limit: number) {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat
 }
 
 function inside(root: string, target: string) {
@@ -633,6 +1041,40 @@ function wikiTools(service: WikiService): ToolDefinition[] {
           ...(Array.isArray(args?.sources) ? { sources: args.sources } : {}),
         }, run?.sessionId)
         return `${result.created ? 'Created' : 'Updated'} ${result.path} (revision ${result.revision})`
+      },
+    },
+    {
+      name: 'wiki_propose',
+      description: 'Propose a wiki page as a draft under .proposals. Nothing a person has not accepted reaches the wiki.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string', description: 'Markdown draft, starting with "## 摘要".' },
+          id: { type: 'string' },
+        },
+        required: ['title', 'body'],
+      },
+      async execute(args, run) {
+        const proposal = await service.propose({
+          ...(run?.sessionId ? { sessionId: run.sessionId } : {}),
+          title: String(args?.title ?? ''),
+          body: String(args?.body ?? ''),
+        })
+        return `Proposed ${proposal.path}`
+      },
+    },
+    {
+      name: 'wiki_lint',
+      description: 'Check the wiki for broken links, orphans, missing summaries, stale sources and duplicate titles.',
+      parameters: { type: 'object', properties: {} },
+      readOnly: true,
+      async execute(_args, run) {
+        const findings = await service.lint(run?.sessionId)
+        if (!findings.length) return 'No lint findings.'
+        return findings
+          .map(finding => `${finding.page ? `${finding.page}: ` : ''}[${finding.kind}] ${finding.detail}`)
+          .join('\n')
       },
     },
   ]

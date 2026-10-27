@@ -22,6 +22,8 @@ const KIND_LABEL: Record<string, string> = {
   assistant: '助手',
   tool: '工具',
   subtool: '子工具',
+  memory: '长期记忆',
+  wiki: '知识库',
 }
 
 function formatTokens(value: number) {
@@ -284,7 +286,11 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
     const map = new Map<number, TrajectoryRecord[]>()
     for (const record of snapshot?.records ?? []) {
       if (filter === 'tools' && record.kind !== 'tool') continue
-      if (filter === 'context' && record.kind !== 'context' && record.kind !== 'compacted') continue
+      if (filter === 'context'
+        && record.kind !== 'context'
+        && record.kind !== 'compacted'
+        && record.kind !== 'memory'
+        && record.kind !== 'wiki') continue
       if (needle) {
         const haystack = `${record.preview} ${record.detail ?? ''} ${record.toolName ?? ''}`.toLowerCase()
         if (!haystack.includes(needle)) continue

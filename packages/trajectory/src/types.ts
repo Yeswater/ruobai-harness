@@ -32,6 +32,7 @@ export interface TurnSummary {
 export type TrajectoryRecordKind =
   | 'system' | 'user' | 'context' | 'compacted'
   | 'assistant' | 'tool' | 'subtool'
+  | 'memory' | 'wiki'
 
 export interface RecordTiming {
   startedAt?: number

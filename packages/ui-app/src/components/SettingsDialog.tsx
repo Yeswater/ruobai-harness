@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useEscapeKey } from '../useEscapeKey.ts'
 import { api, type CommandPrefix, type ModeInfo, type PermissionMode, type ProviderMode, type ProviderModel, type PublicProvider, type PublicSettings, type RuntimeInfo, type ThemePreference } from '../api.ts'
 import {
-  BotIcon, CheckIcon, CloseIcon, CommandIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
+  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, MonitorIcon, MoonIcon, PlugIcon, PlusIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon, SunIcon,
 } from './Icons.tsx'
 import { McpSettings } from './McpSettings.tsx'
 import { PERMISSION_OPTIONS } from './PermissionSelect.tsx'
@@ -22,7 +22,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee'
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki'
 
 const NAV_GROUPS: Array<{
   label: string
@@ -37,6 +37,8 @@ const NAV_GROUPS: Array<{
       { id: 'protocols', label: '协议', icon: <CommandIcon size={15} />, keywords: 'AGENTS skill 技能 mcp a2a .ruobai 指令' },
       { id: 'permissions', label: '权限', icon: <ShieldIcon size={15} />, keywords: '审批 规则 危险命令' },
       { id: 'hooks', label: '门禁', icon: <CheckIcon size={15} />, keywords: 'hook lint 检查 门禁 格式化 阻断 审计 biome' },
+      { id: 'memory', label: '长期记忆', icon: <BrainIcon size={15} />, keywords: '记忆 remember 偏好 约束 决策 遗忘 固定' },
+      { id: 'wiki', label: '知识库', icon: <FolderTreeIcon size={15} />, keywords: 'wiki 知识库 页面 检索 提案 反链 版本' },
     ],
   },
   {
@@ -794,6 +796,14 @@ export function SettingsDialog({
           <ProtocolsSettings sessionId={sessionId} />
         ) : tab === 'permissions' ? (
           <PermissionsSettings />
+        ) : tab === 'memory' ? (
+          <div className="settings-page-body scroll">
+            <Slot name="settings.memory" props={{ sessionId }} />
+          </div>
+        ) : tab === 'wiki' ? (
+          <div className="settings-page-body scroll">
+            <Slot name="settings.wiki" props={{ sessionId }} />
+          </div>
         ) : tab === 'sandbox' ? (
           <div className="settings-page-body scroll">
             <Slot name="settings.sandbox" props={{ sessionId }} />

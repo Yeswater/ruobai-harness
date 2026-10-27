@@ -380,7 +380,7 @@ export function ContextView({ session, context, onRefresh }: ContextViewProps) {
           <section className="context-section">
             <header className="context-section-head">
               <div>
-                <h2>滚动记忆</h2>
+                <h2>会话记忆</h2>
                 <p>会话空闲时增量维护，覆盖切点时可直接替代一次摘要调用。</p>
               </div>
             </header>
@@ -408,6 +408,45 @@ export function ContextView({ session, context, onRefresh }: ContextViewProps) {
                 </details>
               )
               : null}
+          </section>
+
+          <section className="context-section">
+            <header className="context-section-head">
+              <div>
+                <h2>长期记忆</h2>
+                <p>跨会话保留的偏好、约束与决策；同一会话内注入字节稳定，压缩后才刷新。</p>
+              </div>
+            </header>
+            {context?.longMemory
+              ? (
+                <div className="context-memory">
+                  <span>{context.longMemory.items} 条（global {context.longMemory.global} / project {context.longMemory.project}）</span>
+                  <span>注入 {context.longMemory.injectedChars} 字符</span>
+                  <span>预算 {context.longMemory.budgetTokens} tokens</span>
+                  {context.longMemory.dormant ? <span>休眠 {context.longMemory.dormant} 条</span> : null}
+                  {context.longMemory.dropped ? <span>预算外 {context.longMemory.dropped} 条</span> : null}
+                </div>
+              )
+              : <div className="context-empty">未安装长期记忆插件。</div>}
+          </section>
+
+          <section className="context-section">
+            <header className="context-section-head">
+              <div>
+                <h2>知识库</h2>
+                <p>Markdown 页面；目录常驻系统提示，正文由 wiki_search / wiki_read 按需读取。</p>
+              </div>
+            </header>
+            {context?.wiki
+              ? (
+                <div className="context-memory">
+                  <span>{context.wiki.pages} 页 · {context.wiki.chunks} 块</span>
+                  <span>可检索 {context.wiki.ready} 页</span>
+                  {context.wiki.unready ? <span>未就绪 {context.wiki.unready} 页</span> : null}
+                  <span>目录 {context.wiki.catalogChars} 字符</span>
+                </div>
+              )
+              : <div className="context-empty">未安装知识库插件。</div>}
           </section>
 
           <section className="context-section">

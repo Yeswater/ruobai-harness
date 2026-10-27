@@ -41,9 +41,15 @@ importers:
       '@ruobai/client-modules':
         specifier: workspace:*
         version: link:packages/client-modules
+      '@ruobai/commands':
+        specifier: workspace:*
+        version: link:packages/commands
       '@ruobai/context':
         specifier: workspace:*
         version: link:packages/context
+      '@ruobai/context-search':
+        specifier: workspace:*
+        version: link:packages/context-search
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:vendor/cordis
@@ -110,6 +116,12 @@ importers:
       '@ruobai/memory':
         specifier: workspace:*
         version: link:packages/memory
+      '@ruobai/memory-distill':
+        specifier: workspace:*
+        version: link:packages/memory-distill
+      '@ruobai/memory-web':
+        specifier: workspace:*
+        version: link:packages/memory-web
       '@ruobai/mode-agent':
         specifier: workspace:*
         version: link:packages/mode-agent
@@ -215,6 +227,9 @@ importers:
       '@ruobai/wiki':
         specifier: workspace:*
         version: link:packages/wiki
+      '@ruobai/wiki-web':
+        specifier: workspace:*
+        version: link:packages/wiki-web
       '@ruobai/workspace':
         specifier: workspace:*
         version: link:packages/workspace
@@ -407,6 +422,15 @@ importers:
 
   packages/client-modules/tests/fixtures/client-fixture: {}
 
+  packages/commands:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
   packages/context:
     dependencies:
       '@ruobai/cordis':
@@ -421,6 +445,30 @@ importers:
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
+
+  packages/context-search:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@ruobai/wiki':
+        specifier: workspace:*
+        version: link:../wiki
+      '@ruobai/workspace':
+        specifier: workspace:*
+        version: link:../workspace
 
   packages/git:
     dependencies:
@@ -629,6 +677,9 @@ importers:
 
   packages/memory:
     dependencies:
+      '@ruobai/commands':
+        specifier: workspace:*
+        version: link:../commands
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
@@ -641,6 +692,42 @@ importers:
       '@ruobai/workspace':
         specifier: workspace:*
         version: link:../workspace
+
+  packages/memory-distill:
+    dependencies:
+      '@ruobai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@ruobai/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/memory-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/mode-agent:
     dependencies:
@@ -1123,6 +1210,9 @@ importers:
 
   packages/wiki:
     dependencies:
+      '@ruobai/commands':
+        specifier: workspace:*
+        version: link:../commands
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
@@ -1138,6 +1228,33 @@ importers:
       js-yaml:
         specifier: ^4.1.0
         version: 4.3.2
+
+  packages/wiki-embed:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/wiki':
+        specifier: workspace:*
+        version: link:../wiki
+
+  packages/wiki-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+      '@ruobai/wiki':
+        specifier: workspace:*
+        version: link:../wiki
 
   packages/workspace:
     dependencies:

@@ -45,6 +45,7 @@ export interface MemoryItem {
 
 export type MemoryOp =
   | { op: 'add'; at: number; item: MemoryItem }
+  | { op: 'update'; at: number; id: string; patch: Partial<Pick<MemoryItem, 'kind' | 'text' | 'tags' | 'pinned' | 'confidence'>> }
   | { op: 'supersede'; at: number; id: string; by?: string; reason?: string }
   | { op: 'forget'; at: number; id: string; reason?: string }
   | { op: 'touch'; at: number; ids: string[] }
@@ -73,6 +74,17 @@ export function foldJournal(ops: MemoryOp[]): Map<string, MemoryItem> {
     if (op.op === 'add') {
       const item = { ...op.item, tags: [...op.item.tags], supersedes: op.item.supersedes ? [...op.item.supersedes] : undefined }
       items.set(item.id, item)
+      continue
+    }
+    if (op.op === 'update') {
+      const item = items.get(op.id)
+      if (!item) continue
+      if (op.patch.kind) item.kind = op.patch.kind
+      if (op.patch.text) item.text = op.patch.text
+      if (op.patch.tags) item.tags = [...op.patch.tags]
+      if (op.patch.pinned !== undefined) item.pinned = op.patch.pinned
+      if (op.patch.confidence !== undefined) item.confidence = op.patch.confidence
+      item.updatedAt = op.at
       continue
     }
     if (op.op === 'supersede' || op.op === 'forget') {

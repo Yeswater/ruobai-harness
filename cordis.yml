@@ -307,11 +307,41 @@
 # Cross-session memory and the project wiki. Both contribute prompt sections
 # through `context` and keep their state under .ruobai/ (see
 # docs/memory-and-wiki.md). Removing either row drops the feature cleanly.
+- id: commands
+  name: '@ruobai/commands'
+
 - id: memory
   name: '@ruobai/memory'
 
+# Deterministic, offline extraction from user turns. Switch to `llm` only when
+# a provider is configured: it has daily call/token caps and a breaker.
+- id: memory-distill
+  name: '@ruobai/memory-distill'
+  config:
+    writeMode: rules
+
+- id: memory-web
+  name: '@ruobai/memory-web'
+
 - id: wiki
   name: '@ruobai/wiki'
+
+- id: wiki-web
+  name: '@ruobai/wiki-web'
+
+# Optional semantic half for wiki search. Unmounted means BM25 only; when
+# mounted, BM25 and the vector ranking are fused with RRF. Needs a local
+# embedding model (Ollama) or an OpenAI-compatible embeddings endpoint.
+# - id: wiki-embed
+#   name: '@ruobai/wiki-embed'
+#   config:
+#     kind: ollama
+#     baseUrl: http://127.0.0.1:11434
+#     model: nomic-embed-text
+
+# One tool across memory, wiki and skills, with rule-based type quotas.
+- id: context-search
+  name: '@ruobai/context-search'
 
 - id: settings
   name: '@ruobai/settings'

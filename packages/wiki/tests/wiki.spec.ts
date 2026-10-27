@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -146,5 +146,94 @@ describe('wiki service', () => {
   it('rejects ids that escape the wiki root', async () => {
     const { ctx } = await setup()
     await expect(ctx.wiki.write({ id: '../evil', title: 'x', body: 'y' })).rejects.toThrow('invalid page id')
+  })
+})
+
+describe('wiki curation', () => {
+  it('tracks links and backlinks', async () => {
+    const { ctx, sessionId } = await setup()
+    await ctx.wiki.write({
+      id: 'sandbox-seatbelt',
+      title: 'Seatbelt',
+      body: '## 摘要\n\n沙箱。',
+      sources: [{ kind: 'file', path: 'docs/sandbox-macos.md' }],
+    }, sessionId)
+    await ctx.wiki.write({
+      id: 'sandbox-policy',
+      title: 'Policy',
+      body: '## 摘要\n\n策略依赖 [[sandbox-seatbelt]]。',
+      sources: [{ kind: 'file', path: 'docs/sandbox-macos.md' }],
+    }, sessionId)
+
+    expect(await ctx.wiki.backlinks('sandbox-seatbelt', sessionId)).toEqual([
+      { id: 'sandbox-policy', title: 'Policy' },
+    ])
+  })
+
+  it('keeps previous revisions and can diff them', async () => {
+    const { ctx, sessionId } = await setup()
+    const sources = [{ kind: 'file' as const, path: 'docs/sandbox-macos.md' }]
+    await ctx.wiki.write({ id: 'sandbox-seatbelt', title: 'Seatbelt', body: '## 摘要\n\n第一版。', sources }, sessionId)
+    await ctx.wiki.write({ id: 'sandbox-seatbelt', title: 'Seatbelt', body: '## 摘要\n\n第二版。', sources }, sessionId)
+    await ctx.wiki.write({ id: 'sandbox-seatbelt', title: 'Seatbelt', body: '## 摘要\n\n第三版。', sources }, sessionId)
+
+    expect(await ctx.wiki.versions('sandbox-seatbelt', sessionId)).toEqual([1, 2])
+    expect(await ctx.wiki.version('sandbox-seatbelt', 1, sessionId)).toContain('第一版')
+    const diff = await ctx.wiki.diffVersions('sandbox-seatbelt', 1, 2, sessionId)
+    expect(diff).toContain('-第一版。')
+    expect(diff).toContain('+第二版。')
+  })
+
+  it('accepts a proposal only when asked to', async () => {
+    const { ctx, sessionId } = await setup()
+    const proposal = await ctx.wiki.propose({ sessionId, title: 'Session notes' })
+    expect(proposal.path).toBe('.proposals/session-notes.md')
+    expect((await ctx.wiki.proposals(sessionId)).map(item => item.id)).toEqual(['session-notes'])
+    expect(await ctx.wiki.read('session-notes', 'summary', sessionId)).toBeUndefined()
+
+    const accepted = await ctx.wiki.acceptProposal('session-notes', sessionId)
+    expect(accepted.path).toBe('pages/session-notes.md')
+    expect(await ctx.wiki.read('session-notes', 'summary', sessionId)).toBeDefined()
+    expect(await ctx.wiki.proposals(sessionId)).toEqual([])
+  })
+
+  it('reports stale file sources after the source changes', async () => {
+    const { ctx, sessionId, workspaceRoot } = await setup()
+    await mkdir(join(workspaceRoot, 'docs'), { recursive: true })
+    await writeFile(join(workspaceRoot, 'docs', 'sandbox-macos.md'), 'first version\n')
+    await ctx.wiki.write({
+      id: 'sandbox-seatbelt',
+      title: 'Seatbelt',
+      body: '## 摘要\n\n沙箱只接受 localhost。',
+      sources: [{ kind: 'file', path: 'docs/sandbox-macos.md' }],
+    }, sessionId)
+    expect(await ctx.wiki.staleSources('sandbox-seatbelt', sessionId)).toEqual([])
+
+    await writeFile(join(workspaceRoot, 'docs', 'sandbox-macos.md'), 'second version\n')
+    expect(await ctx.wiki.staleSources('sandbox-seatbelt', sessionId)).toEqual([
+      { path: 'docs/sandbox-macos.md', reason: 'changed' },
+    ])
+  })
+
+  it('lints broken links, orphans, duplicates and missing summaries', async () => {
+    const { ctx, sessionId } = await setup()
+    await ctx.wiki.write({
+      id: 'alpha',
+      title: 'Same title',
+      body: '## 摘要\n\n指向 [[missing-page]]。',
+      sources: [{ kind: 'file', path: 'docs/a.md' }],
+    }, sessionId)
+    await ctx.wiki.write({
+      id: 'beta',
+      title: 'Same title',
+      body: '# 只有标题',
+      sources: [{ kind: 'file', path: 'docs/b.md' }],
+    }, sessionId)
+
+    const findings = await ctx.wiki.lint(sessionId)
+    expect(findings.some(finding => finding.kind === 'broken-link')).toBe(true)
+    expect(findings.some(finding => finding.kind === 'orphan')).toBe(true)
+    expect(findings.some(finding => finding.kind === 'duplicate-title')).toBe(true)
+    expect(findings.some(finding => finding.kind === 'missing-summary')).toBe(true)
   })
 })

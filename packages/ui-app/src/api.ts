@@ -289,6 +289,26 @@ export interface ContextInfo {
   pruned: Array<{ seq: number; name: string; before: number; after: number; text?: string }>
   /** Rolling memory checkpoint used to skip a summarization call. */
   memory?: { at: number; upToSeq: number; chars: number }
+  /** Long-term memory state, when the plugin is mounted. */
+  longMemory?: {
+    items: number
+    dormant: number
+    global: number
+    project: number
+    injectedChars: number
+    budgetTokens: number
+    revision: string
+    dropped: number
+  }
+  /** Wiki catalog state, when the plugin is mounted. */
+  wiki?: {
+    pages: number
+    chunks: number
+    ready: number
+    unready: number
+    catalogChars: number
+    revision: string
+  }
   /** Latest committed pruning epoch. */
   prune?: {
     upToSeq: number
@@ -303,7 +323,9 @@ export interface ContextInfo {
     divergence: {
       region: 'tools' | 'system' | 'messages'
       index?: number
-      reason: 'mode' | 'compaction' | 'prune' | 'tools' | 'system' | 'messages'
+      /** Section id when a registered prompt section broke the prefix. */
+      section?: string
+      reason: 'mode' | 'compaction' | 'prune' | 'tools' | 'system' | 'memory' | 'messages'
       invalidatedChars: number
     }
   }

@@ -141,12 +141,14 @@ OpenViking（火山引擎 / 字节跳动开源，AGPL-3.0）把自己定位为�
 
 | 包 | 形态 | inject | 职责 |
 | --- | --- | --- | --- |
-| `@ruobai/memory` | Service | `sessions` `workspace` `tools` `context` | journal、快照编译、排序、注入 section、记忆工具 |
-| `@ruobai/memory-distill` | 函数插件 | `memory` `llm` `settings` | 规则抽取；可选 LLM 蒸馏；预算与熔断 |
-| `@ruobai/memory-web` | 函数插件 | `web` `memory` | `/api/memory` CRUD、SSE 帧、记忆面板 |
-| `@ruobai/wiki` | Service | `workspace` `tools` `checkpoints` `context` | 页面读写、索引、检索、注入目录、wiki 工具 |
-| `@ruobai/wiki-web` | 函数插件 | `web` `wiki` | 浏览、搜索、编辑、提案审核、反链 |
-| `@ruobai/wiki-embed` | 可选 Service | `wiki` `llm` | P2：本地嵌入与混合检索；不装则纯 BM25 |
+| `@ruobai/commands` | Service | `sessions` | 斜杠命令注册表；agent 在模型调用前分发 |
+| `@ruobai/memory` | Service | `sessions` `workspace` `tools` | journal、快照编译、排序、注入 section、记忆工具与命令 |
+| `@ruobai/memory-distill` | 对象插件 | `memory` `sessions` `llm` | 规则抽取；可选 LLM 蒸馏；提交边界、预算与熔断 |
+| `@ruobai/memory-web` | 函数插件 | `web` `memory` `sessions` | `/api/memory` CRUD、固定、遗忘、检索；记忆面板 |
+| `@ruobai/wiki` | Service | `workspace` `tools` | 页面读写、索引、检索、注入目录、wiki 工具与命令 |
+| `@ruobai/wiki-web` | 函数插件 | `web` `wiki` `sessions` | 浏览、检索、编辑、提案审核、反链、版本与检查；知识库面板 |
+| `@ruobai/wiki-embed` | 可选对象插件 | `wiki` | P2：本地嵌入与 RRF 混合检索；不挂载则纯 BM25 |
+| `@ruobai/context-search` | 对象插件 | `tools` `memory` `wiki` `sessions` `workspace` | `context_search` 统一检索与 `skill_propose` 技能提案 |
 
 拆分理由与仓库现有约定一致：服务端能力与 Web 适配器分开；蒸馏是成本开关，必须能通过 `cordis.yml` 一行摘掉；嵌入是可选增强，不能成为核心依赖。
 
@@ -625,6 +627,16 @@ interface WikiSettings {
 - **验证**：`pnpm typecheck` 两套 tsconfig 通过；`pnpm test` 523 项通过，包含 24 项新增用例（同一 journal 编译字节一致、预算不超、会话快照不随 journal 变化、压缩后刷新、索引删除后重建一致、CJK 检索、全栈注入）。
 - **实测（本机 M 系列，合成数据）**：10k 块索引构建 57 ms，BM25 查询 p50 1.2 ms / p95 4.1 ms；1k 页 frontmatter 解析 + 分块（30k 块）53 ms，均在 P0 验收线内（p95 < 50 ms、1k 页 < 2 s）。磁盘 I/O 与增量复用未计入。
 - **未做（P1）**：`memory-distill`、`memory-web` / `wiki-web`、命令注册表（`/remember` 等）、wiki lint 与 stale 检测、类型化查询。
+
+### P1 / P2 落地记录（2026-10-27）
+
+- **命令**：新增 `@ruobai/commands`；agent 在压缩与技能手势之前分发 `/remember`、`/forget`、`/memory [refresh]`、`/wiki <查询|read|save>`。命令结果落 `turn/notice`，不进入模型上下文。
+- **蒸馏**：`@ruobai/memory-distill` 默认 `rules`（零 LLM 调用），按空闲 / 阈值提交边界抽取用户回合；`llm` 模式有每日调用与 token 上限、JSON schema 校验、置信度封顶 0.7、连续失败熔断；写 `memory/commit` 与 `memory/distill`。
+- **Wiki 治理**：`wiki_lint`（断链、孤儿、缺摘要、源过期、重名）、来源哈希过期检测、`[[链接]]` 反链、写前保存历史版本与版本 diff、`wiki_propose` / `/wiki save` 提案与接受/拒绝。
+- **Web 与面板**：`memory-web` / `wiki-web` 提供 CRUD、检索、提案、历史、lint 接口；设置里新增「长期记忆」「知识库」两个页签；Context 卡片显示长期记忆与知识库占用；轨迹新增 `memory` / `wiki` 记录类别。
+- **P2**：`@ruobai/wiki-embed`（可选，默认不挂载）用 OpenAI 兼容 embeddings 建向量索引，与 BM25 做 RRF 融合；`@ruobai/context-search` 提供规则分型的 `context_search` 与 `skill_propose`（技能提案经 `/api/skill-proposals` 接受后才进入技能目录）。
+- **验证**：`pnpm typecheck`、`pnpm build:ui`、`pnpm test`（550 项）通过并连续三次稳定。评测：以 `docs/*.md` 为语料、20 条查询测 Recall@5 = 19/20（0.95）。
+- **未做（按需）**：本地 rerank、反链图可视化（当前只列反链）、注入 token / 缓存命中的自动化评测（Recall@5 之外的指标）。
 
 ### P1：自动化与可审阅（3–5 人日）
 

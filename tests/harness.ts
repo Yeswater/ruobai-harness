@@ -8,6 +8,8 @@ import ApprovalService from '@ruobai/approval'
 import ChatService from '@ruobai/chat'
 import CheckpointsService from '@ruobai/checkpoints'
 import CheckpointsWeb from '@ruobai/checkpoints-web'
+import CommandService from '@ruobai/commands'
+import ContextSearch from '@ruobai/context-search'
 import ContextService from '@ruobai/context'
 import { Context } from '@ruobai/cordis'
 import GitService from '@ruobai/git'
@@ -20,6 +22,8 @@ import LintService from '@ruobai/lint'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
 import MemoryService from '@ruobai/memory'
+import MemoryDistill from '@ruobai/memory-distill'
+import MemoryWeb from '@ruobai/memory-web'
 import MockProvider from '@ruobai/llm-mock'
 import McpService from '@ruobai/mcp'
 import McpCatalog from '@ruobai/mcp-catalog'
@@ -48,6 +52,7 @@ import UiApi from '@ruobai/ui-server'
 import WebServer, { type Config as WebConfig } from '@ruobai/web-server'
 import WebWs from '@ruobai/web-ws'
 import WikiService from '@ruobai/wiki'
+import WikiWeb from '@ruobai/wiki-web'
 import WorkspaceService from '@ruobai/workspace'
 import WorkspaceWeb from '@ruobai/workspace-web'
 
@@ -90,6 +95,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(LlmService, { provider: 'mock', model: 'mock-1' }))
   await mount(ctx.plugin(MockProvider, { delay: options.delay ?? 0 }))
   await mount(ctx.plugin(SessionService))
+  await mount(ctx.plugin(CommandService))
   await mount(ctx.plugin(CheckpointsService, {
     root: process.cwd(),
     store: join(dir, 'checkpoints'),
@@ -149,9 +155,17 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(MemoryService, {
     globalRoot: protocolHome,
   }))
+  // Rules mode is free and offline; the idle timer is long enough that unit
+  // tests never depend on it.
+  await mount(ctx.plugin(MemoryDistill, {
+    writeMode: 'rules',
+    idleMs: 3_600_000,
+    minIntervalMs: 0,
+  }))
   await mount(ctx.plugin(WikiService, {
     root: join(dir, 'wiki'),
   }))
+  await mount(ctx.plugin(ContextSearch))
   await mount(ctx.plugin(ApprovalService))
   await mount(ctx.plugin(PermissionService))
   // Gates with no configured checkers: guard and lifecycle paths are exercised,
@@ -174,6 +188,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(CheckpointsWeb))
   await mount(ctx.plugin(SettingsWeb))
   await mount(ctx.plugin(SkillsWeb))
+  await mount(ctx.plugin(MemoryWeb))
+  await mount(ctx.plugin(WikiWeb))
   await mount(ctx.plugin(A2aWeb))
   await mount(ctx.plugin(WebWs))
   await mount(ctx.plugin(McpWeb))

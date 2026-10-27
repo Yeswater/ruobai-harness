@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
+import type { CommandService } from '@ruobai/commands'
 import type { PromptSection } from '@ruobai/context'
 import type {} from '@ruobai/session'
 import type { ToolDefinition } from '@ruobai/tools'
@@ -11,6 +12,7 @@ import {
   foldJournal,
   isActive,
   memoryId,
+  MEMORY_KINDS,
   normalizeText,
   screenText,
   type MemoryItem,
@@ -117,6 +119,80 @@ export class MemoryService extends Service {
     // A compaction is a new prompt epoch: the session snapshot is refreshed
     // once, and the break is attributed to this section.
     ctx.on('context/compacted', info => this.refreshNeeded.add(info.sessionId))
+
+    this.registerCommands()
+  }
+
+  private registerCommands() {
+    const register = (host: CommandService) => {
+      const disposers = [
+        host.register({
+          name: 'remember',
+          description: '记住一条长期记忆',
+          usage: '/remember <文本> [--global] [--kind=preference|constraint|decision|fact|gotcha|procedure]',
+          run: ({ sessionId, args }) => this.commandRemember(sessionId, args),
+        }),
+        host.register({
+          name: 'forget',
+          description: '遗忘匹配的长期记忆',
+          usage: '/forget <id 或文本>',
+          run: async ({ sessionId, args }) => {
+            const target = args.trim()
+            if (!target) throw new Error('用法：/forget <id 或文本>')
+            const ids = await this.forget(target.startsWith('mem_') ? { id: target } : { query: target }, sessionId)
+            return `已遗忘 ${ids.join('、')}`
+          },
+        }),
+        host.register({
+          name: 'memory',
+          description: '查看长期记忆快照与预算',
+          usage: '/memory [refresh]',
+          run: ({ sessionId, args }) => this.commandMemory(sessionId, args),
+        }),
+      ]
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    }
+    const commands = this.ctx.get('commands', false) as CommandService | undefined
+    if (commands) this.ctx.effect(() => register(commands), 'memory.commands')
+    else this.ctx.inject(['commands'], cb => cb.effect(() => register(cb.commands), 'memory.commands'))
+  }
+
+  private async commandRemember(sessionId: string, args: string) {
+    let text = args.trim()
+    let scope: MemoryScope = 'project'
+    let kind: MemoryKind = 'fact'
+    if (/\s--global\b/.test(text)) {
+      scope = 'global'
+      text = text.replace(/\s--global\b/, '').trim()
+    }
+    const kindMatch = /\s--kind=([a-z]+)\b/.exec(text)
+    if (kindMatch) {
+      if (MEMORY_KINDS.includes(kindMatch[1] as MemoryKind)) kind = kindMatch[1] as MemoryKind
+      text = text.replace(kindMatch[0], '').trim()
+    }
+    if (!text) throw new Error('用法：/remember <文本> [--global] [--kind=…]')
+    const result = await this.save({ text, kind, scope, source: { kind: 'user' } }, sessionId)
+    return result.created ? `已记住 ${result.id}（${scope}）` : `已存在：${result.id}`
+  }
+
+  private async commandMemory(sessionId: string, args: string) {
+    if (args.trim() === 'refresh') {
+      this.refreshNeeded.add(sessionId)
+      return '记忆快照已标记刷新，将在下一次请求时重建。'
+    }
+    const all = [...(await this.items(sessionId)).values()]
+    const active = all.filter(item => isActive(item))
+    const compiled = compileInjection(active, { maxTokens: this.config.maxInjectTokens })
+    const injected = latestInjected(this.ctx.sessions.get(sessionId))?.text ?? ''
+    const count = (scope: MemoryScope) => active.filter(item => item.scope === scope).length
+    return [
+      `长期记忆：${active.length} 条（global ${count('global')} / project ${count('project')}）`,
+      `注入预算 ${this.config.maxInjectTokens ?? DEFAULT_MAX_INJECT_TOKENS} tokens；当前快照 ${injected.length} 字符`,
+      `revision ${compiled.revision}`,
+      compiled.dropped ? `因预算未注入 ${compiled.dropped} 条（仍可 memory_search）` : '',
+    ].filter(Boolean).join('\n')
   }
 
   /** Memory directories for a session's project and the current user. */
@@ -245,6 +321,68 @@ export class MemoryService extends Service {
     return { id, item, created: true }
   }
 
+  /**
+   * Replace an item with a newer fact: the old one keeps its history but
+   * stops being active. Used by distillation when a value changed rather than
+   * a new fact being added.
+   */
+  async supersede(
+    oldId: string,
+    input: SaveInput,
+    sessionId?: string,
+  ): Promise<{ id: string; item: MemoryItem; created: boolean }> {
+    const items = await this.items(sessionId)
+    const previous = items.get(oldId)
+    if (!previous) throw new Error(`no such memory: ${oldId}`)
+    const saved = await this.save({
+      ...input,
+      scope: previous.scope,
+      kind: input.kind ?? previous.kind,
+      tags: input.tags ?? previous.tags,
+    }, sessionId)
+    if (saved.id === oldId) return saved
+    const store = this.storeFor(previous.scope, sessionId)
+    const now = Date.now()
+    await store.append({ op: 'supersede', at: now, id: oldId, by: saved.id, reason: 'superseded' })
+    const refreshed = foldJournal(await store.load())
+    await store.writeSnapshot([...refreshed.values()])
+    return saved
+  }
+
+  /** Pin or unpin an item; pinned entries survive the injection budget first. */
+  async pin(id: string, pinned: boolean, sessionId?: string): Promise<MemoryItem> {
+    const items = await this.items(sessionId)
+    const item = items.get(id)
+    if (!item) throw new Error(`no such memory: ${id}`)
+    const store = this.storeFor(item.scope, sessionId)
+    const now = Date.now()
+    await store.append({ op: 'update', at: now, id, patch: { pinned } })
+    item.pinned = pinned
+    item.updatedAt = now
+    await store.writeSnapshot([...items.values()])
+    if (sessionId) this.ctx.sessions.append(sessionId, 'memory/updated', { id, patch: { pinned } })
+    return item
+  }
+
+  /** Counts and sizes for the context card and the memory panel. */
+  async stats(sessionId?: string) {
+    const items = [...(await this.items(sessionId)).values()]
+    const active = items.filter(item => isActive(item))
+    const record = sessionId ? this.ctx.sessions.get(sessionId) : undefined
+    const injected = latestInjected(record)?.text ?? ''
+    const compiled = compileInjection(active, { maxTokens: this.config.maxInjectTokens })
+    return {
+      items: active.length,
+      dormant: items.length - active.length,
+      global: active.filter(item => item.scope === 'global').length,
+      project: active.filter(item => item.scope === 'project').length,
+      injectedChars: injected.length,
+      budgetTokens: this.config.maxInjectTokens ?? DEFAULT_MAX_INJECT_TOKENS,
+      revision: compiled.revision,
+      dropped: compiled.dropped,
+    }
+  }
+
   async forget(target: { id?: string; query?: string }, sessionId?: string): Promise<string[]> {
     const dirs = this.dirs(sessionId)
     const stores = [this.store(dirs.global), this.store(dirs.project)]
@@ -298,7 +436,8 @@ function unique(values: string[]) {
   return [...new Set(values.map(value => value.trim()).filter(Boolean))]
 }
 
-function latestInjected(record: { events: Array<{ type: string; data: any }> }) {
+function latestInjected(record: { events: Array<{ type: string; data: any }> } | undefined) {
+  if (!record) return undefined
   for (let index = record.events.length - 1; index >= 0; index -= 1) {
     const event = record.events[index]!
     if (event.type === 'memory/injected') return { text: String(event.data?.text ?? '') }
