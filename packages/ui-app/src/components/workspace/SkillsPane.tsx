@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   api, type SkillHubCategory, type SkillHubSkill, type SkillSummary,
 } from '../../api.ts'
+import { useConfirm } from '../ConfirmDialog.tsx'
 import {
   BotIcon, CheckIcon, CommandIcon, EyeIcon, PlusIcon, RefreshIcon,
 } from '../Icons.tsx'
@@ -41,6 +42,7 @@ export function SkillsPane({ sessionId, query }: {
   sessionId?: string
   query: string
 }) {
+  const confirm = useConfirm()
   const [installed, setInstalled] = useState<SkillSummary[]>([])
   const [proposals, setProposals] = useState<SkillProposal[]>([])
   const [categories, setCategories] = useState<SkillHubCategory[]>([])
@@ -148,7 +150,14 @@ export function SkillsPane({ sessionId, query }: {
   }
 
   const removeSkill = async (skill: SkillSummary) => {
-    if (!sessionId || !window.confirm(`从工作区移除技能 /${skill.name}？`)) return
+    if (!sessionId) return
+    const ok = await confirm({
+      title: '移除技能',
+      body: `/${skill.name} 会从当前工作区卸载，可以重新安装。`,
+      confirmLabel: '移除',
+      danger: true,
+    })
+    if (!ok) return
     setError(null)
     try {
       await api.uninstallSkillHubSkill(skill.name, sessionId)
@@ -355,8 +364,14 @@ export function SkillsPane({ sessionId, query }: {
                 <button
                   className="btn ghost compact"
                   disabled={!sessionId}
-                  onClick={() => {
-                    if (!window.confirm(`拒绝技能提案 ${proposal.name}？`)) return
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: '拒绝技能提案',
+                      body: `${proposal.name} 的提案会被删除，工作区保持不变。`,
+                      confirmLabel: '拒绝',
+                      danger: true,
+                    })
+                    if (!ok) return
                     void proposalRequest(sessionId, `/api/skill-proposals/${encodeURIComponent(proposal.name)}`, { method: 'DELETE' })
                       .then(() => refreshInstalled())
                       .catch((caught) => setError(caught instanceof Error ? caught.message : String(caught)))

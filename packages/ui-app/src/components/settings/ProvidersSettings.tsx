@@ -7,6 +7,7 @@ import {
   type PublicProvider,
   type PublicSettings,
 } from '../../api.ts'
+import { useConfirm } from '../ConfirmDialog.tsx'
 import { CloseIcon, PlusIcon } from '../Icons.tsx'
 import { Select } from '../Select.tsx'
 import { TokenAmountInput } from '../TokenAmountInput.tsx'
@@ -46,6 +47,7 @@ function draftOf(provider?: PublicProvider | null): Draft {
 }
 
 export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSettingsProps) {
+  const confirm = useConfirm()
   const providers = settings?.llm?.providers ?? []
   const activeProvider = settings?.llm?.activeProvider ?? 'mock'
   const activeModel = settings?.llm?.activeModel ?? ''
@@ -205,7 +207,13 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
 
   const remove = async () => {
     if (!draft?.id) return
-    if (!confirm(`删除供应商「${draft.name}」？`)) return
+    const ok = await confirm({
+      title: '删除供应商',
+      body: `「${draft.name}」及其模型配置会一并移除。`,
+      confirmLabel: '删除',
+      danger: true,
+    })
+    if (!ok) return
     setBusy('delete')
     setError(null)
     try {

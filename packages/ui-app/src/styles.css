@@ -2331,6 +2331,31 @@ button {
   background: color-mix(in srgb, var(--danger) 82%, #000);
 }
 
+/* In-app confirmation (replaces window.confirm); actions sit on the right. */
+.confirm-foot {
+  justify-content: flex-end;
+}
+
+.confirm-modal {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.confirm-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.confirm-input:focus {
+  border-color: var(--accent);
+}
+
 .confirm-modal .modal-body {
   padding-bottom: 6px;
 }

@@ -3,6 +3,7 @@ import {
 } from 'react'
 import { api, type GitChange, type GitInfo } from '../../api.ts'
 import { ClockIcon, FolderTreeIcon, ListIcon } from '../Icons.tsx'
+import { useConfirm } from '../ConfirmDialog.tsx'
 import { useContextMenu } from '../ContextMenu.tsx'
 import { ChangeTree } from './ChangeTree.tsx'
 import { buildTree, groupChanges, type ChangeEntry } from './model.ts'
@@ -39,6 +40,7 @@ export function ChangesPane({
   sessionId, changes, info, activeKey, onSelect, onChanged, onNotice, onError,
 }: ChangesPaneProps) {
   const contextMenu = useContextMenu()
+  const confirm = useConfirm()
   const [message, setMessage] = useState('')
   const [amend, setAmend] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -91,8 +93,14 @@ export function ChangesPane({
   const unstage = (paths: string[]) => run('unstage', async () => {
     await api.unstageGitPaths(sessionId, paths)
   })
-  const discard = (paths: string[]) => {
-    if (!confirm(`丢弃 ${paths.length} 个文件的改动？此操作无法撤销。`)) return
+  const discard = async (paths: string[]) => {
+    const ok = await confirm({
+      title: '丢弃改动',
+      body: `${paths.length} 个文件的改动会被丢弃，此操作无法撤销。`,
+      confirmLabel: '丢弃',
+      danger: true,
+    })
+    if (!ok) return
     void run('discard', async () => {
       await api.discardGitPaths(sessionId, paths)
     })

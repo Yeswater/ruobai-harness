@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type McpApproval, type McpServer } from '../api.ts'
+import { useConfirm } from './ConfirmDialog.tsx'
 import { PlusIcon } from './Icons.tsx'
 import { Select } from './Select.tsx'
 
@@ -63,6 +64,7 @@ function dotOf(server: McpServer) {
 }
 
 export function McpSettings() {
+  const confirm = useConfirm()
   const [servers, setServers] = useState<McpServer[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -169,7 +171,13 @@ export function McpSettings() {
 
   const remove = async () => {
     if (!draft?.id) return
-    if (!confirm(`删除 MCP 服务「${draft.label || draft.id}」？`)) return
+    const ok = await confirm({
+      title: '删除 MCP 服务',
+      body: `「${draft.label || draft.id}」将从设置中移除，它的工具不再出现在工具列表。`,
+      confirmLabel: '删除',
+      danger: true,
+    })
+    if (!ok) return
     setBusy('delete')
     setError(null)
     try {

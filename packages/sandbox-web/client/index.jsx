@@ -40,6 +40,17 @@ const STYLES = `
 .sandbox-details > summary { cursor: pointer; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
 .sandbox-details > summary:hover { color: var(--text); }
 .sandbox-warn { color: var(--warn); font-size: 11.5px; margin: 6px 0; line-height: 1.55; }
+.sandbox-confirm {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border)); border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent); font-size: 11.5px; line-height: 1.5;
+}
+.sandbox-confirm p { flex: 1 1 220px; margin: 0; color: var(--text); }
+.sandbox-confirm button {
+  height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.sandbox-confirm button.danger { border-color: var(--danger); background: var(--danger); color: #fff; }
 .sandbox-switch {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
@@ -154,6 +165,7 @@ function SandboxPanel(props) {
   const sessionQuery = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
   const [status, setStatus] = useState(null)
   const [error, setError] = useState(null)
+  const [confirming, setConfirming] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -190,17 +202,28 @@ function SandboxPanel(props) {
     }
   }, [load])
 
-  const toggleSandbox = useCallback(async () => {
-    if (!status) return
-    const next = !status.enabled
-    if (!next && !window.confirm('关闭沙箱后，命令不再受 macOS Seatbelt 限制，只受审批规则约束。确定关闭？')) return
+  const applySandbox = useCallback(async (next) => {
+    setConfirming(false)
     try {
       await patchJson('/api/sandbox/config', { enabled: next })
       await load()
     } catch (err) {
       setError(err.message)
     }
-  }, [load, status])
+  }, [load])
+
+  /**
+   * Turning the sandbox off is the one destructive switch here, so it asks
+   * inline: a native dialog cannot show the app's theme and blocks the page.
+   */
+  const toggleSandbox = useCallback(() => {
+    if (!status) return
+    if (status.enabled === false) {
+      void applySandbox(true)
+      return
+    }
+    setConfirming(true)
+  }, [applySandbox, status])
 
   const enabled = status ? status.enabled !== false : true
   const active = Boolean(status && status.active)
@@ -246,7 +269,16 @@ function SandboxPanel(props) {
               </span>
             </div>
 
-            {!enabled
+            {confirming
+              ? (
+                <div className="sandbox-confirm" role="alertdialog" aria-label="关闭沙箱">
+                  <p>关闭后命令不再受 macOS Seatbelt 限制，只受审批规则约束。</p>
+                  <button type="button" onClick={() => setConfirming(false)}>取消</button>
+                  <button type="button" className="danger" onClick={() => void applySandbox(false)}>关闭沙箱</button>
+                </div>
+              )
+              : null}
+            {!enabled && !confirming
               ? (
                 <p className="sandbox-warn">
                   沙箱已关闭：命令不受 Seatbelt 限制，只受审批规则与危险命令保护约束。

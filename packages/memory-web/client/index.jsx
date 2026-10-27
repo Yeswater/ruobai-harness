@@ -59,7 +59,11 @@ const STYLES = `
 .memory-badge.pinned { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
 .memory-badge.dormant { background: transparent; border: 1px solid var(--border); color: var(--faint); }
 .memory-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--faint); font-size: 10.5px; }
-.memory-actions { display: flex; flex: none; gap: 6px; }
+.memory-actions { display: flex; flex: none; align-items: center; gap: 6px; }
+.memory-confirm { display: flex; flex: none; align-items: center; gap: 6px; padding-left: 2px; }
+.memory-confirm-text { color: var(--danger); font-size: 11.5px; white-space: nowrap; }
+.memory-btn-confirm { color: #fff; border-color: var(--danger); background: var(--danger); }
+.memory-btn-confirm:hover:not(:disabled) { color: #fff; border-color: var(--danger); }
 .memory-error { color: var(--danger); font-size: 12px; }
 .memory-empty { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 34px 20px; color: var(--faint); font-size: 12px; text-align: center; }
 .memory-empty strong { color: var(--text); font-size: 13px; font-weight: 500; }
@@ -126,6 +130,9 @@ function MemoryPanel(api, props) {
   const [filtered, setFiltered] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  // Forgetting is confirmed inline on the row itself: a native dialog would
+  // block the renderer, and a modal on top of a list hides which entry it is.
+  const [confirming, setConfirming] = useState(null)
 
   const load = async () => {
     setError(null)
@@ -171,7 +178,7 @@ function MemoryPanel(api, props) {
   }
 
   const forget = async (item) => {
-    if (!window.confirm(`遗忘这条记忆？\n\n${item.text}`)) return
+    setConfirming(null)
     try {
       await request(`/api/memory/${encodeURIComponent(item.id)}${query}`, { method: 'DELETE' })
       await load()
@@ -281,10 +288,18 @@ function MemoryPanel(api, props) {
                 item.source?.sessionId
                   ? h('span', null, `来源会话 ${String(item.source.sessionId).slice(0, 8)}`)
                   : null)),
-            h('div', { className: 'memory-actions' },
-              h('button', { className: 'memory-btn', onClick: () => togglePin(item) },
-                item.pinned ? '取消固定' : '固定'),
-              h('button', { className: 'memory-btn memory-btn-danger', onClick: () => forget(item) }, '遗忘'))))
+            confirming === item.id
+              ? h('div', { className: 'memory-confirm' },
+                h('span', { className: 'memory-confirm-text' }, '遗忘这条？'),
+                h('button', { className: 'memory-btn', onClick: () => setConfirming(null) }, '取消'),
+                h('button', { className: 'memory-btn memory-btn-confirm', onClick: () => forget(item) }, '遗忘'))
+              : h('div', { className: 'memory-actions' },
+                h('button', { className: 'memory-btn', onClick: () => togglePin(item) },
+                  item.pinned ? '取消固定' : '固定'),
+                h('button', {
+                  className: 'memory-btn memory-btn-danger',
+                  onClick: () => setConfirming(item.id),
+                }, '遗忘'))))
           : h('div', { className: 'memory-empty' },
             h('strong', null, search ? '没有匹配的记忆' : '还没有长期记忆'),
             h('span', null, search
