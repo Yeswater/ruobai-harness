@@ -353,7 +353,7 @@ function WikiPanel(api, props) {
               : null,
           ]
           : h('div', { className: 'wiki-empty' },
-            '选择一个页面查看或编辑。也可以直接新建：填写标题和正文后保存；id 由标题生成。')))
+            '选择一个页面查看或编辑。也可以直接新建：填写标题和正文后保存；id 由标题生成。'))))
 }
 
 export default function register(api) {

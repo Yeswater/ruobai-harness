@@ -174,7 +174,7 @@ function MemoryPanel(api, props) {
           h('option', { value: 'project' }, 'project'),
           h('option', { value: 'global' }, 'global')),
         h('span', { className: 'spacer', style: { flex: 1 } }),
-        h('button', { className: 'memory-btn memory-btn-primary', disabled: busy || !text.trim(), onClick: save }, busy ? '保存中…' : '记住')),
+        h('button', { className: 'memory-btn memory-btn-primary', disabled: busy || !text.trim(), onClick: save }, busy ? '保存中…' : '记住'))),
 
     h('div', { className: 'memory-search' },
       h('input', {
