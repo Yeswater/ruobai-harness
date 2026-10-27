@@ -120,10 +120,10 @@ export interface PromptSectionInput {
  */
 export interface PromptSection {
   id: string
-  /** Static regions first, volatile ones last. */
+  /** Static regions first, volatile ones last. `turn` is recomputed every request. */
   order: number
   /** `static` never changes, `session` is fixed per session, `epoch` follows compaction. */
-  stability: 'static' | 'session' | 'epoch'
+  stability: 'static' | 'session' | 'epoch' | 'turn'
   maxChars?: number
   render(input: PromptSectionInput): Promise<string> | string
 }

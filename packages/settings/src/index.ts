@@ -64,6 +64,13 @@ export interface SandboxSettings {
   enabled?: boolean
 }
 
+export interface WikiAutomationSettings {
+  /** Inject BM25 hits for the latest user message before each turn. */
+  recall?: boolean
+  /** Draft a proposal after the session goes idle. */
+  distill?: boolean
+}
+
 export type PermissionMode = 'read-only' | 'workspace-write' | 'full-access' | 'auto-review'
 
 /** Extra character accepted as a slash-command trigger, next to `/` and `／`. */
@@ -167,6 +174,7 @@ export interface SettingsData {
   ui?: UiSettings
   agent?: AgentSettings
   sandbox?: SandboxSettings
+  wiki?: WikiAutomationSettings
   approval?: ApprovalSettings
   mcp?: McpSettings
   hooks?: HookSettings
@@ -252,6 +260,7 @@ export interface PublicSettings {
   ui?: UiSettings
   agent?: AgentSettings
   sandbox?: SandboxSettings
+  wiki?: WikiAutomationSettings
   approval?: { rules: ApprovalRule[]; guard: { enabled: boolean } }
   mcp?: PublicMcpSettings
   hooks?: HookSettings
@@ -345,6 +354,7 @@ export class SettingsService extends Service {
     if (this.data.ui) result.ui = { ...this.data.ui }
     if (this.data.agent) result.agent = { ...this.data.agent }
     if (this.data.sandbox) result.sandbox = { ...this.data.sandbox }
+    if (this.data.wiki) result.wiki = { ...this.data.wiki }
     if (this.data.approval) {
       result.approval = {
         rules: structuredClone(this.data.approval.rules ?? []),
@@ -368,6 +378,21 @@ export class SettingsService extends Service {
 
   sandboxEnabled(): boolean {
     return this.data.sandbox?.enabled !== false
+  }
+
+  wikiRecallEnabled(): boolean {
+    return this.data.wiki?.recall === true
+  }
+
+  wikiDistillEnabled(): boolean {
+    return this.data.wiki?.distill === true
+  }
+
+  async updateWiki(patch: WikiAutomationSettings): Promise<PublicSettings> {
+    const wiki = this.data.wiki ??= {}
+    if (patch.recall !== undefined) wiki.recall = Boolean(patch.recall)
+    if (patch.distill !== undefined) wiki.distill = Boolean(patch.distill)
+    return this.commit()
   }
 
   async update(patch: {

@@ -67,6 +67,17 @@ export interface WikiIndex {
   pages: IndexedPage[]
 }
 
+export interface CatalogEntryInfo {
+  id: string
+  title: string
+}
+
+export interface CatalogGroupInfo {
+  /** Empty name means entries outside any `##` heading. */
+  name: string
+  entries: CatalogEntryInfo[]
+}
+
 export type ReadLevel = 'summary' | 'overview' | 'full'
 
 export interface SearchOptions {
@@ -245,7 +256,7 @@ export class WikiService extends Service {
    * carries the session as its source and stays out of the catalog until a
    * person accepts it.
    */
-  async propose(input: { sessionId?: string; title?: string; body?: string }): Promise<{ id: string; path: string }> {
+  async propose(input: { sessionId?: string; title?: string; body?: string; tags?: string[] }): Promise<{ id: string; path: string }> {
     const record = input.sessionId ? this.ctx.sessions.get(input.sessionId) : undefined
     const title = input.title?.trim() || record?.meta.title || '未命名页面'
     const id = slugify(title)
@@ -256,7 +267,7 @@ export class WikiService extends Service {
       meta: {
         id,
         title,
-        tags: [],
+        tags: input.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
         sources: input.sessionId ? [{ kind: 'session', session: input.sessionId }] : [],
         updated: new Date().toISOString(),
         confidence: 'low',
@@ -722,11 +733,72 @@ export class WikiService extends Service {
     return stale
   }
 
+  /** Manual directory (`index.md`) grouped by its `##` headings. */
+  async catalogStructure(sessionId?: string): Promise<CatalogGroupInfo[]> {
+    const raw = await readFile(join(this.root(sessionId), 'index.md'), 'utf8').catch(() => '')
+    return parseCatalog(raw)
+  }
+
+  async createCatalogGroup(name: string, sessionId?: string): Promise<void> {
+    const title = name.trim()
+    if (!title || title.length > 40 || /[\r\n]/.test(title)) throw new Error('invalid catalog group name')
+    const path = join(this.root(sessionId), 'index.md')
+    const raw = await readFile(path, 'utf8').catch(() => '')
+    const exists = raw.split('\n').some(line => new RegExp(`^##\\s+${escapeRegExp(title)}\\s*$`).test(line))
+    if (exists) return
+    const next = `${raw.trimEnd()}${raw.trim() ? '\n\n' : ''}## ${title}\n`
+    await writeAtomic(path, next)
+  }
+
+  async addCatalogEntry(id: string, group?: string, sessionId?: string): Promise<void> {
+    if (!PAGE_ID.test(id)) throw new Error(`invalid page id: ${id}`)
+    const index = await this.indexFor(this.root(sessionId))
+    const page = index.pages.find(item => item.id === id)
+    if (!page) throw new Error(`no such page: ${id}`)
+    const path = join(this.root(sessionId), 'index.md')
+    const raw = await readFile(path, 'utf8').catch(() => '')
+    if (parseCatalog(raw).some(item => item.entries.some(entry => entry.id === id))) return
+
+    const lines = raw ? raw.split('\n') : []
+    const entry = `- ${id}: ${page.title}`
+    const target = group?.trim()
+    if (target) {
+      let heading = lines.findIndex(line => new RegExp(`^##\\s+${escapeRegExp(target)}\\s*$`).test(line))
+      if (heading < 0) {
+        if (lines.length && lines.at(-1)?.trim()) lines.push('')
+        lines.push(`## ${target}`, entry)
+      } else {
+        const nextHeading = lines.findIndex((line, at) => at > heading && /^##\s+/.test(line))
+        const end = nextHeading < 0 ? lines.length : nextHeading
+        let insert = end
+        while (insert > heading + 1 && lines[insert - 1]?.trim() === '') insert -= 1
+        lines.splice(insert, 0, entry)
+        if (insert === end && nextHeading >= 0) lines.splice(insert + 1, 0, '')
+      }
+    } else {
+      if (lines.length && lines.at(-1)?.trim()) lines.push('')
+      lines.push(entry)
+    }
+    await writeAtomic(path, `${lines.join('\n').trimEnd()}\n`)
+  }
+
+  async removeCatalogEntry(id: string, sessionId?: string): Promise<void> {
+    if (!PAGE_ID.test(id)) throw new Error(`invalid page id: ${id}`)
+    const path = join(this.root(sessionId), 'index.md')
+    const raw = await readFile(path, 'utf8').catch(() => undefined)
+    if (raw === undefined) return
+    const next = raw.split('\n')
+      .filter(line => !new RegExp(`^\\s*[-*]\\s+${escapeRegExp(id)}(?:\\s*[:：].*)?\\s*$`).test(line))
+      .join('\n')
+    if (next !== raw) await writeAtomic(path, next)
+  }
+
   /** Broken links, orphans, missing summaries, stale sources, duplicate titles. */
   async lint(sessionId?: string): Promise<LintFinding[]> {
     const root = this.root(sessionId)
     const index = await this.indexFor(root)
     const manual = await readFile(join(root, 'index.md'), 'utf8').catch(() => '')
+    const manualIds = new Set(parseCatalog(manual).flatMap(group => group.entries.map(entry => entry.id)))
     const ids = new Set(index.pages.map(page => page.id))
     const findings: LintFinding[] = []
     const titles = new Map<string, string[]>()
@@ -740,7 +812,8 @@ export class WikiService extends Service {
       list.push(page.id)
       titles.set(page.title, list)
       const inbound = index.pages.some(other => other.id !== page.id && other.links.includes(page.id))
-      if (!inbound && !manual.includes(page.id)) {
+      const autoCatalog = page.status === 'ready' && page.sourced && Boolean(page.summary)
+      if (!inbound && !manualIds.has(page.id) && !manual.includes(page.id) && !autoCatalog) {
         findings.push({ page: page.id, kind: 'orphan', detail: '没有反链，也不在目录中' })
       }
       for (const source of await this.staleSources(page.id, sessionId)) {
@@ -781,6 +854,7 @@ export class WikiService extends Service {
       .sort((left, right) => left.id.localeCompare(right.id))
     let shown = 0
     for (const page of curated) {
+      if (manual.includes(page.id)) continue
       const line = `- ${page.id}: ${page.summary}`
       if (used + line.length > budget) break
       lines.push(line)
@@ -821,6 +895,25 @@ export class WikiService extends Service {
     })
     return catalog.text
   }
+}
+
+function parseCatalog(raw: string): CatalogGroupInfo[] {
+  const groups: CatalogGroupInfo[] = [{ name: '', entries: [] }]
+  for (const line of raw.split('\n')) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line)
+    if (heading) {
+      groups.push({ name: heading[1]!.trim(), entries: [] })
+      continue
+    }
+    const entry = /^\s*[-*]\s+([a-z0-9][a-z0-9-]{0,63})(?:\s*[:：]\s*(.*))?\s*$/.exec(line)
+    if (!entry) continue
+    groups.at(-1)!.entries.push({ id: entry[1]!, title: entry[2]?.trim() || entry[1]! })
+  }
+  return groups.filter(group => group.name || group.entries.length)
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function indexPage(path: string, mtime: number, size: number, raw: string, doc: { meta: PageMeta; body: string }): IndexedPage {
@@ -1080,6 +1173,7 @@ function wikiTools(service: WikiService): ToolDefinition[] {
           title: { type: 'string' },
           body: { type: 'string', description: 'Markdown draft, starting with "## 摘要".' },
           id: { type: 'string' },
+          tags: { type: 'array', items: { type: 'string' } },
         },
         required: ['title', 'body'],
       },
@@ -1088,6 +1182,7 @@ function wikiTools(service: WikiService): ToolDefinition[] {
           ...(run?.sessionId ? { sessionId: run.sessionId } : {}),
           title: String(args?.title ?? ''),
           body: String(args?.body ?? ''),
+          ...(Array.isArray(args?.tags) ? { tags: args.tags } : {}),
         })
         return `Proposed ${proposal.path}`
       },

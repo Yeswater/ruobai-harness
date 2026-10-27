@@ -119,6 +119,52 @@ describe('wiki web', () => {
     expect(pages.proposals).toEqual([])
   })
 
+  it('manages catalog groups through the API', async () => {
+    harness = await createHarness()
+    const session = harness.ctx.sessions.create({ workspace: harness.dir })
+    const suffix = `sessionId=${session.id}`
+    const base = `${harness.ctx.web.url}/api/wiki`
+    await harness.ctx.wiki.write({ title: 'Catalog page', body: '# no summary' }, session.id)
+
+    const group = await fetch(`${base}/catalog/groups?${suffix}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '架构' }),
+    })
+    expect(group.status).toBe(201)
+    const added = await fetch(`${base}/catalog/entries?${suffix}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'catalog-page', group: '架构' }),
+    })
+    expect(added.status).toBe(201)
+    const index = await (await fetch(`${base}?${suffix}`)).json() as {
+      catalog: Array<{ name: string; entries: Array<{ id: string }> }>
+    }
+    expect(index.catalog.find(item => item.name === '架构')?.entries[0]?.id).toBe('catalog-page')
+
+    const removed = await fetch(`${base}/catalog/entries/catalog-page?${suffix}`, { method: 'DELETE' })
+    expect(removed.status).toBe(200)
+    expect(((await removed.json()) as { catalog: Array<{ entries: unknown[] }> }).catalog
+      .flatMap(item => item.entries)).toEqual([])
+  })
+
+  it('toggles wiki automation settings', async () => {
+    harness = await createHarness()
+    const base = `${harness.ctx.web.url}/api/wiki/automation`
+    const initial = await (await fetch(base)).json() as { recall: boolean; distill: boolean }
+    expect(initial).toEqual({ recall: false, distill: false })
+
+    const patched = await fetch(base, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ recall: true, distill: true }),
+    })
+    expect(await patched.json()).toEqual({ recall: true, distill: true })
+    expect(harness.ctx.settings.wikiRecallEnabled()).toBe(true)
+    expect(harness.ctx.settings.wikiDistillEnabled()).toBe(true)
+  })
+
   it('reports lint findings', async () => {
     harness = await createHarness()
     const session = harness.ctx.sessions.create({ workspace: harness.dir })

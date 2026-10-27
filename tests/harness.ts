@@ -52,6 +52,7 @@ import UiApi from '@ruobai/ui-server'
 import WebServer, { type Config as WebConfig } from '@ruobai/web-server'
 import WebWs from '@ruobai/web-ws'
 import WikiService from '@ruobai/wiki'
+import WikiAutomation from '@ruobai/wiki-automation'
 import WikiWeb from '@ruobai/wiki-web'
 import WorkspaceService from '@ruobai/workspace'
 import WorkspaceWeb from '@ruobai/workspace-web'
@@ -164,6 +165,11 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   }))
   await mount(ctx.plugin(WikiService, {
     root: join(dir, 'wiki'),
+  }))
+  await mount(ctx.plugin(WikiAutomation, {
+    idleMs: 0,
+    minTurns: 1,
+    minIntervalMs: 0,
   }))
   await mount(ctx.plugin(ContextSearch))
   await mount(ctx.plugin(ApprovalService))

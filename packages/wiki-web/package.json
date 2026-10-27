@@ -9,6 +9,7 @@
   "dependencies": {
     "@ruobai/cordis": "workspace:*",
     "@ruobai/session": "workspace:*",
+    "@ruobai/settings": "workspace:*",
     "@ruobai/web-server": "workspace:*",
     "@ruobai/wiki": "workspace:*"
   }

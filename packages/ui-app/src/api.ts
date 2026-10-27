@@ -95,6 +95,21 @@ export interface WikiLintFinding {
   detail: string
 }
 
+export interface WikiCatalogEntry {
+  id: string
+  title: string
+}
+
+export interface WikiCatalogGroup {
+  name: string
+  entries: WikiCatalogEntry[]
+}
+
+export interface WikiAutomation {
+  recall: boolean
+  distill: boolean
+}
+
 export interface WikiSearchHit {
   page: string
   title: string
@@ -811,6 +826,43 @@ export const api = {
       `/api/wiki/page/${encodeURIComponent(id)}${suffix}`,
     )
   },
+  createWikiCatalogGroup: async (name: string, sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<{ catalog: WikiCatalogGroup[] }>(`/api/wiki/catalog/groups${suffix}`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  },
+
+  addWikiCatalogEntry: async (id: string, group: string | undefined, sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<{ catalog: WikiCatalogGroup[] }>(`/api/wiki/catalog/entries${suffix}`, {
+      method: 'POST',
+      body: JSON.stringify({ id, ...(group ? { group } : {}) }),
+    })
+  },
+
+  removeWikiCatalogEntry: async (id: string, sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<{ catalog: WikiCatalogGroup[] }>(
+      `/api/wiki/catalog/entries/${encodeURIComponent(id)}${suffix}`,
+      { method: 'DELETE' },
+    )
+  },
+
+  getWikiAutomation: async (sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<WikiAutomation>(`/api/wiki/automation${suffix}`)
+  },
+
+  updateWikiAutomation: async (patch: Partial<WikiAutomation>, sessionId?: string) => {
+    const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+    return request<WikiAutomation>(`/api/wiki/automation${suffix}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    })
+  },
+
   getWikiProposal: async (id: string, sessionId?: string) => {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
     return request<WikiProposalDetail>(`/api/wiki/proposals/${encodeURIComponent(id)}${suffix}`)

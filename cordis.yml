@@ -329,6 +329,11 @@
 - id: wiki-web
   name: '@ruobai/wiki-web'
 
+# Optional wiki automation: per-turn recall and idle proposal drafts.
+# Both default off; switches live in Settings data (`wiki.recall` / `wiki.distill`).
+- id: wiki-automation
+  name: '@ruobai/wiki-automation'
+
 # Optional semantic half for wiki search. Unmounted means BM25 only; when
 # mounted, BM25 and the vector ranking are fused with RRF. Needs a local
 # embedding model (Ollama) or an OpenAI-compatible embeddings endpoint.

@@ -147,6 +147,7 @@ OpenViking（火山引擎 / 字节跳动开源，AGPL-3.0）把自己定位为�
 | `@ruobai/memory-web` | 函数插件 | `web` `memory` `sessions` | `/api/memory` CRUD、固定、遗忘、检索；记忆面板 |
 | `@ruobai/wiki` | Service | `workspace` `tools` | 页面读写、索引、检索、注入目录、wiki 工具与命令 |
 | `@ruobai/wiki-web` | 函数插件 | `web` `wiki` `sessions` | 浏览、检索、编辑、提案详情/编辑/审核、反链、版本与检查；只提供接口，知识库界面在 `ui-app` 的左侧功能区 |
+| `@ruobai/wiki-automation` | 对象插件 | `context` `wiki` `sessions` `llm` `settings` | 可选：每轮按用户问题检索并注入 `<wiki_recall>`；会话空闲后生成待审提案。两个开关默认关闭 |
 | `@ruobai/wiki-embed` | 可选对象插件 | `wiki` | P2：本地嵌入与 RRF 混合检索；不挂载则纯 BM25 |
 | `@ruobai/context-search` | 对象插件 | `tools` `memory` `wiki` `sessions` `workspace` | `context_search` 统一检索与 `skill_propose` 技能提案 |
 
@@ -165,6 +166,8 @@ OpenViking（火山引擎 / 字节跳动开源，AGPL-3.0）把自己定位为�
 | `wiki/injected` | `{ at, revision, pages, text, bytes }` | 目录注入快照 |
 | `wiki/status` | `{ page, status, revision }` | 页面处理状态：draft / processing / ready / stale |
 | `wiki/updated` | `{ page, path, revision, proposal }` | 页面变更；`proposal` 为真时表示待审 |
+| `wiki/recalled` | `{ query, hits, text, chars, truncated }` | 每轮自动检索的审计锚点；同一用户回合只写一次 |
+| `wiki/proposed` | `{ trigger, fromSeq, toSeq, status, id?, path?, provider?, model? }` | 自动提案的 queued / ready / skipped / failed 状态 |
 | `wiki/indexed` | `{ pages, chunks, durationMs, rebuilt }` | 索引重建的可观测性 |
 
 `context/memory`（会话内滚动检查点）保持不动。UI 上分别叫「会话记忆」与「长期记忆」，避免混淆。
@@ -184,7 +187,7 @@ OpenViking（火山引擎 / 字节跳动开源，AGPL-3.0）把自己定位为�
     MEMORY.md
     archive.jsonl
   wiki/
-    index.md                            # 人工维护的目录条目（注入来源）
+    index.md                            # 人工目录：## 分组 + - page-id: title（可由 UI 维护，注入来源）
     pages/*.md                          # 页面，事实来源
     sources/*.md                        # 可选：导入的原始摘录
     .index/                             # 派生索引，可随时删除重建
@@ -415,6 +418,10 @@ Seatbelt 只接受 `*` 或 `localhost` 作为网络主机；域名白名单会�
 - `wiki_write` 只允许写 `<workspace>/.ruobai/wiki/pages/*.md` 与 `index.md`；路径逃逸、符号链接、超限大小一律拒绝。
 - 写入顺序：校验 frontmatter 与链接 → 生成 diff → 审批（`requiresApproval: true`）→ 检查点 → 原子写 → 增量索引 → `wiki/updated`。
 - 自动维护（`wiki_propose`）只产出 `.proposals/<id>.md`（含 unified diff、来源、置信度），不直接改页。UI 上「接受 / 拒绝 / 编辑后接受」。待审提案最多 20 个，超出时拒绝新提案而不是静默淘汰。
+- 目录不是文件夹：`index.md` 用 `## 分组` + `- page-id: title` 表示。`wiki-web` 提供目录分组/条目接口，知识库 UI 可以新建目录、加入/移出页面；条目与「自动目录」（ready + 已溯源 + 摘要）都算有归属，不会被 lint 判为孤儿。
+- 可选的 `@ruobai/wiki-automation` 把自动维护变成两个默认关闭的开关：
+  - **自动检索**：每个请求按最新用户消息做 BM25，预算 8 条 / 6k 字符 / 150ms，注入 `<wiki_recall>`（section order 96，位于稳定前缀之后）；同一用户回合只检索一次，结果写 `wiki/recalled`。
+  - **自动提案**：`agent/turn-end` 后空闲 10 分钟触发，至少 2 个新用户回合；用当前非 mock 模型起草一页，每日 10 次 / 100k tokens，连续 3 次失败熔断；只调用 `wiki.propose`，写 `wiki/proposed`，页面仍需人工接受。转换失败、无模型或预算耗尽时不会写页面。
 - 冲突不静默覆盖：同一事实的新旧值都写进 `## 冲突`，并保留双方来源；由人或后续提案消解。
 - 删除页面不是 `rm`：移到 `.archive/`，索引移除，`index.md` 记录去向。
 
@@ -652,7 +659,7 @@ interface WikiSettings {
 - 可选本地嵌入（Ollama 或 OpenAI 兼容 embeddings）+ RRF 混合检索；不装则行为不变。
 - 可选本地 rerank（词法/链接邻近度，或本地 cross-encoder）；统一 `context_search` 一次检索 memory / wiki / skill 并按类型配额返回。
 - 把重复出现的 procedure 记忆沉淀为 Skill 提案（版本、触发边界、步骤、校验）。
-- 会话 → wiki 提案（默认关闭，只在用户 `/wiki save` 时触发）。
+- 会话 → wiki 提案：已由 `@ruobai/wiki-automation` 提供，默认关闭；开启后按空闲触发，仍只生成待审提案。
 - 反链图视图、页面版本对比。
 - 评测集：用仓库文档构造 50 条查询，测 Recall@5、注入 token、缓存命中；记忆用合成会话测「旧事实失效 / 新事实生效」。
 - 规模阈值触发 SQLite FTS5 的评估（Node 的 `node:sqlite` 在 22.x 仍是实验 API，P0 不用它换确定性）。

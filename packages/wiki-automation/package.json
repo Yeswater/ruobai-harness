@@ -1,0 +1,19 @@
+{
+  "name": "@ruobai/wiki-automation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/agent": "workspace:*",
+    "@ruobai/context": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/llm": "workspace:*",
+    "@ruobai/schemastery": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/settings": "workspace:*",
+    "@ruobai/wiki": "workspace:*"
+  }
+}

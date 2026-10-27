@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
+import type {} from '@ruobai/settings'
 import { createDiff, parsePage } from '@ruobai/wiki'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'wiki-web'
-export const inject = ['web', 'wiki', 'sessions']
+export const inject = ['web', 'wiki', 'sessions', 'settings']
 
 /** Wiki browse / search / edit / proposals / history API. */
 export function apply(ctx: Context) {
@@ -24,8 +25,57 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
       sendJson(res, 200, {
         pages: await ctx.wiki.pages(sessionId),
         proposals: await ctx.wiki.proposals(sessionId),
+        catalog: await ctx.wiki.catalogStructure(sessionId),
         stats: await ctx.wiki.stats(sessionId),
       })
+      return true
+    }
+
+    if (path === '/api/wiki/automation') {
+      if (req.method === 'GET') {
+        sendJson(res, 200, {
+          recall: ctx.settings.wikiRecallEnabled(),
+          distill: ctx.settings.wikiDistillEnabled(),
+        })
+        return true
+      }
+      if (req.method === 'PATCH' || req.method === 'PUT') {
+        const body = await readJson(req)
+        await ctx.settings.updateWiki({
+          ...(typeof body?.recall === 'boolean' ? { recall: body.recall } : {}),
+          ...(typeof body?.distill === 'boolean' ? { distill: body.distill } : {}),
+        })
+        sendJson(res, 200, {
+          recall: ctx.settings.wikiRecallEnabled(),
+          distill: ctx.settings.wikiDistillEnabled(),
+        })
+        return true
+      }
+      throw new HttpError(405, 'method not allowed')
+    }
+
+    if (path === '/api/wiki/catalog/groups' && req.method === 'POST') {
+      const body = await readJson(req)
+      await ctx.wiki.createCatalogGroup(String(body?.name ?? ''), sessionId)
+      sendJson(res, 201, { catalog: await ctx.wiki.catalogStructure(sessionId) })
+      return true
+    }
+
+    if (path === '/api/wiki/catalog/entries' && req.method === 'POST') {
+      const body = await readJson(req)
+      await ctx.wiki.addCatalogEntry(
+        String(body?.id ?? ''),
+        typeof body?.group === 'string' && body.group.trim() ? body.group : undefined,
+        sessionId,
+      )
+      sendJson(res, 201, { catalog: await ctx.wiki.catalogStructure(sessionId) })
+      return true
+    }
+
+    const catalogEntry = /^\/api\/wiki\/catalog\/entries\/([^/]+)$/.exec(path)
+    if (catalogEntry && req.method === 'DELETE') {
+      await ctx.wiki.removeCatalogEntry(decodeURIComponent(catalogEntry[1]!), sessionId)
+      sendJson(res, 200, { catalog: await ctx.wiki.catalogStructure(sessionId) })
       return true
     }
 

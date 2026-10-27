@@ -215,6 +215,31 @@ describe('wiki curation', () => {
     ])
   })
 
+  it('creates catalog groups and adds pages to the manual directory', async () => {
+    const { ctx, sessionId, workspaceRoot } = await setup()
+    await ctx.wiki.write({
+      id: 'architecture',
+      title: 'Architecture notes',
+      body: '# 没有摘要的页面',
+    }, sessionId)
+    expect((await ctx.wiki.lint(sessionId)).some(finding => finding.kind === 'orphan')).toBe(true)
+
+    await ctx.wiki.createCatalogGroup('架构', sessionId)
+    await ctx.wiki.addCatalogEntry('architecture', '架构', sessionId)
+    const groups = await ctx.wiki.catalogStructure(sessionId)
+    expect(groups.find(group => group.name === '架构')?.entries).toEqual([
+      { id: 'architecture', title: 'Architecture notes' },
+    ])
+    expect(await readFile(join(workspaceRoot, '.ruobai', 'wiki', 'index.md'), 'utf8'))
+      .toContain('- architecture: Architecture notes')
+    expect((await ctx.wiki.lint(sessionId)).some(finding => finding.kind === 'orphan')).toBe(false)
+
+    await ctx.wiki.removeCatalogEntry('architecture', sessionId)
+    expect((await ctx.wiki.catalogStructure(sessionId))
+      .flatMap(group => group.entries)).toEqual([])
+    expect((await ctx.wiki.lint(sessionId)).some(finding => finding.kind === 'orphan')).toBe(true)
+  })
+
   it('lints broken links, orphans, duplicates and missing summaries', async () => {
     const { ctx, sessionId } = await setup()
     await ctx.wiki.write({

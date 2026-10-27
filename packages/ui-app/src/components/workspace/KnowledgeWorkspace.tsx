@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   api,
+  type WikiCatalogGroup,
   type WikiLintFinding,
   type WikiPageMeta,
   type WikiPageSummary,
@@ -8,6 +9,8 @@ import {
   type WikiSearchHit,
   type WikiSource,
 } from '../../api.ts'
+import { useConfirm } from '../ConfirmDialog.tsx'
+import { usePrompt } from '../PromptDialog.tsx'
 import {
   AlertIcon, ArchiveIcon, CheckIcon, ClockIcon, FolderTreeIcon, PlusIcon, RefreshIcon, SearchIcon,
 } from '../Icons.tsx'
@@ -16,6 +19,7 @@ import { MarkdownPreview, markdownHeadingId } from '../MarkdownPreview.tsx'
 interface WikiIndex {
   pages: WikiPageSummary[]
   proposals: Array<{ id: string; title: string; path: string }>
+  catalog: WikiCatalogGroup[]
   stats: { pages: number; chunks: number; ready: number; unready: number; catalogChars: number }
 }
 
@@ -32,7 +36,7 @@ interface Heading {
   depth: number
 }
 
-type LeftView = 'pages' | 'proposals' | 'lint'
+type LeftView = 'pages' | 'proposals' | 'catalog' | 'lint'
 type CenterMode = 'empty' | 'read' | 'edit' | 'proposal' | 'proposal-edit'
 type StatusFilter = 'all' | 'ready' | 'review' | 'draft'
 
@@ -82,6 +86,8 @@ async function wikiRequest<T>(sessionId: string | undefined, path: string, optio
 }
 
 export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
+  const confirm = useConfirm()
+  const ask = usePrompt()
   const [data, setData] = useState<WikiIndex | null>(null)
   const [view, setView] = useState<LeftView>('pages')
   const [mode, setMode] = useState<CenterMode>('empty')
@@ -101,6 +107,9 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
   const [diff, setDiff] = useState<{ label: string; text: string } | null>(null)
   const [findings, setFindings] = useState<WikiLintFinding[] | null>(null)
   const [linting, setLinting] = useState(false)
+  const [catalogPage, setCatalogPage] = useState('')
+  const [catalogGroup, setCatalogGroup] = useState('')
+  const [catalogBusy, setCatalogBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -162,6 +171,57 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
     }
   }
 
+  const addToCatalog = async (id: string, group?: string) => {
+    setCatalogBusy(true)
+    setError(null)
+    try {
+      const result = await api.addWikiCatalogEntry(id, group, sessionId)
+      setData(current => current ? { ...current, catalog: result.catalog } : current)
+      setCatalogPage('')
+      setNotice(`已把 ${id} 加入${group ? `「${group}」` : '目录'}`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setCatalogBusy(false)
+    }
+  }
+
+  const removeFromCatalog = async (id: string) => {
+    setCatalogBusy(true)
+    setError(null)
+    try {
+      const result = await api.removeWikiCatalogEntry(id, sessionId)
+      setData(current => current ? { ...current, catalog: result.catalog } : current)
+      setNotice(`已把 ${id} 移出目录`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setCatalogBusy(false)
+    }
+  }
+
+  const createCatalogGroup = async () => {
+    const name = await ask({
+      title: '新建目录',
+      placeholder: '目录名称',
+      body: '例如：架构、SOP、调研。',
+      confirmLabel: '创建',
+    })
+    if (!name) return
+    setCatalogBusy(true)
+    setError(null)
+    try {
+      const result = await api.createWikiCatalogGroup(name, sessionId)
+      setData(current => current ? { ...current, catalog: result.catalog } : current)
+      setCatalogGroup(name)
+      setNotice(`已创建目录「${name}」`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setCatalogBusy(false)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     setSelected(null)
@@ -189,10 +249,6 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
   }, [sessionId])
 
   const headings = useMemo(() => selected && mode === 'read' ? headingsOf(selected.body) : [], [selected, mode])
-  const catalogReady = Boolean(selected
-    && selected.meta.status === 'ready'
-    && (selected.meta.sources ?? []).length
-    && /^##\s*摘要/m.test(selected.body))
 
   // Scroll-spy for the outline: the topmost heading in the relaxed viewport wins.
   useEffect(() => {
@@ -268,7 +324,14 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
   }
 
   const archive = async () => {
-    if (!selected?.id || !window.confirm(`归档页面「${selected.meta.title}」？`)) return
+    if (!selected?.id) return
+    const ok = await confirm({
+      title: '归档页面',
+      body: `「${selected.meta.title}」会从工作区移出，可以从归档视图恢复。`,
+      confirmLabel: '归档',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await wikiRequest(sessionId, `/api/wiki/page/${encodeURIComponent(selected.id)}`, { method: 'DELETE' })
@@ -334,7 +397,13 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
   }
 
   const rejectProposal = async (id: string) => {
-    if (!window.confirm(`拒绝提案 ${id}？`)) return
+    const ok = await confirm({
+      title: '拒绝提案',
+      body: `提案 ${id} 会被删除，页面保持原样。`,
+      confirmLabel: '拒绝',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await wikiRequest(sessionId, `/api/wiki/proposals/${encodeURIComponent(id)}`, { method: 'DELETE' })
       setProposal(null)
@@ -407,6 +476,14 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
   }
 
   const pages = data?.pages ?? []
+  const catalogGroups = data?.catalog ?? []
+  const catalogIds = new Set(catalogGroups.flatMap(group => group.entries.map(entry => entry.id)))
+  const catalogCount = catalogGroups.reduce((sum, group) => sum + group.entries.length, 0)
+  const availablePages = pages.filter(page => !catalogIds.has(page.id))
+  const selectedGroup = selected
+    ? catalogGroups.find(group => group.entries.some(entry => entry.id === selected.id))?.name ?? ''
+    : ''
+  const selectedInCatalog = Boolean(selected?.id && catalogIds.has(selected.id))
   const proposals = data?.proposals ?? []
   const stats = data?.stats
   const tags = useMemo(() => [...new Set(pages.flatMap(page => page.tags ?? []))].sort(), [pages])
@@ -488,6 +565,9 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
           </button>
           <button role="tab" aria-selected={view === 'proposals'} className={view === 'proposals' ? 'active' : ''} onClick={() => selectView('proposals')}>
             提案<span>{proposals.length}</span>
+          </button>
+          <button role="tab" aria-selected={view === 'catalog'} className={view === 'catalog' ? 'active' : ''} onClick={() => selectView('catalog')}>
+            目录<span>{catalogCount}</span>
           </button>
           <button role="tab" aria-selected={view === 'lint'} className={view === 'lint' ? 'active' : ''} onClick={() => selectView('lint')}>
             检查<span>{findings?.length ?? ''}</span>
@@ -601,6 +681,72 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
                       : <div className="kb-empty-note">没有待审提案。让模型用 /wiki save 生成，或直接新建页面。</div>}
                   </section>
                 )
+                : view === 'catalog'
+                  ? (
+                    <>
+                      <div className="kb-catalog-tools">
+                        <select
+                          className="kb-tag-select"
+                          value={catalogGroup}
+                          onChange={event => setCatalogGroup(event.target.value)}
+                          aria-label="选择目录分组"
+                        >
+                          <option value="">未分组</option>
+                          {catalogGroups.filter(group => group.name).map(group => (
+                            <option key={group.name} value={group.name}>{group.name}</option>
+                          ))}
+                        </select>
+                        <select
+                          className="kb-tag-select"
+                          value={catalogPage}
+                          onChange={event => setCatalogPage(event.target.value)}
+                          aria-label="选择要加入目录的页面"
+                        >
+                          <option value="">选择页面</option>
+                          {availablePages.map(page => (
+                            <option key={page.id} value={page.id}>{page.title}</option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn ghost compact"
+                          disabled={!catalogPage || catalogBusy}
+                          onClick={() => void addToCatalog(catalogPage, catalogGroup || undefined)}
+                        >
+                          加入
+                        </button>
+                      </div>
+                      <button className="kb-link kb-catalog-new" onClick={() => void createCatalogGroup()} disabled={catalogBusy}>
+                        + 新建目录
+                      </button>
+                      {catalogGroups.length
+                        ? catalogGroups.map(group => (
+                          <section className="kb-catalog-group" key={group.name || '__ungrouped'}>
+                            <div className="kb-catalog-head">
+                              <span>{group.name || '未分组'}</span>
+                              <span className="kb-count">{group.entries.length}</span>
+                            </div>
+                            {group.entries.length
+                              ? group.entries.map(entry => (
+                                <div className="kb-catalog-row" key={entry.id}>
+                                  <button className="kb-catalog-entry" onClick={() => void open(entry.id)}>
+                                    <strong>{entry.title}</strong>
+                                    <small>{entry.id}</small>
+                                  </button>
+                                  <button
+                                    className="kb-link"
+                                    disabled={catalogBusy}
+                                    onClick={() => void removeFromCatalog(entry.id)}
+                                  >
+                                    移出
+                                  </button>
+                                </div>
+                              ))
+                              : <div className="kb-empty-note">这个目录还没有页面。</div>}
+                          </section>
+                        ))
+                        : <div className="kb-empty-note">还没有目录。新建一个目录，再把页面加进去，孤儿页就会消失。</div>}
+                    </>
+                  )
                 : (
                   <section className="kb-section">
                     <div className="kb-section-head">
@@ -788,11 +934,25 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
                       {selected.meta.updated ? <span>{selected.meta.updated.slice(0, 10)}</span> : null}
                       <span>{selected.id}</span>
                       <span
-                        className={`kb-catalog ${catalogReady ? 'ok' : 'off'}`}
-                        title="只有 ready、已溯源且有摘要的页面会进入常驻目录；其余仅通过检索发现"
+                        className={`kb-catalog ${selectedInCatalog ? 'ok' : 'off'}`}
+                        title="手动加入 index.md 的目录分组；ready、已溯源且有摘要的页面也会自动进入模型目录"
                       >
-                        {catalogReady ? '进入目录' : '不进入目录'}
+                        {selectedInCatalog ? `${selectedGroup ? `${selectedGroup} · ` : ''}目录内` : '未入目录'}
                       </span>
+                      {selected.id
+                        ? (
+                          <button
+                            className="kb-link"
+                            disabled={catalogBusy}
+                            onClick={() => {
+                              if (selectedInCatalog) void removeFromCatalog(selected.id)
+                              else void addToCatalog(selected.id)
+                            }}
+                          >
+                            {selectedInCatalog ? '移出目录' : '加入目录'}
+                          </button>
+                        )
+                        : null}
                       {/^##\s*冲突/m.test(selected.body)
                         ? <span className="kb-status stale">冲突未消解</span>
                         : null}

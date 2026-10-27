@@ -227,6 +227,9 @@ importers:
       '@ruobai/wiki':
         specifier: workspace:*
         version: link:packages/wiki
+      '@ruobai/wiki-automation':
+        specifier: workspace:*
+        version: link:packages/wiki-automation
       '@ruobai/wiki-web':
         specifier: workspace:*
         version: link:packages/wiki-web
@@ -1235,6 +1238,33 @@ importers:
         specifier: ^4.1.0
         version: 4.3.2
 
+  packages/wiki-automation:
+    dependencies:
+      '@ruobai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@ruobai/wiki':
+        specifier: workspace:*
+        version: link:../wiki
+
   packages/wiki-embed:
     dependencies:
       '@ruobai/cordis':
@@ -1255,6 +1285,9 @@ importers:
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server

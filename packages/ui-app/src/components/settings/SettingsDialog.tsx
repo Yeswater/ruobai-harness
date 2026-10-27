@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useEscapeKey } from '../../useEscapeKey.ts'
 import { api, type PublicSettings, type ThemePreference } from '../../api.ts'
 import {
-  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
+  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
 } from '../Icons.tsx'
 import { PermissionsSettings } from '../PermissionsSettings.tsx'
 import { ProtocolsSettings } from '../ProtocolsSettings.tsx'
@@ -10,6 +10,7 @@ import { Slot } from '../Slot.tsx'
 import { GeneralSettings } from './GeneralSettings.tsx'
 import { PluginsSettings } from './PluginsSettings.tsx'
 import { ProvidersSettings } from './ProvidersSettings.tsx'
+import { WikiSettings } from './WikiSettings.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -21,7 +22,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory'
+export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki'
 
 interface NavItem {
   id: SettingsTab
@@ -76,6 +77,13 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
         description: '长期偏好、约束与决策。',
         icon: <BrainIcon size={15} />,
         keywords: '记忆 remember 偏好 约束 决策 遗忘 固定',
+      },
+      {
+        id: 'wiki',
+        label: '知识库',
+        description: '自动检索与空闲提案。',
+        icon: <FolderTreeIcon size={15} />,
+        keywords: '知识库 wiki 自动检索 提案 召回 recall 提案 distill',
       },
     ],
   },
@@ -280,7 +288,9 @@ export function SettingsDialog({
                             <Slot name="settings.memory" props={{ sessionId }} />
                           </div>
                         )
-                        : tab === 'sandbox'
+                        : tab === 'wiki'
+                          ? <WikiSettings />
+                          : tab === 'sandbox'
                           ? (
                             <div className="settings-page-body scroll">
                               <Slot name="settings.sandbox" props={{ sessionId }} />
