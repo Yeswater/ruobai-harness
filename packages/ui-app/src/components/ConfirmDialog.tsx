@@ -81,12 +81,12 @@ function ConfirmDialog({ options, onCancel, onConfirm }: {
   onCancel: () => void
   onConfirm: () => void
 }) {
-  const confirmRef = useRef<HTMLButtonElement>(null)
+  const primaryRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    // Focus the safe choice: Escape and Enter both keep the destructive button
-    // out of the first keypress.
-    confirmRef.current?.focus()
+    // Focus the safe choice: for a destructive action that is the cancel
+    // button, so a stray Enter cannot confirm it.
+    primaryRef.current?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -112,9 +112,15 @@ function ConfirmDialog({ options, onCancel, onConfirm }: {
         {options.body ? <div className="modal-body"><p className="modal-note">{options.body}</p></div> : null}
         <div className="modal-foot confirm-foot">
           <div className="modal-actions">
-            <button className="btn ghost" onClick={onCancel}>{options.cancelLabel ?? '取消'}</button>
             <button
-              ref={confirmRef}
+              ref={options.danger ? primaryRef : undefined}
+              className="btn ghost"
+              onClick={onCancel}
+            >
+              {options.cancelLabel ?? '取消'}
+            </button>
+            <button
+              ref={options.danger ? undefined : primaryRef}
               className={`btn ${options.danger ? 'danger-solid' : ''}`}
               onClick={onConfirm}
             >
