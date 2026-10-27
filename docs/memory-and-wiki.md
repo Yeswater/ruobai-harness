@@ -623,6 +623,7 @@ interface WikiSettings {
 - **`@ruobai/memory`**：`memory.jsonl` journal、确定性编译（`MEMORY.md` + 注入块）、按 scope 的预算（global 40%）、`memory/injected` 会话快照、`memory_search` / `memory_save` / `memory_forget` 工具。
 - **`@ruobai/wiki`**：frontmatter、按标题分块、CJK bigram BM25、`.index/index.json` 增量索引（mtime + size 复用，删除后可重建）、三级读取、`wiki_search` / `wiki_read` / `wiki_write` 工具、目录注入。
 - **验证**：`pnpm typecheck` 两套 tsconfig 通过；`pnpm test` 523 项通过，包含 24 项新增用例（同一 journal 编译字节一致、预算不超、会话快照不随 journal 变化、压缩后刷新、索引删除后重建一致、CJK 检索、全栈注入）。
+- **实测（本机 M 系列，合成数据）**：10k 块索引构建 57 ms，BM25 查询 p50 1.2 ms / p95 4.1 ms；1k 页 frontmatter 解析 + 分块（30k 块）53 ms，均在 P0 验收线内（p95 < 50 ms、1k 页 < 2 s）。磁盘 I/O 与增量复用未计入。
 - **未做（P1）**：`memory-distill`、`memory-web` / `wiki-web`、命令注册表（`/remember` 等）、wiki lint 与 stale 检测、类型化查询。
 
 ### P1：自动化与可审阅（3–5 人日）
