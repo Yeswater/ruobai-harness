@@ -44,6 +44,17 @@
 - **刷新丢失**：队列是内存态，刷新后未开始的排队消息消失（与 Claude Code 一致）；日志里不存在"已排队但未开始"的回合。
 - **drain 时又有新回合**：`prompt` 抛错时把消息留在队首，等下一次 `turn-end` 再试。
 
+## 中断留下的半步
+
+「立即发送」和「停止」都可能中断一个正在流式输出的 step。日志此时可能已经写入了**只有 reasoning** 的 assistant 消息（模型还没产出正文或工具调用）。下一条用户消息请求时，这条消息会以 `content: null`、无 `tool_calls` 的形状发给 OpenAI 兼容提供方，DeepSeek 直接返回 `400 Invalid assistant message: content or tool_calls must be set`，之后每次发送都会撞上同一个错误。
+
+日志仍是事实源：中断前的思考要留在对话界面里，所以不在写入时丢弃。归一化放在模型视图（`context.build`）：
+
+- assistant 消息只保留有正文的文本和**已拿到结果**的工具调用；两者都没有就整条不进请求。
+- 没有对应调用的孤立 `tool/result` 丢弃；结果未落地的工具调用（回合在两次调用之间被中断）从该条消息里去掉。
+
+`packages/context/tests/context.spec.ts` 覆盖这两种形状：只有 reasoning 的 step 不进请求；中断后再发消息，请求里只留下正文与已完成的调用。
+
 ## 验证
 
 - `packages/chat/tests/runtime.spec.ts`：运行中排队并在结束后作为独立回合执行；停止后排队照常开始；取回排队项；立即发送打断当前回合；运行中切到 `read-only` 立即生效；全局 `full-access` 作为默认并让审批自动放行。

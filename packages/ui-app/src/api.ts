@@ -515,6 +515,21 @@ export interface CompactionResult {
 
 export type { TrajectoryFrame, TrajectorySnapshot }
 
+/** One day of user activity, used by the empty-session contribution graph. */
+export interface ActivityDay {
+  /** Local calendar day, `YYYY-MM-DD`. */
+  date: string
+  count: number
+}
+
+export interface ActivitySummary {
+  days: ActivityDay[]
+  total: number
+  max: number
+  start: string
+  end: string
+}
+
 export type {
   GitBranch, GitChange, GitCommit, GitCommitDetail, GitCommitFile, GitCommitResult, GitDiffResult,
   GitInfo, GitLogResult,
@@ -810,6 +825,8 @@ export const api = {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
     return (await request<{ skills: SkillSummary[] }>(`/api/skills${suffix}`)).skills
   },
+
+  getActivity: async () => request<ActivitySummary>('/api/activity'),
 
   getProtocols: async (sessionId?: string) => {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''

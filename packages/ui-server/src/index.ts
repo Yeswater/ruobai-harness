@@ -5,6 +5,7 @@ import { Service, type Context } from '@ruobai/cordis'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 import type {} from '@ruobai/chat'
 import { MAX_MESSAGE_BODY_BYTES, normalizeAttachments } from './attachments.ts'
+import { summarizeActivity } from './activity.ts'
 import { SseHub } from './sse.ts'
 
 const STATES = ['PENDING', 'LOADING', 'ACTIVE', 'FAILED', 'DISPOSED', 'UNLOADING'] as const
@@ -150,6 +151,16 @@ export class UiApi extends Service {
     if (pathname === '/api/modes') {
       if (method !== 'GET') throw new HttpError(405, 'method not allowed')
       sendJson(res, 200, { modes: this.ctx.modes.list(), default: this.ctx.modes.defaultId() })
+      return true
+    }
+
+    if (pathname === '/api/activity') {
+      if (method !== 'GET') throw new HttpError(405, 'method not allowed')
+      const sessions = this.ctx.sessions.list().map((meta) => {
+        const record = this.ctx.sessions.get(meta.id)
+        return { kind: meta.kind, events: record?.events ?? [] }
+      })
+      sendJson(res, 200, summarizeActivity(sessions))
       return true
     }
 

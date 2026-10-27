@@ -53,6 +53,29 @@ describe('ui server', () => {
     expect(session.messages.some(message => message.blocks.some(block => block.type === 'tool'))).toBe(true)
   })
 
+  it('summarises user activity for the empty-session contribution graph', async () => {
+    const { ctx } = await setup()
+    const created = await (await fetch(`${ctx.web.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'activity test' }),
+    })).json() as { session: ChatSession }
+
+    await fetch(`${ctx.web.url}/api/sessions/${created.session.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '点亮今天' }),
+    })
+
+    const activity = await (await fetch(`${ctx.web.url}/api/activity`)).json() as {
+      days: Array<{ date: string; count: number }>
+      total: number
+    }
+    expect(activity.days).toHaveLength(365)
+    expect(activity.total).toBe(1)
+    expect(activity.days.at(-1)!.count).toBe(1)
+  })
+
   it('renames, forks and deletes sessions', async () => {
     const { ctx } = await setup()
     const base = ctx.web.url

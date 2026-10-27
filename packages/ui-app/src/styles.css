@@ -26,6 +26,11 @@
   --graph-3: #c96442;
   --graph-4: #3f8f8a;
   --graph-5: #b45f7a;
+  --contrib-0: #ecebe6;
+  --contrib-1: #f4d9cc;
+  --contrib-2: #e8b59c;
+  --contrib-3: #d68b68;
+  --contrib-4: #b05234;
 }
 
 [data-theme="dark"] {
@@ -52,6 +57,11 @@
   --graph-3: #e0805f;
   --graph-4: #63bdb6;
   --graph-5: #d98aa5;
+  --contrib-0: #262623;
+  --contrib-1: #3b2720;
+  --contrib-2: #6b3c2b;
+  --contrib-3: #97523a;
+  --contrib-4: #c46a45;
 }
 
 *,
@@ -131,6 +141,50 @@ button {
   width: 28px;
   height: 28px;
   border-radius: 7px;
+}
+
+.sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The one always-visible "new conversation" entry: it opens the workspace
+   dialog instead of silently creating a session in some default workspace. */
+.sidebar-new {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background .15s, border-color .15s;
+}
+
+.sidebar-new:hover {
+  border-color: var(--border-strong);
+  background: var(--accent-soft);
+}
+
+.sidebar-new svg {
+  color: var(--muted);
+}
+
+.sidebar-workspace-head {
+  padding: 10px 10px 2px;
+}
+
+.sidebar-workspace-head .session-search {
+  margin: 0 4px 6px;
+}
+
+.sidebar-workspace-head .sidebar-title-row {
+  padding: 0 4px;
 }
 
 .sidebar-title-row {
@@ -498,6 +552,7 @@ button {
 /* Main */
 
 .main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -515,6 +570,19 @@ button {
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px);
+}
+
+/* Empty session: the title, tabs and toolbars would describe a conversation
+   that does not exist yet, so only the sidebar toggle stays. */
+.main-head.minimal {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 30;
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+  backdrop-filter: none;
 }
 
 .main-title {
@@ -10850,4 +10918,136 @@ body.resizing .file-side-resizer::after {
   border-radius: 6px;
   background: #fff;
   box-shadow: 0 6px 24px rgba(24, 23, 21, .12);
+}
+
+/* ===== Empty-session contribution graph ===== */
+
+.contrib-screen {
+  padding: 8vh 16px 0;
+}
+
+.contrib {
+  max-width: 780px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.contrib-head h2 {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -.01em;
+}
+
+.contrib-head p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.contrib-card {
+  padding: 16px 18px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.contrib-scroll {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  /* Room for the last column's month label, which overflows its 9px column. */
+  padding: 0 22px 2px 0;
+}
+
+.contrib-weekdays {
+  display: grid;
+  grid-template-rows: 13px repeat(7, 9px);
+  gap: 3px;
+  flex: none;
+  width: 12px;
+  color: var(--faint);
+  font-size: 9.5px;
+  line-height: 9px;
+  text-align: right;
+}
+
+.contrib-weekdays span {
+  display: block;
+  height: 9px;
+}
+
+.contrib-grid {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+
+.contrib-week {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 3px;
+  width: 9px;
+}
+
+.contrib-month {
+  height: 13px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.contrib-cell {
+  display: block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--contrib-0);
+  outline: 1px solid color-mix(in srgb, var(--text) 5%, transparent);
+  outline-offset: -1px;
+}
+
+.contrib-cell.blank {
+  background: transparent;
+  outline: none;
+}
+
+.contrib-cell.level-1 { background: var(--contrib-1); }
+.contrib-cell.level-2 { background: var(--contrib-2); }
+.contrib-cell.level-3 { background: var(--contrib-3); }
+.contrib-cell.level-4 { background: var(--contrib-4); }
+
+.contrib-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.contrib-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.contrib-legend span {
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.contrib-legend .contrib-cell {
+  width: 10px;
+  height: 10px;
 }

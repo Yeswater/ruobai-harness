@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent 
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
-import { BrainIcon, CheckIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
+import type { ActivitySummary } from '../api.ts'
+import { BrainIcon, CheckIcon, ChevronDownIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
+import { ContributionGraph } from './ContributionGraph.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
 import { toolDetail, toolEdit, type ToolEdit } from '../tool-summary.ts'
@@ -16,7 +18,8 @@ import {
 
 interface TranscriptProps {
   session: ChatSession | null
-  onSuggestion: (text: string) => void
+  /** Daily user activity for the empty-session contribution graph. */
+  activity: ActivitySummary | null
   /** Interrupt the turn and start this queued message now. */
   onSendQueued?: (queuedId: string) => void
   /** Take a queued message back into the input box for editing. */
@@ -25,16 +28,10 @@ interface TranscriptProps {
   onWithdrawQueued?: (queuedId: string) => void
 }
 
-const SUGGESTIONS = [
-  '解释一下 Cordis 的 fiber 生命周期',
-  '帮我看一下 loader 的源码',
-  '给 UI 加一个会话搜索',
-]
-
 const FOLLOW_THRESHOLD = 24
 
 export function Transcript({
-  session, onSuggestion, onSendQueued, onEditQueued, onWithdrawQueued,
+  session, activity, onSendQueued, onEditQueued, onWithdrawQueued,
 }: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -110,17 +107,8 @@ export function Transcript({
           {!session ? (
             <div className="loading">loading session…</div>
           ) : messages.length === 0 ? (
-            <div className="empty">
-              <div className="empty-mark"><SparkIcon size={26} /></div>
-              <h2>从这里开始</h2>
-              <p>由 ruobai-chat 服务驱动的本地会话。发一条消息，查看流式输出、工具卡片和右侧运行时面板。</p>
-              <div className="suggestions">
-                {SUGGESTIONS.map(text => (
-                  <button key={text} className="suggestion" onClick={() => onSuggestion(text)}>
-                    {text}
-                  </button>
-                ))}
-              </div>
+            <div className="contrib-screen">
+              <ContributionGraph activity={activity} />
             </div>
           ) : null}
 

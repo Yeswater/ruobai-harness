@@ -68,15 +68,29 @@ function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {
 
 let bootstrapPromise: Promise<{ sessions: SessionSummary[]; activeId: string | null }> | undefined
 
+const ACTIVE_KEY = 'rbh-active-session'
+
+function storedActiveId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_KEY)
+  } catch {
+    return null
+  }
+}
+
 /** One initial load per page, shared by StrictMode's double effect run. */
 function bootstrap() {
   bootstrapPromise ??= (async () => {
     let list = await api.listSessions()
     if (!list.length) {
       const created = await api.createSession()
-      list = [summarize(created)]
+      return { sessions: [summarize(created)], activeId: created.id }
     }
-    return { sessions: list, activeId: list[0]?.id ?? null }
+    // Come back to the session that was open, not just the busiest one: an
+    // untouched new session never moves to the top on its own.
+    const stored = storedActiveId()
+    const activeId = stored && list.some(item => item.id === stored) ? stored : list[0]?.id ?? null
+    return { sessions: list, activeId }
   })()
   return bootstrapPromise
 }
@@ -103,6 +117,15 @@ export function useHarness() {
   useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
+
+  useEffect(() => {
+    if (!activeId) return
+    try {
+      localStorage.setItem(ACTIVE_KEY, activeId)
+    } catch {
+      // private mode: the selection just will not survive a reload
+    }
+  }, [activeId])
 
   const fail = useCallback((caught: unknown) => {
     setError(caught instanceof Error ? caught.message : String(caught))
@@ -307,6 +330,20 @@ export function useHarness() {
       onOpen: () => {
         setConnected(true)
         setError(null)
+        // The page may have been offline while the host restarted, so frames
+        // for sessions created in that window were never delivered. Take the
+        // server's list and keep anything it has not heard about yet.
+        void api.listSessions()
+          .then((list) => {
+            const known = new Set(list.map(item => item.id))
+            const next = [
+              ...list,
+              ...sessionsRef.current.filter(item => !known.has(item.id)),
+            ].sort((a, b) => b.updatedAt - a.updatedAt)
+            sessionsRef.current = next
+            setSessions(next)
+          })
+          .catch(() => undefined)
       },
       onError: () => setConnected(false),
       onChat: (event) => {

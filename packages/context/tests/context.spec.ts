@@ -103,6 +103,79 @@ describe('context service', () => {
     )
   })
 
+  it('drops a stopped step that carries only thinking', async () => {
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'fake', model: 'fake-1' })
+    await llm
+    cleanups.push(() => llm.dispose())
+    const sessions = ctx.plugin(SessionService)
+    await sessions
+    cleanups.push(() => sessions.dispose())
+    const context = ctx.plugin(ContextService, { compactAt: 100_000 })
+    await context
+    cleanups.push(() => context.dispose())
+
+    const meta = ctx.sessions.create()
+    ctx.sessions.append(meta.id, 'message/user', { id: 'm1', text: '开始', at: 1 })
+    // 「立即发送」中断了一个还在思考的回合：这条消息只有 reasoning。
+    ctx.sessions.append(meta.id, 'message/assistant', {
+      id: 'a1',
+      parts: [{ type: 'reasoning', text: '正在分析…' }],
+      at: 2,
+    })
+    ctx.sessions.append(meta.id, 'message/user', { id: 'm2', text: '继续', at: 3 })
+
+    const built = await ctx.context.build(meta.id)
+    expect(built.messages.map(message => message.role)).toEqual(['user', 'user'])
+    expect(built.messages.map(message => message.content[0])).toEqual([
+      { type: 'text', text: '开始' },
+      { type: 'text', text: '继续' },
+    ])
+  })
+
+  it('drops tool calls whose result never arrived and keeps the rest of the step', async () => {
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'fake', model: 'fake-1' })
+    await llm
+    cleanups.push(() => llm.dispose())
+    const sessions = ctx.plugin(SessionService)
+    await sessions
+    cleanups.push(() => sessions.dispose())
+    const context = ctx.plugin(ContextService, { compactAt: 100_000 })
+    await context
+    cleanups.push(() => context.dispose())
+
+    const meta = ctx.sessions.create()
+    ctx.sessions.append(meta.id, 'message/user', { id: 'm1', text: '看两个文件', at: 1 })
+    ctx.sessions.append(meta.id, 'message/assistant', {
+      id: 'a1',
+      parts: [
+        { type: 'text', text: '我先读' },
+        { type: 'tool-call', id: 'call-a', name: 'read_file', arguments: '{"path":"a"}' },
+        { type: 'tool-call', id: 'call-b', name: 'read_file', arguments: '{"path":"b"}' },
+      ],
+      at: 2,
+    })
+    ctx.sessions.append(meta.id, 'tool/result', {
+      callId: 'call-a', name: 'read_file', content: 'A', isError: false,
+    })
+    // `call-b` 在结果落地前被中断；孤立的 tool/result 同样不该出现在请求里。
+    ctx.sessions.append(meta.id, 'tool/result', {
+      callId: 'call-ghost', name: 'read_file', content: 'B', isError: false,
+    })
+    ctx.sessions.append(meta.id, 'message/user', { id: 'm2', text: '继续', at: 3 })
+
+    const built = await ctx.context.build(meta.id)
+    const assistant = built.messages.find(message => message.role === 'assistant')
+    expect(assistant?.content).toEqual([
+      { type: 'text', text: '我先读' },
+      { type: 'tool-call', id: 'call-a', name: 'read_file', arguments: '{"path":"a"}' },
+    ])
+    const toolMessages = built.messages.filter(message => message.role === 'tool')
+    expect(toolMessages).toHaveLength(1)
+    expect(toolMessages[0]!.content[0]).toMatchObject({ type: 'tool-result', callId: 'call-a' })
+  })
+
   it('turns attached images and files into content parts', async () => {
     const ctx = new Context()
     const llm = ctx.plugin(LlmService, { provider: 'fake', model: 'fake-1' })
