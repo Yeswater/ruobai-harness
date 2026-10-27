@@ -1,5 +1,5 @@
 import type {
-  AttachmentMeta, ChatEvent, ChatMessage, ChatSession, SessionSummary, TurnStats,
+  AttachmentMeta, ChatEvent, ChatMessage, ChatSession, QueuedMessage, SessionSummary, TurnStats,
 } from '@ruobai/chat-protocol'
 import type {
   GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitInfo, GitLogResult,
@@ -551,10 +551,22 @@ export const api = {
     })).session,
 
   sendMessage: async (id: string, text: string, attachments: AttachmentMeta[] = []) =>
-    (await request<{ message: ChatMessage }>(`/api/sessions/${encodeURIComponent(id)}/messages`, {
+    request<{ message: ChatMessage; queued?: boolean }>(`/api/sessions/${encodeURIComponent(id)}/messages`, {
       method: 'POST',
       body: JSON.stringify(attachments.length ? { text, attachments } : { text }),
-    })).message,
+    }),
+
+  withdrawQueued: async (id: string, queuedId: string) =>
+    request<{ queued: QueuedMessage; session: ChatSession }>(
+      `/api/sessions/${encodeURIComponent(id)}/queued/${encodeURIComponent(queuedId)}`,
+      { method: 'DELETE' },
+    ),
+
+  sendQueuedNow: async (id: string, queuedId: string) =>
+    (await request<{ session: ChatSession }>(
+      `/api/sessions/${encodeURIComponent(id)}/queued/${encodeURIComponent(queuedId)}/send`,
+      { method: 'POST' },
+    )).session,
 
   stopSession: async (id: string) =>
     request<{ ok: true }>(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: 'POST' }),

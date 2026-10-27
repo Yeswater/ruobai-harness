@@ -96,7 +96,8 @@ export class UiApi extends Service {
         ? error.status
         : message.startsWith('unknown session')
           ? 404
-          : message.includes('running') ? 409
+          : message.startsWith('unknown queued') ? 404
+            : message.includes('running') ? 409
             : message.startsWith('unknown mode')
               || message.startsWith('title')
               || message.startsWith('unknown permission')
@@ -279,10 +280,12 @@ export class UiApi extends Service {
       return true
     }
 
-    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact))?$/.exec(pathname)
+    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact|queued)(?:\/([^/]+))?(?:\/(send))?)?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
     const action = match[2]
+    const queuedId = match[3] ? decodeURIComponent(match[3]) : undefined
+    const queuedAction = match[4]
 
     if (!action && method === 'GET') {
       const session = this.ctx.chat.get(id)
@@ -419,7 +422,21 @@ export class UiApi extends Service {
           throw new HttpError(400, `模型 ${session?.model ?? ''} 不支持图片输入`)
         }
       }
-      sendJson(res, 201, { message: this.ctx.chat.send(id, text, attachments) })
+      const result = this.ctx.chat.send(id, text, attachments)
+      sendJson(res, 201, { message: result.message, queued: result.queued })
+      return true
+    }
+
+    if (action === 'queued' && method === 'DELETE') {
+      if (!queuedId) throw new HttpError(400, 'queued message id is required')
+      const queued = this.ctx.chat.withdraw(id, queuedId)
+      sendJson(res, 200, { queued, session: this.ctx.chat.get(id) })
+      return true
+    }
+
+    if (action === 'queued' && method === 'POST' && queuedAction === 'send') {
+      if (!queuedId) throw new HttpError(400, 'queued message id is required')
+      sendJson(res, 200, { session: this.ctx.chat.sendNow(id, queuedId) })
       return true
     }
 

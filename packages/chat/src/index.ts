@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
 import type { StepTiming } from '@ruobai/agent'
 import type { ContentPart } from '@ruobai/llm'
 import { DEFAULT_PERMISSION, isPermissionMode } from '@ruobai/permissions'
 import type { SessionEvent, SessionMeta } from '@ruobai/session'
 import type {
-  AttachmentMeta, ChatBlock, ChatEvent, ChatMessage, ChatSession, SessionSummary, TurnStats,
+  AttachmentMeta, ChatBlock, ChatEvent, ChatMessage, ChatSession, QueuedMessage, SessionSummary, TurnStats,
 } from '@ruobai/chat-protocol'
 
 export type * from '@ruobai/chat-protocol'
@@ -28,6 +29,12 @@ const CONVERSATION_EVENTS = new Set([
   'turn/notice',
 ])
 
+export interface SendResult {
+  message: ChatMessage
+  /** True when a turn was running and the message is waiting behind it. */
+  queued: boolean
+}
+
 /**
  * Browser-facing projection over the session log and the agent runtime.
  *
@@ -38,6 +45,8 @@ export class ChatService extends Service {
   static inject = ['sessions', 'agents', 'llm', 'modes']
 
   private readonly sessions = new Map<string, ChatSession>()
+  /** Messages submitted while a turn runs; drained one turn at a time. */
+  private readonly queues = new Map<string, QueuedMessage[]>()
 
   constructor(ctx: Context) {
     super(ctx, 'chat')
@@ -50,6 +59,7 @@ export class ChatService extends Service {
 
     ctx.on('session/removed', (id) => {
       this.sessions.delete(id)
+      this.queues.delete(id)
       this.ctx.emit('chat/event', { type: 'session-deleted', sessionId: id })
     })
 
@@ -121,6 +131,7 @@ export class ChatService extends Service {
       }
       this.ctx.emit('chat/event', { type: 'message-done', sessionId: id, session })
       this.touch(id, session)
+      this.drain(id)
     })
 
   }
@@ -168,9 +179,7 @@ export class ChatService extends Service {
       ? requested
       : this.ctx.modes.defaultId()
     const requestedPermission = config?.agent?.defaultPermission
-    const permission = isPermissionMode(requestedPermission) && requestedPermission !== 'full-access'
-      ? requestedPermission
-      : undefined
+    const permission = isPermissionMode(requestedPermission) ? requestedPermission : undefined
     const meta = this.ctx.sessions.create({
       title,
       model,
@@ -255,23 +264,108 @@ export class ChatService extends Service {
     return this.ensure(meta.id)
   }
 
-  send(id: string, text: string, attachments: AttachmentMeta[] = []): ChatMessage {
-    const user = this.ctx.agents.prompt(id, text, attachments)
+  /**
+   * Submit a user message.
+   *
+   * A running turn does not reject it: the message joins the session's queue
+   * and opens its own turn once the current one ends. The log gets the
+   * `message/user` event only when that turn starts, so the model never sees
+   * a message that was queued behind the step it is producing.
+   */
+  send(id: string, text: string, attachments: AttachmentMeta[] = []): SendResult {
     const session = this.ensure(id)
-    return session.messages.find(message => message.id === user.id) ?? {
-      id: user.id,
-      role: 'user',
-      blocks: [
-        ...(user.text ? [{ type: 'text' as const, text: user.text }] : []),
-        ...(user.attachments ?? []).map(attachment => ({ type: 'attachment' as const, attachment })),
-      ],
-      status: 'done',
-      createdAt: user.at,
+    if (this.ctx.agents.isRunning(id)) {
+      const queued: QueuedMessage = {
+        id: randomUUID(),
+        text,
+        createdAt: Date.now(),
+        ...(attachments.length ? { attachments } : {}),
+      }
+      const queue = this.queues.get(id) ?? []
+      queue.push(queued)
+      this.queues.set(id, queue)
+      this.publishQueue(session)
+      return { queued: true, message: userMessage(queued.id, text, attachments, queued.createdAt) }
+    }
+
+    const user = this.ctx.agents.prompt(id, text, attachments)
+    return {
+      queued: false,
+      message: session.messages.find(message => message.id === user.id)
+        ?? userMessage(user.id, user.text, user.attachments, user.at),
     }
   }
 
+  /**
+   * Interrupt the running turn. Queued messages stay queued: the turn ending
+   * starts them, which is what Claude Code does when you press Esc.
+   */
   stop(id: string) {
     this.ctx.agents.stop(id)
+  }
+
+  /**
+   * Take a queued message back before its turn starts.
+   *
+   * Mirrors Claude Code's "take back": the entry leaves the queue and the
+   * caller gets its text and attachments back for the input box.
+   */
+  withdraw(id: string, queuedId: string): QueuedMessage {
+    const queue = this.queues.get(id)
+    const index = queue?.findIndex(item => item.id === queuedId) ?? -1
+    if (!queue || index < 0) throw new Error('unknown queued message')
+    const [taken] = queue.splice(index, 1)
+    if (!queue.length) this.queues.delete(id)
+    const session = this.sessions.get(id)
+    if (session) this.publishQueue(session)
+    return taken!
+  }
+
+  /**
+   * Send a queued message now: interrupt the running turn, move the entry to
+   * the front and let the turn ending start it. Mirrors Claude Code's
+   * "send queued messages now".
+   */
+  sendNow(id: string, queuedId: string): ChatSession {
+    const queue = this.queues.get(id)
+    const index = queue?.findIndex(item => item.id === queuedId) ?? -1
+    if (!queue || index < 0) throw new Error('unknown queued message')
+    if (index > 0) {
+      const [item] = queue.splice(index, 1)
+      queue.unshift(item!)
+    }
+    this.publishQueue(this.ensure(id))
+    this.ctx.agents.stop(id)
+    // Nothing was running (the turn ended first): start it ourselves.
+    if (!this.ctx.agents.isRunning(id)) this.drain(id)
+    return this.ensure(id)
+  }
+
+  /** Start the next queued message as its own turn. */
+  private drain(id: string) {
+    const queue = this.queues.get(id)
+    if (!queue?.length || !this.ctx.sessions.has(id)) {
+      this.queues.delete(id)
+      return
+    }
+    const next = queue[0]!
+    try {
+      this.ctx.agents.prompt(id, next.text, next.attachments ?? [], { id: next.id })
+    } catch {
+      // The session started another turn in the meantime; keep it queued.
+      return
+    }
+    queue.shift()
+    if (!queue.length) this.queues.delete(id)
+    const session = this.sessions.get(id)
+    if (session) this.publishQueue(session)
+  }
+
+  private publishQueue(session: ChatSession) {
+    const queue = this.queues.get(session.id)
+    if (queue?.length) session.queued = [...queue]
+    else delete session.queued
+    this.ctx.emit('chat/event', { type: 'session-updated', session })
   }
 
   private ensure(id: string): ChatSession {
@@ -294,6 +388,8 @@ export class ChatService extends Service {
       messages: [],
       streaming: this.ctx.agents.isRunning(id),
     }
+    const queue = this.queues.get(id)
+    if (queue?.length) session.queued = [...queue]
     for (const event of record.events) this.apply(session, event)
     this.sessions.set(id, session)
     return session
@@ -448,7 +544,7 @@ export class ChatService extends Service {
       | { raw(): { agent?: { defaultPermission?: unknown } } }
       | undefined
     const fallback = settings?.raw().agent?.defaultPermission
-    if (isPermissionMode(fallback) && fallback !== 'full-access') return fallback
+    if (isPermissionMode(fallback)) return fallback
     return DEFAULT_PERMISSION
   }
 
@@ -456,6 +552,22 @@ export class ChatService extends Service {
     const meta = this.ctx.sessions.get(id)?.meta
     if (meta) session.updatedAt = meta.updatedAt
     this.ctx.emit('chat/event', { type: 'session-updated', session })
+  }
+}
+
+/** The user-role message row for one submitted or queued message. */
+function userMessage(
+  id: string, text: string, attachments: AttachmentMeta[] | undefined, createdAt: number,
+): ChatMessage {
+  return {
+    id,
+    role: 'user',
+    blocks: [
+      ...(text ? [{ type: 'text' as const, text }] : []),
+      ...(attachments ?? []).map(attachment => ({ type: 'attachment' as const, attachment })),
+    ],
+    status: 'done',
+    createdAt,
   }
 }
 

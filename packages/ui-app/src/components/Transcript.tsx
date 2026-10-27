@@ -17,6 +17,12 @@ import {
 interface TranscriptProps {
   session: ChatSession | null
   onSuggestion: (text: string) => void
+  /** Interrupt the turn and start this queued message now. */
+  onSendQueued?: (queuedId: string) => void
+  /** Take a queued message back into the input box for editing. */
+  onEditQueued?: (queuedId: string) => void
+  /** Discard a queued message. */
+  onWithdrawQueued?: (queuedId: string) => void
 }
 
 const SUGGESTIONS = [
@@ -27,7 +33,9 @@ const SUGGESTIONS = [
 
 const FOLLOW_THRESHOLD = 24
 
-export function Transcript({ session, onSuggestion }: TranscriptProps) {
+export function Transcript({
+  session, onSuggestion, onSendQueued, onEditQueued, onWithdrawQueued,
+}: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const atBottomRef = useRef(true)
@@ -35,6 +43,8 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   const lastMessageRef = useRef<string | null>(null)
   const [atBottom, setAtBottom] = useState(true)
   const messages = session?.messages ?? []
+  const queued = session?.queued ?? []
+  const queuedIds = new Set(queued.map(item => item.id))
   const plan = useMemo(() => buildPlan(messages, Boolean(session?.streaming)), [messages, session?.streaming])
 
   const last = messages.at(-1)
@@ -115,7 +125,15 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
           ) : null}
 
           {plan.map((item, index) => {
-            if (item.kind === 'user') return <UserMessage key={item.key} message={item.message} />
+            if (item.kind === 'user') {
+              return (
+                <UserMessage
+                  key={item.key}
+                  message={item.message}
+                  queued={queuedIds.has(item.message.id)}
+                />
+              )
+            }
             if (item.kind === 'text') {
               return (
                 <div className="prose markdown" key={item.key}>
@@ -139,6 +157,31 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
               />
             )
           })}
+
+          {/* Queued messages are not in the log yet: the host appends them when
+              their turn starts, so they are drawn from the queue instead. */}
+          {queued.filter(item => !messages.some(message => message.id === item.id)).map(item => (
+            <UserMessage
+              key={item.id}
+              queued
+              onSend={onSendQueued ? () => onSendQueued(item.id) : undefined}
+              onEdit={onEditQueued ? () => onEditQueued(item.id) : undefined}
+              onWithdraw={onWithdrawQueued ? () => onWithdrawQueued(item.id) : undefined}
+              message={{
+                id: item.id,
+                role: 'user',
+                blocks: [
+                  ...(item.text ? [{ type: 'text' as const, text: item.text }] : []),
+                  ...(item.attachments ?? []).map(attachment => ({
+                    type: 'attachment' as const,
+                    attachment,
+                  })),
+                ],
+                status: 'done',
+                createdAt: item.createdAt,
+              }}
+            />
+          ))}
         </div>
 
         {!atBottom && messages.length
@@ -156,7 +199,13 @@ export function Transcript({ session, onSuggestion }: TranscriptProps) {
   )
 }
 
-function UserMessage({ message }: { message: ChatMessage }) {
+function UserMessage({ message, queued, onSend, onEdit, onWithdraw }: {
+  message: ChatMessage
+  queued?: boolean
+  onSend?: () => void
+  onEdit?: () => void
+  onWithdraw?: () => void
+}) {
   const contextMenu = useContextMenu()
   const text = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
   const attachments = message.blocks
@@ -179,7 +228,45 @@ function UserMessage({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className="msg user" id={`msg-${message.id}`} onContextMenu={onContextMenu}>
+    <div
+      className={`msg user ${queued ? 'queued' : ''}`}
+      id={`msg-${message.id}`}
+      onContextMenu={onContextMenu}
+    >
+      {queued
+        ? (
+          <div className="msg-queued">
+            <span>排队中 · 当前回合结束后发送</span>
+            {onSend || onEdit || onWithdraw
+              ? (
+                <span className="msg-queued-actions">
+                  {onSend
+                    ? (
+                      <button type="button" className="msg-queued-action" onClick={onSend} title="打断当前回合，立刻发送这条">
+                        发送
+                      </button>
+                    )
+                    : null}
+                  {onEdit
+                    ? (
+                      <button type="button" className="msg-queued-action" onClick={onEdit} title="撤回并放回输入框，编辑后重新发送">
+                        编辑
+                      </button>
+                    )
+                    : null}
+                  {onWithdraw
+                    ? (
+                      <button type="button" className="msg-queued-action" onClick={onWithdraw} title="丢弃这条消息">
+                        撤回
+                      </button>
+                    )
+                    : null}
+                </span>
+              )
+              : null}
+          </div>
+        )
+        : null}
       {attachments.length ? <AttachmentRail attachments={attachments} /> : null}
       {text ? <div className="bubble">{text}</div> : null}
     </div>

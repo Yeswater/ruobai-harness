@@ -70,6 +70,14 @@ export interface ChatMessage {
   createdAt: number
 }
 
+/** A message submitted while a turn was running; it starts when that turn ends. */
+export interface QueuedMessage {
+  id: string
+  text: string
+  attachments?: AttachmentMeta[]
+  createdAt: number
+}
+
 export interface ChatSession {
   id: string
   title: string
@@ -88,6 +96,8 @@ export interface ChatSession {
   updatedAt: number
   messages: ChatMessage[]
   streaming: boolean
+  /** Messages waiting for the running turn to end, in submission order. */
+  queued?: QueuedMessage[]
   /** Metrics for the most recent turn; not persisted. */
   stats?: TurnStats
 }

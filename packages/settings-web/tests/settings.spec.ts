@@ -135,4 +135,25 @@ describe('provider API', () => {
     })
     expect(invalidPercent.status).toBe(400)
   })
+
+  it('accepts full access as the default permission and rejects unknowns', async () => {
+    const harness = await createHarness()
+    cleanups.push(() => harness.dispose())
+    const base = harness.ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+
+    const saved = await (await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ agent: { defaultPermission: 'full-access' } }),
+    })).json() as { settings: { agent?: { defaultPermission?: string } } }
+    expect(saved.settings.agent?.defaultPermission).toBe('full-access')
+
+    const invalid = await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ agent: { defaultPermission: 'everything' } }),
+    })
+    expect(invalid.status).toBe(400)
+  })
 })

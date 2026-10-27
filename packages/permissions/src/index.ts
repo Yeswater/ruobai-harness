@@ -50,7 +50,7 @@ export class PermissionService extends Service {
       | { raw(): { agent?: { defaultPermission?: unknown } } }
       | undefined
     const fallback = settings?.raw().agent?.defaultPermission
-    if (isPermissionMode(fallback) && fallback !== 'full-access') return fallback
+    if (isPermissionMode(fallback)) return fallback
     return DEFAULT_PERMISSION
   }
 

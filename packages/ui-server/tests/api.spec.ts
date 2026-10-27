@@ -443,7 +443,7 @@ describe('ui server', () => {
     await reader.cancel()
   })
 
-  it('rejects a second prompt while a turn is running', async () => {
+  it('queues a second prompt while a turn is running', async () => {
     const harness = await createHarness({ delay: 30 })
     harnesses.push(harness)
     const { ctx } = harness
@@ -463,7 +463,9 @@ describe('ui server', () => {
     const first = await send()
     expect(first.status).toBe(201)
     const second = await send()
-    expect(second.status).toBe(409)
+    expect(second.status).toBe(201)
+    const queued = await second.json() as { queued?: boolean }
+    expect(queued.queued).toBe(true)
 
     const forked = await fetch(`${ctx.web.url}/api/sessions/${created.session.id}/fork`, {
       method: 'POST',
@@ -471,6 +473,46 @@ describe('ui server', () => {
       body: '{}',
     })
     expect(forked.status).toBe(409)
+  })
+
+  it('takes back and sends a queued message', async () => {
+    const harness = await createHarness({ delay: 30 })
+    harnesses.push(harness)
+    const { ctx } = harness
+
+    const created = await (await fetch(`${ctx.web.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'queued-actions' }),
+    })).json() as { session: ChatSession }
+    const sid = created.session.id
+    const send = () => fetch(`${ctx.web.url}/api/sessions/${sid}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '写一段回复' }),
+    })
+
+    await send()
+    const queued = await (await send()).json() as { message: { id: string }; queued?: boolean }
+    expect(queued.queued).toBe(true)
+
+    const withdrawn = await fetch(`${ctx.web.url}/api/sessions/${sid}/queued/${queued.message.id}`, {
+      method: 'DELETE',
+    })
+    expect(withdrawn.status).toBe(200)
+    const taken = await withdrawn.json() as {
+      queued: { text: string }
+      session: ChatSession
+    }
+    expect(taken.queued.text).toBe('写一段回复')
+    expect(taken.session.queued).toBeUndefined()
+
+    const again = await (await send()).json() as { message: { id: string }; queued?: boolean }
+    expect(again.queued).toBe(true)
+    const sent = await fetch(`${ctx.web.url}/api/sessions/${sid}/queued/${again.message.id}/send`, {
+      method: 'POST',
+    })
+    expect(sent.status).toBe(200)
   })
 
   it('creates a session bound to a workspace and rejects invalid roots', async () => {

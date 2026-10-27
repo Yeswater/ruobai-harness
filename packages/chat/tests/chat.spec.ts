@@ -30,7 +30,8 @@ describe('chat bridge', () => {
     const done = nextDone(ctx)
 
     const user = ctx.chat.send(session.id, '你好')
-    expect(user.role).toBe('user')
+    expect(user.queued).toBe(false)
+    expect(user.message.role).toBe('user')
 
     const final = await done
     expect(final.streaming).toBe(false)

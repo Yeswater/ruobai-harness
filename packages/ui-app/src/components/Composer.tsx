@@ -43,6 +43,8 @@ interface ComposerProps {
   onOpenConnectors: () => void
   /** File reference from the files panel: insert a short token and attach its content. */
   reference?: { path: string; token: number } | null
+  /** A queued message taken back: its body goes ahead of whatever is typed. */
+  restore?: { text: string; attachments?: AttachmentMeta[]; token: number } | null
 }
 
 type OpenMenu = 'plus' | 'permission' | 'model' | 'knowledge' | null
@@ -58,7 +60,7 @@ const DIRECTORY_PROPS = { webkitdirectory: '', directory: '' } as Record<string,
 export function Composer({
   disabled, streaming, sessionId, workspace, provider, model, models, modes, skills = [], mode, permission,
   commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
-  onStop, onNewSession, onOpenConnectors, reference,
+  onStop, onNewSession, onOpenConnectors, reference, restore,
 }: ComposerProps) {
   const [text, setText] = useState(() => readDraft(sessionId).text)
   const [caret, setCaret] = useState(0)
@@ -71,6 +73,7 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mirrorRef = useRef<HTMLDivElement>(null)
   const handledReference = useRef<number | null>(null)
+  const handledRestore = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const pendingCaret = useRef<number | null>(null)
@@ -211,6 +214,26 @@ export function Composer({
   }, [reference, attachFile])
 
   useEffect(() => {
+    if (!restore || handledRestore.current === restore.token) return
+    handledRestore.current = restore.token
+    const body = restore.text.replace(/\s+$/, '')
+    // Taken-back text goes ahead of what is already typed, like Claude Code's
+    // "take back": edit it and press Enter to queue it again.
+    if (body) setText(current => (current.trim() ? `${body}\n${current}` : restore.text))
+    for (const attachment of restore.attachments ?? []) attachments.addOne(attachment)
+    const end = body.length
+    const frame = requestAnimationFrame(() => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      textarea.focus()
+      const target = Math.min(end, textarea.value.length)
+      textarea.setSelectionRange(target, target)
+      setCaret(target)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [restore, attachments.addOne])
+
+  useEffect(() => {
     setActiveIndex(0)
   }, [trigger?.kind, trigger?.query])
 
@@ -272,7 +295,9 @@ export function Composer({
 
   const submit = () => {
     const value = text.trim()
-    if (disabled || streaming) return
+    // A running turn does not block input: the host queues the message and
+    // starts it as the next turn.
+    if (disabled) return
     if (!value && !attachments.attachments.length) return
     onSend(value, attachments.attachments)
     setText('')
@@ -439,7 +464,11 @@ export function Composer({
             ref={textareaRef}
             value={text}
             rows={2}
-            placeholder={disabled ? '正在加载会话…' : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`}
+            placeholder={disabled
+              ? '正在加载会话…'
+              : streaming
+                ? '运行中：回车把消息排到下一轮'
+                : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`}
             onChange={(event) => {
               setText(event.target.value)
               setCaret(event.target.selectionStart ?? 0)
@@ -508,7 +537,7 @@ export function Composer({
             <PermissionSelect
               value={permission}
               open={openMenu === 'permission'}
-              disabled={disabled || streaming}
+              disabled={disabled}
               onOpenChange={open => setOpenMenu(open ? 'permission' : null)}
               onChange={onPermissionChange}
             />
@@ -547,22 +576,28 @@ export function Composer({
               onOpenChange={open => setOpenMenu(open ? 'model' : null)}
               onChange={onModelChange}
             />
+            <button
+              type="submit"
+              className="send"
+              disabled={disabled || (!text.trim() && !attachments.attachments.length)}
+              aria-label={streaming ? '排队发送' : 'Send'}
+              title={streaming ? '当前回合结束后发送' : '发送'}
+            >
+              <SendIcon size={14} />
+            </button>
             {streaming
               ? (
-                <button type="button" className="send stop" onClick={onStop} aria-label="Stop">
+                <button
+                  type="button"
+                  className="send stop"
+                  onClick={onStop}
+                  aria-label="Stop"
+                  title="停止当前回合；排队的消息会接着发送"
+                >
                   <StopIcon size={13} />
                 </button>
               )
-              : (
-                <button
-                  type="submit"
-                  className="send"
-                  disabled={disabled || (!text.trim() && !attachments.attachments.length)}
-                  aria-label="Send"
-                >
-                  <SendIcon size={14} />
-                </button>
-              )}
+              : null}
           </div>
         </div>
 

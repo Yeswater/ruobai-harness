@@ -7,7 +7,7 @@ import {
   type PublicSettings,
   type ThemePreference,
 } from '../../api.ts'
-import { MonitorIcon, MoonIcon, SunIcon } from '../Icons.tsx'
+import { MonitorIcon, MoonIcon, AlertIcon, SunIcon } from '../Icons.tsx'
 import { PERMISSION_OPTIONS } from '../PermissionSelect.tsx'
 import { Select } from '../Select.tsx'
 import { SettingRow, SettingsGroup, SettingsScroll } from './SettingsLayout.tsx'
@@ -47,6 +47,7 @@ export function GeneralSettings({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [confirmFullAccess, setConfirmFullAccess] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -154,18 +155,21 @@ export function GeneralSettings({
           </SettingRow>
           <SettingRow
             title="默认权限"
-            description="完全权限只能在单个会话里临时启用，不能作为全局默认。"
+            description="新建会话使用的权限；会话运行中也可以随时切换。完全权限会跳过审批，请谨慎。"
           >
             <Select
               value={defaultPermission}
-              options={PERMISSION_OPTIONS
-                .filter(option => option.value !== 'full-access')
-                .map(option => ({
-                  value: option.value,
-                  label: option.label,
-                  description: option.description,
-                }))}
-              onChange={value => setDefaultPermission(value as PermissionMode)}
+              options={PERMISSION_OPTIONS.map(option => ({
+                value: option.value,
+                label: option.label,
+                description: option.description,
+              }))}
+              onChange={(value) => {
+                // Full access as the default is a standing decision, not a
+                // one-turn convenience: ask once, on the way in.
+                if (value === 'full-access') setConfirmFullAccess(true)
+                else setDefaultPermission(value as PermissionMode)
+              }}
               ariaLabel="Default permission"
               menuWidth={320}
             />
@@ -216,6 +220,45 @@ export function GeneralSettings({
           {busy ? '保存中…' : '保存'}
         </button>
       </footer>
+
+      {confirmFullAccess
+        ? (
+          <div className="modal-backdrop" onClick={() => setConfirmFullAccess(false)}>
+            <div
+              className="modal confirm-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="把完全权限设为默认"
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="modal-head">
+                <h2><AlertIcon size={16} /> 把完全权限设为默认</h2>
+              </div>
+              <div className="modal-body">
+                <p className="modal-note">
+                  之后新建的会话不再询问写文件、shell 命令与 MCP 调用，危险命令也不会二次确认。
+                  已存在的会话保持各自的权限；审批设置里的 deny / ask 规则仍然生效。
+                </p>
+              </div>
+              <div className="modal-foot">
+                <span className="hint">只影响新建会话，保存后生效</span>
+                <div className="modal-actions">
+                  <button className="btn ghost" onClick={() => setConfirmFullAccess(false)}>取消</button>
+                  <button
+                    className="btn danger-solid"
+                    onClick={() => {
+                      setConfirmFullAccess(false)
+                      setDefaultPermission('full-access')
+                    }}
+                  >
+                    设为默认
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+        : null}
     </div>
   )
 }

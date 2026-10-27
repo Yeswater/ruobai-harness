@@ -221,11 +221,13 @@ function fail(ctx: Context, res: ServerResponse, error: unknown, label: string) 
   if (!res.headersSent) sendJson(res, status, { error: message })
 }
 
-/** Full access is per-session only; it may not become the global default. */
+/** Any preset may be the global default; the UI confirms `full-access` on the way in. */
 function normalizeDefaultPermission(value: unknown): PermissionMode | undefined {
   if (value === undefined) return undefined
-  if (value === 'read-only' || value === 'workspace-write' || value === 'auto-review') return value
-  throw new HttpError(400, 'defaultPermission must be read-only, workspace-write or auto-review')
+  if (value === 'read-only' || value === 'workspace-write' || value === 'full-access' || value === 'auto-review') {
+    return value
+  }
+  throw new HttpError(400, 'defaultPermission must be read-only, workspace-write, full-access or auto-review')
 }
 
 function normalizeCommandPrefix(value: unknown): CommandPrefix | undefined {

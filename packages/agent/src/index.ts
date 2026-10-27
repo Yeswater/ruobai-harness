@@ -57,6 +57,11 @@ export interface RunOptions {
   denyTools?: string[]
 }
 
+export interface PromptOptions {
+  /** Reuse an id the caller already showed (a queued message). */
+  id?: string
+}
+
 export interface RunResult {
   reason: TurnEndReason
   /** The last non-empty assistant text emitted during the turn. */
@@ -139,13 +144,19 @@ export class AgentService extends Service {
     return this.turns.has(sessionId)
   }
 
-  prompt(sessionId: string, input: string, attachments: AttachmentMeta[] = []): UserMessageData {
+  prompt(
+    sessionId: string,
+    input: string,
+    attachments: AttachmentMeta[] = [],
+    options: PromptOptions = {},
+  ): UserMessageData {
     if (this.turns.has(sessionId)) throw new Error('session is already running')
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
     const message: UserMessageData = {
-      id: randomUUID(),
+      // A queued message keeps the id the UI already showed while it waited.
+      id: options.id ?? randomUUID(),
       text: input,
       at: Date.now(),
       ...(attachments.length ? { attachments } : {}),

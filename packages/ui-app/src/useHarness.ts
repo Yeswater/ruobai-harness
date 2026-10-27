@@ -348,9 +348,27 @@ export function useHarness() {
     const id = activeRef.current
     if (!id) return
     void api.sendMessage(id, text, attachments)
-      .then((message) => {
-        setSession(previous => {
+      .then(({ message, queued }) => {
+        setSession((previous) => {
           if (!previous || previous.id !== id) return previous
+          if (queued) {
+            // The event stream normally carries the queue; fold the response in
+            // as well so a missed frame cannot hide what the user just sent.
+            const queue = previous.queued ?? []
+            if (queue.some(item => item.id === message.id)) return previous
+            const body = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
+            const files = message.blocks.flatMap(block =>
+              block.type === 'attachment' ? [block.attachment] : [])
+            return {
+              ...previous,
+              queued: [...queue, {
+                id: message.id,
+                text: body,
+                createdAt: message.createdAt,
+                ...(files.length ? { attachments: files } : {}),
+              }],
+            }
+          }
           if (previous.messages.some(item => item.id === message.id)) return previous
           return { ...previous, messages: [...previous.messages, message] }
         })
@@ -418,6 +436,28 @@ export function useHarness() {
       .catch(fail)
   }, [fail])
 
+  /**
+   * Take a queued message back before its turn starts. Resolves with the
+   * withdrawn entry so the caller can put its text back in the input box.
+   */
+  const withdrawQueued = useCallback(async (id: string, queuedId: string) => {
+    try {
+      const { session, queued } = await api.withdrawQueued(id, queuedId)
+      setSession(previous => previous && previous.id === id ? session : previous)
+      return queued
+    } catch (caught) {
+      fail(caught)
+      return undefined
+    }
+  }, [fail])
+
+  /** Interrupt the turn and start a queued message right away. */
+  const sendQueuedNow = useCallback((id: string, queuedId: string) => {
+    void api.sendQueuedNow(id, queuedId)
+      .then((next) => setSession(previous => previous && previous.id === id ? next : previous))
+      .catch(fail)
+  }, [fail])
+
   const resolveApproval = useCallback((id: string, decision: ApprovalDecision) => {
     setApprovals(previous => previous.filter(item => item.id !== id))
     void api.resolveApproval(id, decision).catch((caught) => {
@@ -453,6 +493,8 @@ export function useHarness() {
     setMode,
     setModel,
     setPermission,
+    withdrawQueued,
+    sendQueuedNow,
     resolveApproval,
     dismissError: () => setError(null),
   }

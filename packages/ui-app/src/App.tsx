@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import type { AttachmentMeta } from '@ruobai/chat-protocol'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
 import { api, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
@@ -79,6 +80,11 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
   const [reference, setReference] = useState<{ path: string; token: number } | null>(null)
+  const [restoredDrop, setRestoredDrop] = useState<{
+    text: string
+    attachments?: AttachmentMeta[]
+    token: number
+  } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('behavior')
   const openSettings = useCallback((tab: SettingsTab = 'behavior') => {
@@ -493,7 +499,30 @@ export function App() {
           : mainView === 'chat'
           ? (
             <>
-              <Transcript session={harness.session} onSuggestion={harness.send} />
+              <Transcript
+                session={harness.session}
+                onSuggestion={harness.send}
+                onSendQueued={(queuedId) => {
+                  const session = harness.session
+                  if (session) harness.sendQueuedNow(session.id, queuedId)
+                }}
+                onEditQueued={(queuedId) => {
+                  const session = harness.session
+                  if (!session) return
+                  void harness.withdrawQueued(session.id, queuedId).then((taken) => {
+                    if (!taken) return
+                    setRestoredDrop({
+                      text: taken.text,
+                      ...(taken.attachments?.length ? { attachments: taken.attachments } : {}),
+                      token: Date.now(),
+                    })
+                  })
+                }}
+                onWithdrawQueued={(queuedId) => {
+                  const session = harness.session
+                  if (session) void harness.withdrawQueued(session.id, queuedId)
+                }}
+              />
 
               {pendingApprovals.length
                 ? (
@@ -529,6 +558,7 @@ export function App() {
                 onPermissionChange={harness.setPermission}
                 onSend={harness.send}
                 onStop={harness.stop}
+                restore={restoredDrop}
                 onNewSession={() => setWorkspacePickerOpen(true)}
                 onOpenConnectors={() => {
                   setToolsTab('connectors')
