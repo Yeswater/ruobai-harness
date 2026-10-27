@@ -270,6 +270,7 @@ export class GiteeClient {
     org?: boolean
   }): Promise<GiteeRepoSummary> {
     const name = assertRepoName(input.name)
+    const wantedPrivate = input.private === true
     const path = input.org
       ? `/orgs/${encodeSegment(input.owner, 'owner')}/repos`
       : '/user/repos'
@@ -277,12 +278,22 @@ export class GiteeClient {
       method: 'POST',
       body: {
         name,
-        private: input.private === true,
+        private: wantedPrivate,
         auto_init: false,
         ...(input.description?.trim() ? { description: input.description.trim().slice(0, 500) } : {}),
       },
     })
-    return mapRepo(row)
+    let repo = mapRepo(row)
+    if (repo.private !== wantedPrivate) {
+      // Gitee's create endpoint can ignore `private: false` (account default
+      // wins); PATCH the visibility explicitly so the result matches the plan.
+      const patched = await this.request<Record<string, unknown>>(repoPath(input.owner, name), {
+        method: 'PATCH',
+        body: { name, private: wantedPrivate },
+      })
+      repo = mapRepo(patched)
+    }
+    return repo
   }
 
   async createRelease(

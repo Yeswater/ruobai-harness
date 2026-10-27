@@ -38,6 +38,7 @@ async function setup() {
 
   let createdRepo = false
   let release: Record<string, unknown> | undefined
+  let repoPrivate = true
   const requests: string[] = []
 
   const server = createServer((req, res) => {
@@ -47,7 +48,7 @@ async function setup() {
       full_name: 'yeswater/demo',
       name: 'demo',
       owner: { login: 'yeswater' },
-      private: false,
+      private: repoPrivate,
       html_url: 'https://gitee.com/yeswater/demo.git',
       default_branch: 'main',
     }
@@ -60,6 +61,13 @@ async function setup() {
     if (url.pathname === '/api/v5/user/repos' && req.method === 'POST') {
       createdRepo = true
       return json(res, 201, repoBody)
+    }
+    if (url.pathname === '/api/v5/repos/yeswater/demo' && req.method === 'PATCH') {
+      void readBody(req).then((body) => {
+        if (typeof body.private === 'boolean') repoPrivate = body.private
+        json(res, 200, { ...repoBody, private: repoPrivate })
+      })
+      return
     }
     if (url.pathname === '/api/v5/repos/yeswater/demo') {
       return createdRepo ? json(res, 200, repoBody) : json(res, 404, { message: 'not found' })
@@ -139,6 +147,7 @@ describe('gitee publish', () => {
     expect(await git(['--git-dir', bare, 'rev-parse', 'refs/tags/v0.0.1'])).toBe(head)
 
     expect(requests).toContain('POST /api/v5/user/repos')
+    expect(requests).toContain('PATCH /api/v5/repos/yeswater/demo')
     expect(requests).toContain('POST /api/v5/repos/yeswater/demo/releases')
     expect(release()).toMatchObject({ tag_name: 'v0.0.1', name: 'v0.0.1', body: 'notes' })
 

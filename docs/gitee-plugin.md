@@ -41,6 +41,7 @@ harness 没有任何代码托管平台集成。发布到 Gitee 需要建库、�
 
 1. 预检（`/api/gitee/publish/preview` 或工具 preview）：账号、仓库是否存在、本地分支/HEAD/脏文件、remote 与 tag。
 2. 仓库不存在时建空库：个人 `POST /user/repos`，组织 `POST /orgs/{org}/repos`，`auto_init:false`。
+   Gitee 的创建接口可能忽略 `private:false`（账号默认可见性优先），因此创建后会 PATCH 校正可见性，失败则让发布报错而不是静默建错。
 3. remote 名称默认 `gitee`，URL 由 `remoteTemplate` 生成，默认 `git@gitee.com:{owner}/{repo}.git`；已存在且地址不同则报 409，不覆盖。
 4. `push -u gitee <branch>`（宿主侧 `ctx.git`，`networkTimeoutMs` 控制超时）。
 5. 可选 tag：创建并推送。
