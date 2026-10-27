@@ -16,11 +16,21 @@ export type CacheBreakReason =
   | 'prune'
   | 'tools'
   | 'system'
+  | 'memory'
   | 'messages'
+
+/** One rendered system section, so a break can name what changed. */
+export interface PrefixSection {
+  id: string
+  hash: string
+  chars: number
+}
 
 export interface PrefixFingerprint {
   tools: string
   system: string
+  /** Per-section hashes of the system prompt, in render order. */
+  sections?: PrefixSection[]
   /** One hash per rendered message, in order. */
   messages: string[]
   /** Model-visible characters per message; prices an invalidation. */
@@ -35,6 +45,8 @@ export interface PrefixDivergence {
   region: 'tools' | 'system' | 'messages'
   /** First differing message index, for `region: 'messages'`. */
   index?: number
+  /** Section id that changed, when the system prompt broke on one. */
+  section?: string
   reason: CacheBreakReason
   /** Characters that must be processed again from the divergence point. */
   invalidatedChars: number
@@ -60,6 +72,7 @@ function messageChars(message: Message) {
 export function buildFingerprint(input: {
   tools?: ToolSchema[]
   system: string
+  sections?: Array<{ id: string; text: string }>
   messages: Message[]
   mode?: string
   summaryUpToSeq: number
@@ -68,6 +81,15 @@ export function buildFingerprint(input: {
   return {
     tools: hashText(JSON.stringify(input.tools ?? [])),
     system: hashText(input.system),
+    ...(input.sections
+      ? {
+        sections: input.sections.map(section => ({
+          id: section.id,
+          hash: hashText(section.text),
+          chars: section.text.length,
+        })),
+      }
+      : {}),
     messages: input.messages.map(message => hashText(JSON.stringify(message))),
     chars: input.messages.map(messageChars),
     systemChars: input.system.length,
@@ -113,6 +135,16 @@ export function diffPrefix(
   // break; on their own they do not cause one.
   if (!tools && !system && index < 0) return undefined
 
+  // Attribute a system break to the section that actually moved, so the UI can
+  // say "long-term memory refreshed" instead of "system changed".
+  let section: string | undefined
+  if (system && previous.sections && next.sections) {
+    const before = new Map(previous.sections.map(item => [item.id, item.hash]))
+    const after = new Map(next.sections.map(item => [item.id, item.hash]))
+    section = next.sections.find(item => before.get(item.id) !== item.hash)?.id
+      ?? previous.sections.find(item => !after.has(item.id))?.id
+  }
+
   const reason: CacheBreakReason = mode
     ? 'mode'
     : summary
@@ -122,7 +154,7 @@ export function diffPrefix(
         : tools
           ? 'tools'
           : system
-            ? 'system'
+            ? section === 'memory' ? 'memory' : 'system'
             : 'messages'
 
   const messageChars = next.chars.reduce((total, chars) => total + chars, 0)
@@ -130,7 +162,12 @@ export function diffPrefix(
     return { region: 'tools', reason, invalidatedChars: next.systemChars + messageChars }
   }
   if (system) {
-    return { region: 'system', reason, invalidatedChars: next.systemChars + messageChars }
+    return {
+      region: 'system',
+      reason,
+      ...(section ? { section } : {}),
+      invalidatedChars: next.systemChars + messageChars,
+    }
   }
   return {
     region: 'messages',

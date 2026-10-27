@@ -84,6 +84,8 @@ export interface Config {
 export interface BuildOptions {
   basePrompt?: string
   modePrompt?: string
+  /** Manual-compaction focus, forwarded to section renderers. */
+  focus?: string
   extraMessages?: Message[]
   tools?: ToolSchema[]
   /**
@@ -106,8 +108,33 @@ export interface BuiltContext {
   cacheKey: string
 }
 
-export interface ContextInfo {
-  estimatedTokens: number
+export interface PromptSectionInput {
+  sessionId: string
+  record: SessionRecord
+  focus?: string
+}
+
+/**
+ * One region of the system prompt. Sections render in `order`; their hashes
+ * land in the prefix fingerprint so a cache break names the region that moved.
+ */
+export interface PromptSection {
+  id: string
+  /** Static regions first, volatile ones last. */
+  order: number
+  /** `static` never changes, `session` is fixed per session, `epoch` follows compaction. */
+  stability: 'static' | 'session' | 'epoch'
+  maxChars?: number
+  render(input: PromptSectionInput): Promise<string> | string
+}
+
+export interface RenderedSection {
+  id: string
+  text: string
+  truncated: boolean
+}
+
+export interface ContextInfo {  estimatedTokens: number
   compactAt: number
   summaries: number
   /** Configured model context window, when the provider settings define one. */
@@ -269,6 +296,8 @@ export class ContextService extends Service {
   })
 
   private instructions = new Map<string, InstructionCache>()
+  /** Plugin-contributed system-prompt regions, rendered between skills and summary. */
+  private readonly sections = new Map<string, PromptSection>()
   /** Inputs of the last agent build, reused to explain the context size. */
   private lastOptions = new Map<string, BuildOptions>()
   private compactionStates = new Map<string, CompactionState>()
@@ -299,6 +328,55 @@ export class ContextService extends Service {
     })
   }
 
+  /**
+   * Contribute a system-prompt region. Registration is reversible; the
+   * ordering and budget live with the renderer so `build()` never imports the
+   * plugins that own a section.
+   */
+  registerSection(section: PromptSection): () => void {
+    if (this.sections.has(section.id)) {
+      throw new Error(`prompt section "${section.id}" is already registered`)
+    }
+    this.sections.set(section.id, section)
+    return () => {
+      if (this.sections.get(section.id) !== section) return
+      this.sections.delete(section.id)
+    }
+  }
+
+  private async renderSections(
+    record: SessionRecord,
+    builtins: PromptSection[],
+    focus?: string,
+  ): Promise<RenderedSection[]> {
+    const ordered = [...builtins, ...this.sections.values()]
+      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+    const rendered: RenderedSection[] = []
+    for (const section of ordered) {
+      let text = ''
+      try {
+        text = await section.render({
+          sessionId: record.meta.id,
+          record,
+          ...(focus ? { focus } : {}),
+        })
+      } catch (error) {
+        // An injected section is reference data: its failure must not fail the
+        // turn. The warning keeps it diagnosable.
+        this.ctx.logger('context').warn('section %s failed: %s', section.id,
+          error instanceof Error ? error.message : String(error))
+      }
+      if (!text) continue
+      const truncated = Boolean(section.maxChars && text.length > section.maxChars)
+      rendered.push({
+        id: section.id,
+        text: truncated ? text.slice(0, section.maxChars) : text,
+        truncated,
+      })
+    }
+    return rendered
+  }
+
   async build(sessionId: string, options: BuildOptions = {}): Promise<BuiltContext> {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
@@ -307,14 +385,22 @@ export class ContextService extends Service {
     const instructions = await this.workspaceInstructions(sessionId)
     const skills = await this.skillsCatalog(sessionId)
     const restored = summary ? this.restoredFiles(record, summary.upToSeq) : ''
-    const system = [
-      options.basePrompt,
-      options.modePrompt,
-      instructions,
-      skills,
-      summary ? renderSummary(summary.text) : undefined,
-      restored || undefined,
-    ].filter(Boolean).join('\n\n')
+
+    const builtins: PromptSection[] = [
+      { id: 'base', order: 10, stability: 'static', render: () => options.basePrompt ?? '' },
+      { id: 'mode', order: 20, stability: 'static', render: () => options.modePrompt ?? '' },
+      { id: 'instructions', order: 30, stability: 'static', render: () => instructions },
+      { id: 'skills', order: 35, stability: 'static', render: () => skills },
+      {
+        id: 'summary',
+        order: 90,
+        stability: 'epoch',
+        render: () => summary ? renderSummary(summary.text) : '',
+      },
+      { id: 'restored', order: 95, stability: 'epoch', render: () => restored },
+    ]
+    const sections = await this.renderSections(record, builtins, options.focus)
+    const system = sections.map(section => section.text).filter(Boolean).join('\n\n')
 
     const visible = record.events.filter(event => event.seq > (summary?.upToSeq ?? -1))
     const epoch = latestPrune(record.events)
@@ -347,6 +433,7 @@ export class ContextService extends Service {
     const fingerprint = buildFingerprint({
       tools: options.tools,
       system,
+      sections: sections.map(section => ({ id: section.id, text: section.text })),
       messages,
       mode: record.meta.mode,
       summaryUpToSeq: summary?.upToSeq ?? -1,

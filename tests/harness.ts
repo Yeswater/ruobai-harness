@@ -19,6 +19,7 @@ import HooksWeb from '@ruobai/hooks-web'
 import LintService from '@ruobai/lint'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
+import MemoryService from '@ruobai/memory'
 import MockProvider from '@ruobai/llm-mock'
 import McpService from '@ruobai/mcp'
 import McpCatalog from '@ruobai/mcp-catalog'
@@ -46,6 +47,7 @@ import TrajectoryWeb from '@ruobai/trajectory-web'
 import UiApi from '@ruobai/ui-server'
 import WebServer, { type Config as WebConfig } from '@ruobai/web-server'
 import WebWs from '@ruobai/web-ws'
+import WikiService from '@ruobai/wiki'
 import WorkspaceService from '@ruobai/workspace'
 import WorkspaceWeb from '@ruobai/workspace-web'
 
@@ -140,6 +142,15 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     globalRoot: protocolHome,
     instructionsTtlMs: 0,
     ...options.context,
+  }))
+  // Memory and wiki keep their state under the temp protocol roots so tests
+  // never touch the real ~/.ruobai or the checkout's .ruobai. They mount after
+  // `context` so their prompt sections register synchronously.
+  await mount(ctx.plugin(MemoryService, {
+    globalRoot: protocolHome,
+  }))
+  await mount(ctx.plugin(WikiService, {
+    root: join(dir, 'wiki'),
   }))
   await mount(ctx.plugin(ApprovalService))
   await mount(ctx.plugin(PermissionService))

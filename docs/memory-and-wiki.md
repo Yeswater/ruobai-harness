@@ -617,6 +617,14 @@ interface WikiSettings {
 - 检索超时返回部分结果并标 `truncated`；摘要 / 概览 / 正文三级读取各自不超预算。
 - wiki 写入经过审批与检查点；路径逃逸、符号链接、超大文件被拒绝。
 
+### P0 落地记录（2026-10-27）
+
+- **context**：新增 `registerSection()` 与分段指纹；`PrefixFingerprint.sections` 让缓存中断归因到具体 section，`reason` 增加 `memory`。
+- **`@ruobai/memory`**：`memory.jsonl` journal、确定性编译（`MEMORY.md` + 注入块）、按 scope 的预算（global 40%）、`memory/injected` 会话快照、`memory_search` / `memory_save` / `memory_forget` 工具。
+- **`@ruobai/wiki`**：frontmatter、按标题分块、CJK bigram BM25、`.index/index.json` 增量索引（mtime + size 复用，删除后可重建）、三级读取、`wiki_search` / `wiki_read` / `wiki_write` 工具、目录注入。
+- **验证**：`pnpm typecheck` 两套 tsconfig 通过；`pnpm test` 523 项通过，包含 24 项新增用例（同一 journal 编译字节一致、预算不超、会话快照不随 journal 变化、压缩后刷新、索引删除后重建一致、CJK 检索、全栈注入）。
+- **未做（P1）**：`memory-distill`、`memory-web` / `wiki-web`、命令注册表（`/remember` 等）、wiki lint 与 stale 检测、类型化查询。
+
 ### P1：自动化与可审阅（3–5 人日）
 
 - `memory-distill`：先规则，后可选 LLM；预算、熔断、`memory/distill` 事件。

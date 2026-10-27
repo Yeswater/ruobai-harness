@@ -304,6 +304,15 @@
 - id: skills-web
   name: '@ruobai/skills-web'
 
+# Cross-session memory and the project wiki. Both contribute prompt sections
+# through `context` and keep their state under .ruobai/ (see
+# docs/memory-and-wiki.md). Removing either row drops the feature cleanly.
+- id: memory
+  name: '@ruobai/memory'
+
+- id: wiki
+  name: '@ruobai/wiki'
+
 - id: settings
   name: '@ruobai/settings'
   config:

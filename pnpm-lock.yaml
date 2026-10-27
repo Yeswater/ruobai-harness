@@ -107,6 +107,9 @@ importers:
       '@ruobai/mcp-web':
         specifier: workspace:*
         version: link:packages/mcp-web
+      '@ruobai/memory':
+        specifier: workspace:*
+        version: link:packages/memory
       '@ruobai/mode-agent':
         specifier: workspace:*
         version: link:packages/mode-agent
@@ -209,6 +212,9 @@ importers:
       '@ruobai/web-ws':
         specifier: workspace:*
         version: link:packages/web-ws
+      '@ruobai/wiki':
+        specifier: workspace:*
+        version: link:packages/wiki
       '@ruobai/workspace':
         specifier: workspace:*
         version: link:packages/workspace
@@ -620,6 +626,21 @@ importers:
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
+
+  packages/memory:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@ruobai/workspace':
+        specifier: workspace:*
+        version: link:../workspace
 
   packages/mode-agent:
     dependencies:
@@ -1099,6 +1120,24 @@ importers:
       '@types/ws':
         specifier: ^8.5.12
         version: 8.18.2
+
+  packages/wiki:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@ruobai/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.3.2
 
   packages/workspace:
     dependencies:
