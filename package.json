@@ -36,6 +36,8 @@
     "@ruobai/cordis-plugin-timer": "workspace:*",
     "@ruobai/git": "workspace:*",
     "@ruobai/git-web": "workspace:*",
+    "@ruobai/gitee": "workspace:*",
+    "@ruobai/gitee-web": "workspace:*",
     "@ruobai/hooks": "workspace:*",
     "@ruobai/hooks-web": "workspace:*",
     "@ruobai/lint": "workspace:*",

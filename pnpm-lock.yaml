@@ -68,6 +68,12 @@ importers:
       '@ruobai/git-web':
         specifier: workspace:*
         version: link:packages/git-web
+      '@ruobai/gitee':
+        specifier: workspace:*
+        version: link:packages/gitee
+      '@ruobai/gitee-web':
+        specifier: workspace:*
+        version: link:packages/gitee-web
       '@ruobai/hooks':
         specifier: workspace:*
         version: link:packages/hooks
@@ -433,6 +439,36 @@ importers:
       '@ruobai/workspace':
         specifier: workspace:*
         version: link:../workspace
+
+  packages/gitee:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/gitee-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/gitee':
+        specifier: workspace:*
+        version: link:../gitee
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/hooks:
     dependencies:
@@ -1181,12 +1217,6 @@ packages:
     engines: {node: '>=14.21.3'}
     hasBin: true
 
-  '@biomejs/cli-android-arm64@2.6.3':
-    resolution: {integrity: sha512-5JD7QQDEHxdeEb4sftEHG+lsuUyu8Cob/hVLqRELbgGlFl68Rldv/PPi2k4dRjERZ/EItJ3O6Xmv8lqsEtUBiw==}
-    engines: {node: '>=14.21.3'}
-    cpu: [arm64]
-    os: [android]
-
   '@biomejs/cli-android-x64@2.6.3':
     resolution: {integrity: sha512-70WOGKCgpT+Uqg6LFdTLqefV54/DypdZg+LnBQDO6AWvkgXO+9xhVClajQyDsIHYjnXMtI1pRO5sP+zMXlS/bw==}
     engines: {node: '>=14.21.3'}
@@ -1237,12 +1267,6 @@ packages:
     resolution: {integrity: sha512-00SthDxBPwNiT7IL/mOneif6fiEU1PXK875zhr+InpeZjovY1mF5tCuDhXo1Hh0GYyiKHKzLbItzn58SAyLhJQ==}
     engines: {node: '>=14.21.3'}
     cpu: [arm64]
-    os: [win32]
-
-  '@biomejs/cli-win32-x64@2.6.3':
-    resolution: {integrity: sha512-GhtOPphBWlnCepqpNk/w5eGN5oGRCzL20EbAkL1XCIpyboeVC9R642noyT43l8LSenGS4qz9IL8sKPfwY37V/Q==}
-    engines: {node: '>=14.21.3'}
-    cpu: [x64]
     os: [win32]
 
   '@braintree/sanitize-url@7.1.2':
@@ -2671,7 +2695,6 @@ snapshots:
 
   '@biomejs/biome@2.6.3':
     optionalDependencies:
-      '@biomejs/cli-android-arm64': 2.6.3
       '@biomejs/cli-android-x64': 2.6.3
       '@biomejs/cli-darwin-arm64': 2.6.3
       '@biomejs/cli-darwin-x64': 2.6.3
@@ -2680,10 +2703,6 @@ snapshots:
       '@biomejs/cli-linux-x64': 2.6.3
       '@biomejs/cli-linux-x64-musl': 2.6.3
       '@biomejs/cli-win32-arm64': 2.6.3
-      '@biomejs/cli-win32-x64': 2.6.3
-
-  '@biomejs/cli-android-arm64@2.6.3':
-    optional: true
 
   '@biomejs/cli-android-x64@2.6.3':
     optional: true
@@ -2707,9 +2726,6 @@ snapshots:
     optional: true
 
   '@biomejs/cli-win32-arm64@2.6.3':
-    optional: true
-
-  '@biomejs/cli-win32-x64@2.6.3':
     optional: true
 
   '@braintree/sanitize-url@7.1.2': {}

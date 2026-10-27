@@ -12,7 +12,7 @@ import {
 } from './parse.ts'
 import type {
   GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitFileStat,
-  GitInfo, GitLogQuery, GitLogResult, GitOperation, GitSyncResult,
+  GitInfo, GitLogQuery, GitLogResult, GitOperation, GitPushOptions, GitRemote, GitSyncResult,
 } from './types.ts'
 
 export * from './types.ts'
@@ -480,15 +480,71 @@ export class GitService extends Service {
     return { output: summarize(output, '已拉取远程更新') }
   }
 
-  async push(root: string): Promise<GitSyncResult> {
+  async remotes(root: string): Promise<GitRemote[]> {
+    const output = await this.run(root, ['remote', '-v']).catch(() => '')
+    const map = new Map<string, string>()
+    for (const line of output.split('\n')) {
+      const match = /^(\S+)\s+(\S+)\s+\((?:fetch|push)\)$/.exec(line.trim())
+      if (match) map.set(match[1]!, match[2]!)
+    }
+    return [...map].map(([name, url]) => ({ name, url }))
+  }
+
+  async remoteUrl(root: string, name: string) {
+    return (await this.remotes(root)).find(item => item.name === name)?.url
+  }
+
+  /** Adds a remote unless it already exists with the same URL. */
+  async addRemote(root: string, name: string, url: string) {
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) throw new GitError('remote 名称无效')
+    assertRemoteUrl(url)
+    const existing = await this.remoteUrl(root, name)
+    if (existing) {
+      if (existing === url) return { added: false, url }
+      throw new GitError(`remote ${name} 已存在且地址不同`, existing, 409)
+    }
+    await this.run(root, ['remote', 'add', name, url])
+    return { added: true, url }
+  }
+
+  async push(root: string, options: GitPushOptions = {}): Promise<GitSyncResult> {
     const { branch, detached } = await this.currentBranch(root)
     if (detached || !branch) throw new GitError('分离 HEAD 状态下无法推送')
-    const upstream = await this.upstreamOf(root)
-    const output = upstream
-      ? await this.run(root, ['push'], { network: true })
-      : await this.run(root, ['push', '-u', 'origin', branch], { network: true })
+    const remote = options.remote?.trim()
+    const target = options.branch?.trim() || branch
+    if (!/^[A-Za-z0-9._/-]+$/.test(target)) throw new GitError('分支名无效')
+    let args: string[]
+    if (remote) {
+      if (!(await this.remoteUrl(root, remote))) throw new GitError(`remote ${remote} 不存在`)
+      args = options.setUpstream ? ['push', '-u', remote, target] : ['push', remote, target]
+    } else {
+      const upstream = await this.upstreamOf(root)
+      args = upstream ? ['push'] : ['push', '-u', 'origin', target]
+    }
+    const output = await this.run(root, args, { network: true })
     return { output: summarize(output, '已推送') }
   }
+
+  async createTag(root: string, name: string, message?: string) {
+    await this.run(root, ['check-ref-format', `refs/tags/${name}`])
+    await this.run(root, message
+      ? ['tag', '-a', name, '-m', message]
+      : ['tag', name])
+  }
+
+  async pushTag(root: string, name: string, remote: string): Promise<GitSyncResult> {
+    await this.run(root, ['check-ref-format', `refs/tags/${name}`])
+    if (!(await this.remoteUrl(root, remote))) throw new GitError(`remote ${remote} 不存在`)
+    const output = await this.run(root, ['push', remote, name], { network: true })
+    return { output: summarize(output, '已推送标签') }
+  }
+}
+
+function assertRemoteUrl(url: string) {
+  if (!url || /\s/.test(url) || url.startsWith('-')) throw new GitError('remote 地址无效')
+  if (/^(https?|ssh|git|file):\/\//.test(url)) return
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:\S+$/.test(url)) return
+  throw new GitError('不支持的 remote 地址')
 }
 
 function clipPaths(paths: string[]) {

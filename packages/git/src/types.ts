@@ -116,3 +116,14 @@ export interface GitCommitResult {
 export interface GitSyncResult {
   output: string
 }
+
+export interface GitRemote {
+  name: string
+  url: string
+}
+
+export interface GitPushOptions {
+  remote?: string
+  branch?: string
+  setUpstream?: boolean
+}

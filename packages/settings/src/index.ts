@@ -164,6 +164,7 @@ export interface SettingsData {
   approval?: ApprovalSettings
   mcp?: McpSettings
   hooks?: HookSettings
+  gitee?: GiteeSettings
 }
 
 export type HookFailurePolicy = 'open' | 'close'
@@ -207,6 +208,24 @@ export interface HookSettings {
   audit?: HookAuditSettings
 }
 
+export type GiteeVisibility = 'public' | 'private'
+
+export interface GiteeSettings {
+  /** Write-only: never returned by `get()`. */
+  token?: string
+  /** Default namespace for creating repositories. */
+  owner?: string
+  apiBase?: string
+  visibility?: GiteeVisibility
+}
+
+export interface PublicGiteeSettings {
+  hasToken: boolean
+  owner?: string
+  apiBase?: string
+  visibility: GiteeVisibility
+}
+
 export interface PublicProvider {
   id: string
   name: string
@@ -229,6 +248,7 @@ export interface PublicSettings {
   approval?: { rules: ApprovalRule[]; guard: { enabled: boolean } }
   mcp?: PublicMcpSettings
   hooks?: HookSettings
+  gitee?: PublicGiteeSettings
 }
 
 export interface Config {
@@ -329,6 +349,7 @@ export class SettingsService extends Service {
       }
     }
     if (this.data.hooks) result.hooks = structuredClone(this.data.hooks)
+    if (this.data.gitee || process.env.GITEE_TOKEN) result.gitee = this.publicGitee()
     return result
   }
 
@@ -542,6 +563,51 @@ export class SettingsService extends Service {
     }
     if (patch.audit) next.audit = mergeAuditSettings(current.audit, patch.audit)
     this.data.hooks = next
+    return this.commit()
+  }
+
+  publicGitee(): PublicGiteeSettings {
+    const gitee = this.data.gitee
+    return {
+      hasToken: Boolean(this.giteeToken()),
+      ...(gitee?.owner ? { owner: gitee.owner } : {}),
+      ...(gitee?.apiBase ? { apiBase: gitee.apiBase } : {}),
+      visibility: gitee?.visibility === 'private' ? 'private' : 'public',
+    }
+  }
+
+  /** Host-only: the token never appears in the public settings view. */
+  giteeToken(): string | undefined {
+    return this.data.gitee?.token || process.env.GITEE_TOKEN || undefined
+  }
+
+  async updateGitee(patch: {
+    token?: string
+    clearToken?: boolean
+    owner?: string
+    apiBase?: string
+    visibility?: GiteeVisibility
+  }): Promise<PublicSettings> {
+    const gitee = this.data.gitee ??= {}
+    if (patch.clearToken) delete gitee.token
+    else if (typeof patch.token === 'string' && patch.token.trim()) gitee.token = patch.token.trim()
+
+    if (patch.owner !== undefined) {
+      const owner = patch.owner.trim()
+      if (owner) gitee.owner = owner
+      else delete gitee.owner
+    }
+
+    if (patch.apiBase !== undefined) {
+      const base = patch.apiBase.trim()
+      if (base) gitee.apiBase = normalizeBaseUrl(base)
+      else delete gitee.apiBase
+    }
+
+    if (patch.visibility !== undefined) {
+      gitee.visibility = patch.visibility === 'private' ? 'private' : 'public'
+    }
+
     return this.commit()
   }
 

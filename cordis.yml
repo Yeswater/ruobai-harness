@@ -288,6 +288,15 @@
 - id: git-web
   name: '@ruobai/git-web'
 
+# Gitee browsing, publishing, issues and pull requests. The token lives in
+# Settings → Gitee; like MCP/A2A these host-side requests bypass the shell
+# sandbox, while the workspace tools stay confined.
+- id: gitee
+  name: '@ruobai/gitee'
+
+- id: gitee-web
+  name: '@ruobai/gitee-web'
+
 # Agent Skills: discovers SKILL.md bundles under .ruobai/.claude/.agents.
 - id: skills
   name: '@ruobai/skills'

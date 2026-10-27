@@ -12,6 +12,8 @@ import ContextService from '@ruobai/context'
 import { Context } from '@ruobai/cordis'
 import GitService from '@ruobai/git'
 import GitWeb from '@ruobai/git-web'
+import GiteeService from '@ruobai/gitee'
+import GiteeWeb from '@ruobai/gitee-web'
 import HooksService from '@ruobai/hooks'
 import HooksWeb from '@ruobai/hooks-web'
 import LintService from '@ruobai/lint'
@@ -60,6 +62,13 @@ export interface HarnessOptions {
   web?: Partial<WebConfig>
   /** Extra context-service config (retention budgets, pruning, ...). */
   context?: Record<string, unknown>
+  /** Point the Gitee client at a local fixture in tests. */
+  gitee?: {
+    apiBase?: string
+    allowPrivateHost?: boolean
+    timeoutMs?: number
+    remoteTemplate?: string
+  }
 }
 
 /**
@@ -104,6 +113,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(McpCatalog))
   await mount(ctx.plugin(WorkspaceService, { root: process.cwd() }))
   await mount(ctx.plugin(GitService))
+  await mount(ctx.plugin(GiteeService, {
+    ...(options.gitee?.apiBase ? { apiBase: options.gitee.apiBase } : {}),
+    ...(options.gitee?.allowPrivateHost ? { allowPrivateHost: true } : {}),
+    ...(options.gitee?.timeoutMs ? { timeoutMs: options.gitee.timeoutMs } : {}),
+    ...(options.gitee?.remoteTemplate ? { remoteTemplate: options.gitee.remoteTemplate } : {}),
+  }))
   await mount(ctx.plugin(SkillsService, {
     globalRoot: protocolHome,
     homeDir: dir,
@@ -144,6 +159,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(HooksWeb))
   await mount(ctx.plugin(WorkspaceWeb))
   await mount(ctx.plugin(GitWeb))
+  await mount(ctx.plugin(GiteeWeb))
   await mount(ctx.plugin(CheckpointsWeb))
   await mount(ctx.plugin(SettingsWeb))
   await mount(ctx.plugin(SkillsWeb))

@@ -22,7 +22,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks'
+export type SettingsTab = 'providers' | 'mcp' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee'
 
 const NAV_GROUPS: Array<{
   label: string
@@ -43,6 +43,7 @@ const NAV_GROUPS: Array<{
     label: '这台电脑',
     items: [
       { id: 'sandbox', label: '沙箱', icon: <MonitorIcon size={15} />, keywords: '沙箱 守卫 拒绝 升级 seatbelt 审批' },
+      { id: 'gitee', label: 'Gitee', icon: <PlugIcon size={15} />, keywords: 'gitee 仓库 发布 release issue pr 令牌 token' },
       { id: 'runtime', label: '内置插件', icon: <PuzzleIcon size={15} />, keywords: '插件 服务 地址' },
     ],
   },
@@ -800,6 +801,10 @@ export function SettingsDialog({
         ) : tab === 'hooks' ? (
           <div className="settings-page-body scroll">
             <Slot name="settings.hooks" props={{ sessionId }} />
+          </div>
+        ) : tab === 'gitee' ? (
+          <div className="settings-page-body scroll">
+            <Slot name="settings.gitee" props={{ sessionId }} />
           </div>
         ) : (
           <div className="settings-page-body scroll plugins-page">
