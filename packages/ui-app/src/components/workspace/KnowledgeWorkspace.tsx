@@ -12,7 +12,7 @@ import {
 import { useConfirm } from '../ConfirmDialog.tsx'
 import { usePrompt } from '../PromptDialog.tsx'
 import {
-  AlertIcon, ArchiveIcon, CheckIcon, ClockIcon, FolderTreeIcon, PlusIcon, RefreshIcon, SearchIcon,
+  AlertIcon, ArchiveIcon, ClockIcon, FolderTreeIcon, PlusIcon, RefreshIcon, SearchIcon,
 } from '../Icons.tsx'
 import { MarkdownPreview, markdownHeadingId } from '../MarkdownPreview.tsx'
 
@@ -535,15 +535,12 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
             <PlusIcon size={14} />
             新建页面
           </button>
-          <button className="btn ghost compact" onClick={() => { setView('lint'); void runLint() }} title="检查断链、孤儿页与过期来源">
-            <CheckIcon size={13} />
-            检查
-          </button>
         </div>
 
         <div className="kb-search">
           <SearchIcon size={13} />
           <input
+            type="search"
             value={search}
             placeholder="检索页面（BM25）"
             aria-label="检索知识库"
@@ -560,23 +557,24 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
         </div>
 
         <div className="kb-views" role="tablist" aria-label="知识库视图">
-          <button role="tab" aria-selected={view === 'pages' && !hits} className={view === 'pages' && !hits ? 'active' : ''} onClick={() => selectView('pages')}>
+          <button role="tab" aria-controls="kb-view-panel" aria-selected={view === 'pages' && !hits} className={view === 'pages' && !hits ? 'active' : ''} onClick={() => selectView('pages')}>
             页面<span>{pages.length}</span>
           </button>
-          <button role="tab" aria-selected={view === 'proposals'} className={view === 'proposals' ? 'active' : ''} onClick={() => selectView('proposals')}>
+          <button role="tab" aria-controls="kb-view-panel" aria-selected={view === 'proposals'} className={view === 'proposals' ? 'active' : ''} onClick={() => selectView('proposals')}>
             提案<span>{proposals.length}</span>
           </button>
-          <button role="tab" aria-selected={view === 'catalog'} className={view === 'catalog' ? 'active' : ''} onClick={() => selectView('catalog')}>
+          <button role="tab" aria-controls="kb-view-panel" aria-selected={view === 'catalog'} className={view === 'catalog' ? 'active' : ''} onClick={() => selectView('catalog')}>
             目录<span>{catalogCount}</span>
           </button>
-          <button role="tab" aria-selected={view === 'lint'} className={view === 'lint' ? 'active' : ''} onClick={() => selectView('lint')}>
+          <button role="tab" aria-controls="kb-view-panel" aria-selected={view === 'lint'} className={view === 'lint' ? 'active' : ''} onClick={() => selectView('lint')}>
             检查<span>{findings?.length ?? ''}</span>
           </button>
         </div>
 
-        <div className="kb-side-scroll">
-          {hits
-            ? (
+        <div className="kb-side-scroll" id="kb-view-panel" role="tabpanel" aria-label="知识库视图内容">
+          {!data && !error
+            ? <SkeletonRows rows={6} />
+            : hits ? (
               <section className="kb-section">
                 <div className="kb-section-head">
                   <span>检索结果 {hits.length}{searchTruncated ? '+' : ''}</span>
@@ -638,6 +636,7 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
                         <button
                           key={page.id}
                           className={`kb-page ${selected?.id === page.id && !proposalMode ? 'active' : ''}`}
+                          aria-current={selected?.id === page.id && !proposalMode ? 'page' : undefined}
                           onClick={() => void open(page.id)}
                         >
                           <span className={`kb-page-dot ${page.status === 'ready' ? 'ok' : page.status === 'stale' ? 'warn' : 'off'}`} />
@@ -834,7 +833,7 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
                 )
                 : (
                   <>
-                    <button className="btn ghost compact" onClick={() => void rejectProposal(proposal.id)} disabled={busy}>
+                    <button className="btn ghost compact danger" onClick={() => void rejectProposal(proposal.id)} disabled={busy}>
                       拒绝
                     </button>
                     <button className="btn ghost compact" onClick={() => setMode('proposal-edit')} disabled={busy}>
@@ -874,7 +873,7 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
                           </button>
                         )
                         : null}
-                      <button className="btn ghost compact" onClick={() => setMode('edit')}>编辑</button>
+                      <button className="btn compact" onClick={() => setMode('edit')}>编辑</button>
                     </>
                   )
                 : null}
@@ -922,57 +921,61 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
               : (
                 <div className={`kb-doc-scroll ${headings.length ? '' : 'solo'}`} ref={scrollRef}>
                   <article className="kb-doc" ref={contentRef}>
-                    <h1>{selected.meta.title}</h1>
-                    <div className="kb-doc-meta">
-                      <span className={`kb-status ${selected.meta.status}`}>
-                        {STATUS_LABEL[selected.meta.status] ?? selected.meta.status}
-                      </span>
-                      <span className={`kb-confidence ${selected.meta.confidence ?? 'low'}`}>
-                        {CONFIDENCE_LABEL[selected.meta.confidence ?? 'low'] ?? '未标注'}
-                      </span>
-                      <span>r{selected.meta.revision}</span>
-                      {selected.meta.updated ? <span>{selected.meta.updated.slice(0, 10)}</span> : null}
-                      <span>{selected.id}</span>
-                      <span
-                        className={`kb-catalog ${selectedInCatalog ? 'ok' : 'off'}`}
-                        title="手动加入 index.md 的目录分组；ready、已溯源且有摘要的页面也会自动进入模型目录"
-                      >
-                        {selectedInCatalog ? `${selectedGroup ? `${selectedGroup} · ` : ''}目录内` : '未入目录'}
-                      </span>
-                      {selected.id
-                        ? (
-                          <button
-                            className="kb-link"
-                            disabled={catalogBusy}
-                            onClick={() => {
-                              if (selectedInCatalog) void removeFromCatalog(selected.id)
-                              else void addToCatalog(selected.id)
-                            }}
-                          >
-                            {selectedInCatalog ? '移出目录' : '加入目录'}
-                          </button>
-                        )
-                        : null}
-                      {/^##\s*冲突/m.test(selected.body)
-                        ? <span className="kb-status stale">冲突未消解</span>
-                        : null}
-                      {selected.meta.tags?.length
-                        ? selected.meta.tags.map(tag => (
-                          <button
-                            key={tag}
-                            className="kb-tag"
-                            onClick={() => {
-                              setTagFilter(tag)
-                              setStatusFilter('all')
-                              setView('pages')
-                              setHits(null)
-                            }}
-                          >
-                            {tag}
-                          </button>
-                        ))
-                        : null}
-                    </div>
+                    <header className="kb-doc-head">
+                      <h1>{selected.meta.title}</h1>
+                      <div className="kb-doc-meta">
+                        <span className={`kb-status ${selected.meta.status}`}>
+                          {STATUS_LABEL[selected.meta.status] ?? selected.meta.status}
+                        </span>
+                        <span className={`kb-confidence ${selected.meta.confidence ?? 'low'}`}>
+                          {CONFIDENCE_LABEL[selected.meta.confidence ?? 'low'] ?? '未标注'}
+                        </span>
+                        <span>r{selected.meta.revision}</span>
+                        {selected.meta.updated ? <span>{selected.meta.updated.slice(0, 10)}</span> : null}
+                        {/^##\s*冲突/m.test(selected.body)
+                          ? <span className="kb-status stale">冲突未消解</span>
+                          : null}
+                      </div>
+                      <div className="kb-doc-meta-sub">
+                        <span className="kb-page-id">{selected.id}</span>
+                        <span
+                          className={`kb-catalog ${selectedInCatalog ? 'ok' : 'off'}`}
+                          title="手动加入 index.md 的目录分组；ready、已溯源且有摘要的页面也会自动进入模型目录"
+                        >
+                          {selectedInCatalog ? `${selectedGroup ? `${selectedGroup} · ` : ''}目录内` : '未入目录'}
+                        </span>
+                        {selected.id
+                          ? (
+                            <button
+                              className="kb-link"
+                              disabled={catalogBusy}
+                              onClick={() => {
+                                if (selectedInCatalog) void removeFromCatalog(selected.id)
+                                else void addToCatalog(selected.id)
+                              }}
+                            >
+                              {selectedInCatalog ? '移出目录' : '加入目录'}
+                            </button>
+                          )
+                          : null}
+                        {selected.meta.tags?.length
+                          ? selected.meta.tags.map(tag => (
+                            <button
+                              key={tag}
+                              className="kb-tag"
+                              onClick={() => {
+                                setTagFilter(tag)
+                                setStatusFilter('all')
+                                setView('pages')
+                                setHits(null)
+                              }}
+                            >
+                              {tag}
+                            </button>
+                          ))
+                          : null}
+                      </div>
+                    </header>
 
                     <SourceList sources={selected.meta.sources ?? []} stale={selected.stale} />
 
@@ -1088,41 +1091,61 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
 
                   {headings.length
                     ? (
-                      <aside className="kb-toc" aria-label="目录">
+                      <nav className="kb-toc" aria-label="页内目录">
                         <div className="kb-toc-title">目录</div>
                         {headings.map(heading => (
                           <button
                             key={`${heading.id}-${heading.text}`}
                             className={`kb-toc-item depth-${heading.depth} ${activeHeading === heading.id ? 'active' : ''}`}
+                            aria-current={activeHeading === heading.id ? 'location' : undefined}
                             onClick={() => jumpTo(heading.id)}
                           >
                             {heading.text}
                           </button>
                         ))}
-                      </aside>
+                      </nav>
                     )
                     : null}
                 </div>
               )
-            : (
-              <div className="kb-empty">
-                <FolderTreeIcon size={32} />
-                <h2>{proposals.length ? '有提案等待审阅' : '从一个页面开始'}</h2>
-                <p>
-                  {proposals.length
-                    ? '模型生成的页面变更先进入提案，接受后才会改动页面。'
-                    : '知识库保存项目里值得反复使用的事实、决策与做法。页面是 Markdown，始终由你掌控。'}
-                </p>
-                <div className="kb-empty-actions">
-                  {proposals.length ? <button className="btn" onClick={() => selectView('proposals')}>查看 {proposals.length} 个提案</button> : null}
-                  <button className="btn ghost" onClick={startNew}>
-                    <PlusIcon size={14} />
-                    新建页面
-                  </button>
+            : !data && !error
+              ? (
+                <div className="kb-doc-loading" role="status" aria-label="正在读取知识库">
+                  <div className="kb-skeleton-row kb-skeleton-title" />
+                  <SkeletonRows rows={2} />
+                  <SkeletonRows rows={5} />
                 </div>
-              </div>
-            )}
+              )
+              : (
+                <div className="kb-empty">
+                  <span className="kb-empty-mark">
+                    <FolderTreeIcon size={22} />
+                  </span>
+                  <h2>{proposals.length ? '有提案等待审阅' : '从一个页面开始'}</h2>
+                  <p>
+                    {proposals.length
+                      ? '模型生成的页面变更先进入提案，接受后才会改动页面。'
+                      : '知识库保存项目里值得反复使用的事实、决策与做法。页面是 Markdown，始终由你掌控；左栏「检查」会找出断链、孤儿页与过期来源。'}
+                  </p>
+                  <div className="kb-empty-actions">
+                    {proposals.length ? <button className="btn" onClick={() => selectView('proposals')}>查看 {proposals.length} 个提案</button> : null}
+                    <button className="btn ghost" onClick={startNew}>
+                      <PlusIcon size={14} />
+                      新建页面
+                    </button>
+                  </div>
+                </div>
+              )}
       </section>
+    </div>
+  )
+}
+
+/** Loading placeholder shared by the curation list and the document column. */
+function SkeletonRows({ rows }: { rows: number }) {
+  return (
+    <div className="kb-skeleton" aria-hidden="true">
+      {Array.from({ length: rows }, (_, index) => <div className="kb-skeleton-row" key={index} />)}
     </div>
   )
 }
@@ -1209,15 +1232,19 @@ function ProposalReview({ proposal, pane, onPaneChange, editing, draft, onDraftC
   return (
     <div className="kb-proposal-scroll">
       <article className="kb-doc">
-        <div className="kb-doc-meta">
-          <span className="kb-status draft">提案</span>
-          <span className={`kb-confidence ${proposal.meta.confidence ?? 'low'}`}>
-            {CONFIDENCE_LABEL[proposal.meta.confidence ?? 'low'] ?? '未标注'}
-          </span>
-          <span>{proposal.existing ? `更新 ${proposal.existing.meta.id}` : '新建页面'}</span>
-          <span>{proposal.path}</span>
-        </div>
-        <h1>{proposal.meta.title}</h1>
+        <header className="kb-doc-head">
+          <h1>{proposal.meta.title}</h1>
+          <div className="kb-doc-meta">
+            <span className="kb-status draft">提案</span>
+            <span className={`kb-confidence ${proposal.meta.confidence ?? 'low'}`}>
+              {CONFIDENCE_LABEL[proposal.meta.confidence ?? 'low'] ?? '未标注'}
+            </span>
+            <span>{proposal.existing ? `更新 ${proposal.existing.meta.id}` : '新建页面'}</span>
+          </div>
+          <div className="kb-doc-meta-sub">
+            <span className="kb-page-id">{proposal.path}</span>
+          </div>
+        </header>
         <SourceList sources={proposal.meta.sources ?? []} stale={[]} />
 
         {metaChanges.length

@@ -8949,10 +8949,16 @@ body.resizing .file-side-resizer::after {
   background: none;
   color: var(--text);
   font-size: 12px;
+  appearance: none;
 }
 
 .kb-search input::placeholder {
   color: var(--faint);
+}
+
+/* type=search draws its own cancel affordance in Safari; the row has one. */
+.kb-search input::-webkit-search-cancel-button {
+  appearance: none;
 }
 
 .kb-search button {
@@ -9129,7 +9135,7 @@ body.resizing .file-side-resizer::after {
   flex: none;
   width: 6px;
   height: 6px;
-  margin-top: 7px;
+  margin-top: 6px;
   border-radius: 50%;
   background: var(--faint);
 }
@@ -10217,11 +10223,15 @@ body.resizing .file-side-resizer::after {
   100% { background-position: -100% 0; }
 }
 
-.kb-skeleton-doc {
+.kb-doc-loading {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 12px;
-  padding: 40px 4px;
+  width: 100%;
+  max-width: var(--kb-measure);
+  margin: 0 auto;
+  padding: 44px 32px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -10233,6 +10243,11 @@ body.resizing .file-side-resizer::after {
 /* Responsive */
 
 @media (max-width: 1180px) {
+  /* The outline is gone, so give the measure the room it was using. */
+  .kb-view {
+    grid-template-columns: minmax(248px, 264px) minmax(0, 1fr);
+  }
+
   .kb-doc-scroll {
     grid-template-columns: minmax(0, var(--kb-measure));
     padding: 32px 28px 80px;
