@@ -20,8 +20,6 @@ interface TranscriptProps {
   session: ChatSession | null
   /** Daily user activity for the empty-session contribution graph. */
   activity: ActivitySummary | null
-  /** Interrupt the turn and start this queued message now. */
-  onSendQueued?: (queuedId: string) => void
   /** Take a queued message back into the input box for editing. */
   onEditQueued?: (queuedId: string) => void
   /** Discard a queued message. */
@@ -31,7 +29,7 @@ interface TranscriptProps {
 const FOLLOW_THRESHOLD = 24
 
 export function Transcript({
-  session, activity, onSendQueued, onEditQueued, onWithdrawQueued,
+  session, activity, onEditQueued, onWithdrawQueued,
 }: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -146,13 +144,13 @@ export function Transcript({
             )
           })}
 
-          {/* Queued messages are not in the log yet: the host appends them when
-              their turn starts, so they are drawn from the queue instead. */}
+          {/* Queued messages are not in the log yet: the host admits them at the
+              next step boundary of the running turn, so they are drawn from the
+              queue until then. */}
           {queued.filter(item => !messages.some(message => message.id === item.id)).map(item => (
             <UserMessage
               key={item.id}
               queued
-              onSend={onSendQueued ? () => onSendQueued(item.id) : undefined}
               onEdit={onEditQueued ? () => onEditQueued(item.id) : undefined}
               onWithdraw={onWithdrawQueued ? () => onWithdrawQueued(item.id) : undefined}
               message={{
@@ -187,10 +185,9 @@ export function Transcript({
   )
 }
 
-function UserMessage({ message, queued, onSend, onEdit, onWithdraw }: {
+function UserMessage({ message, queued, onEdit, onWithdraw }: {
   message: ChatMessage
   queued?: boolean
-  onSend?: () => void
   onEdit?: () => void
   onWithdraw?: () => void
 }) {
@@ -224,17 +221,10 @@ function UserMessage({ message, queued, onSend, onEdit, onWithdraw }: {
       {queued
         ? (
           <div className="msg-queued">
-            <span>排队中 · 当前回合结束后发送</span>
-            {onSend || onEdit || onWithdraw
+            <span>排队中 · 当前步骤结束后发给模型</span>
+            {onEdit || onWithdraw
               ? (
                 <span className="msg-queued-actions">
-                  {onSend
-                    ? (
-                      <button type="button" className="msg-queued-action" onClick={onSend} title="打断当前回合，立刻发送这条">
-                        发送
-                      </button>
-                    )
-                    : null}
                   {onEdit
                     ? (
                       <button type="button" className="msg-queued-action" onClick={onEdit} title="撤回并放回输入框，编辑后重新发送">

@@ -62,6 +62,16 @@ export interface PromptOptions {
   id?: string
 }
 
+/**
+ * Messages the user sent while a turn was running.
+ *
+ * They are appended at a step boundary — after the current step's tool calls
+ * finished and before the next request — so the model reads them in the same
+ * turn instead of the step being produced getting cut off. Returning them
+ * transfers ownership: the source must drop them from whatever it showed.
+ */
+export type InterjectionSource = (sessionId: string) => UserMessageData[]
+
 export interface RunResult {
   reason: TurnEndReason
   /** The last non-empty assistant text emitted during the turn. */
@@ -131,6 +141,7 @@ export class AgentService extends Service {
   })
 
   private readonly turns = new Map<string, AbortController>()
+  private interjections: InterjectionSource | undefined
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agents')
@@ -138,6 +149,14 @@ export class AgentService extends Service {
       for (const controller of this.turns.values()) controller.abort()
       this.turns.clear()
     }, 'agents.abort-turns')
+  }
+
+  /** Wired by the chat service: its queue is what a turn may interject with. */
+  registerInterjections(source: InterjectionSource): () => void {
+    this.interjections = source
+    return () => {
+      if (this.interjections === source) this.interjections = undefined
+    }
   }
 
   isRunning(sessionId: string) {
@@ -274,6 +293,11 @@ export class AgentService extends Service {
           reason = 'stopped'
           break
         }
+
+        // A message the user sent while this turn ran waits for a step to
+        // settle; admitting it mid-stream would cut the step it is answering.
+        // `steps > 0` keeps the first request exactly as prompt() submitted it.
+        if (steps > 0) this.admitInterjections(sessionId)
 
         // Tool output can balloon mid-turn; re-check pressure before every
         // follow-up request instead of only once per turn.
@@ -539,6 +563,19 @@ export class AgentService extends Service {
       this.ctx.emit('agent/usage', sessionId, stats)
     }
     return { reason, text: lastText }
+  }
+
+  /**
+   * Fold messages queued during this turn into the log at a step boundary.
+   *
+   * Appending rather than stashing them for the next request keeps the rule
+   * that everything the model sees is in the log; the chat projection turns
+   * them into ordinary user rows.
+   */
+  private admitInterjections(sessionId: string) {
+    const pending = this.interjections?.(sessionId)
+    if (!pending?.length) return
+    for (const message of pending) this.ctx.sessions.append(sessionId, 'message/user', message)
   }
 
   /**

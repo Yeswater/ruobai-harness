@@ -498,7 +498,7 @@ describe('ui server', () => {
     expect(forked.status).toBe(409)
   })
 
-  it('takes back and sends a queued message', async () => {
+  it('takes a queued message back', async () => {
     const harness = await createHarness({ delay: 30 })
     harnesses.push(harness)
     const { ctx } = harness
@@ -532,10 +532,12 @@ describe('ui server', () => {
 
     const again = await (await send()).json() as { message: { id: string }; queued?: boolean }
     expect(again.queued).toBe(true)
-    const sent = await fetch(`${ctx.web.url}/api/sessions/${sid}/queued/${again.message.id}/send`, {
-      method: 'POST',
+    const takenAgain = await fetch(`${ctx.web.url}/api/sessions/${sid}/queued/${again.message.id}`, {
+      method: 'DELETE',
     })
-    expect(sent.status).toBe(200)
+    expect(takenAgain.status).toBe(200)
+    const entry = await takenAgain.json() as { queued: { id: string } }
+    expect(entry.queued.id).toBe(again.message.id)
   })
 
   it('creates a session bound to a workspace and rejects invalid roots', async () => {

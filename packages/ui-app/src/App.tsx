@@ -530,10 +530,6 @@ export function App() {
               <Transcript
                 session={harness.session}
                 activity={activity}
-                onSendQueued={(queuedId) => {
-                  const session = harness.session
-                  if (session) harness.sendQueuedNow(session.id, queuedId)
-                }}
                 onEditQueued={(queuedId) => {
                   const session = harness.session
                   if (!session) return

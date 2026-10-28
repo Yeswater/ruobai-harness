@@ -488,13 +488,6 @@ export function useHarness() {
     }
   }, [fail])
 
-  /** Interrupt the turn and start a queued message right away. */
-  const sendQueuedNow = useCallback((id: string, queuedId: string) => {
-    void api.sendQueuedNow(id, queuedId)
-      .then((next) => setSession(previous => previous && previous.id === id ? next : previous))
-      .catch(fail)
-  }, [fail])
-
   const resolveApproval = useCallback((id: string, decision: ApprovalDecision) => {
     setApprovals(previous => previous.filter(item => item.id !== id))
     void api.resolveApproval(id, decision).catch((caught) => {
@@ -531,7 +524,6 @@ export function useHarness() {
     setModel,
     setPermission,
     withdrawQueued,
-    sendQueuedNow,
     resolveApproval,
     dismissError: () => setError(null),
   }

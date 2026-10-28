@@ -291,12 +291,11 @@ export class UiApi extends Service {
       return true
     }
 
-    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact|queued)(?:\/([^/]+))?(?:\/(send))?)?$/.exec(pathname)
+    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact|queued)(?:\/([^/]+))?)?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
     const action = match[2]
     const queuedId = match[3] ? decodeURIComponent(match[3]) : undefined
-    const queuedAction = match[4]
 
     if (!action && method === 'GET') {
       const session = this.ctx.chat.get(id)
@@ -442,12 +441,6 @@ export class UiApi extends Service {
       if (!queuedId) throw new HttpError(400, 'queued message id is required')
       const queued = this.ctx.chat.withdraw(id, queuedId)
       sendJson(res, 200, { queued, session: this.ctx.chat.get(id) })
-      return true
-    }
-
-    if (action === 'queued' && method === 'POST' && queuedAction === 'send') {
-      if (!queuedId) throw new HttpError(400, 'queued message id is required')
-      sendJson(res, 200, { session: this.ctx.chat.sendNow(id, queuedId) })
       return true
     }
 

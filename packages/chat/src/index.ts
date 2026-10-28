@@ -51,6 +51,13 @@ export class ChatService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'chat')
 
+    // The agent asks for queued messages at every step boundary; this queue is
+    // what an interjection is made of.
+    ctx.effect(
+      () => ctx.agents.registerInterjections(id => this.takeInterjections(id)),
+      'agents.registerInterjections',
+    )
+
     ctx.on('session/created', (meta) => {
       if (meta.kind === 'subagent') return
       const session = this.ensure(meta.id)
@@ -268,9 +275,9 @@ export class ChatService extends Service {
    * Submit a user message.
    *
    * A running turn does not reject it: the message joins the session's queue
-   * and opens its own turn once the current one ends. The log gets the
-   * `message/user` event only when that turn starts, so the model never sees
-   * a message that was queued behind the step it is producing.
+   * and the agent admits it at the next step boundary, so it is read inside the
+   * same turn instead of the step being produced getting interrupted. The log
+   * gets the `message/user` event only at that boundary.
    */
   send(id: string, text: string, attachments: AttachmentMeta[] = []): SendResult {
     const session = this.ensure(id)
@@ -322,23 +329,28 @@ export class ChatService extends Service {
   }
 
   /**
-   * Send a queued message now: interrupt the running turn, move the entry to
-   * the front and let the turn ending start it. Mirrors Claude Code's
-   * "send queued messages now".
+   * Hand the agent everything waiting in the queue and stop showing it as
+   * "queued": the messages are about to become ordinary log rows under the ids
+   * the transcript already used.
    */
-  sendNow(id: string, queuedId: string): ChatSession {
+  private takeInterjections(id: string): Array<{
+    id: string
+    text: string
+    at: number
+    attachments?: AttachmentMeta[]
+  }> {
     const queue = this.queues.get(id)
-    const index = queue?.findIndex(item => item.id === queuedId) ?? -1
-    if (!queue || index < 0) throw new Error('unknown queued message')
-    if (index > 0) {
-      const [item] = queue.splice(index, 1)
-      queue.unshift(item!)
-    }
-    this.publishQueue(this.ensure(id))
-    this.ctx.agents.stop(id)
-    // Nothing was running (the turn ended first): start it ourselves.
-    if (!this.ctx.agents.isRunning(id)) this.drain(id)
-    return this.ensure(id)
+    if (!queue?.length) return []
+    this.queues.delete(id)
+    const session = this.sessions.get(id)
+    if (session) this.publishQueue(session)
+    const at = Date.now()
+    return queue.map(item => ({
+      id: item.id,
+      text: item.text,
+      at,
+      ...(item.attachments?.length ? { attachments: item.attachments } : {}),
+    }))
   }
 
   /** Start the next queued message as its own turn. */

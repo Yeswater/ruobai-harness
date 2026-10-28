@@ -592,12 +592,6 @@ export const api = {
       { method: 'DELETE' },
     ),
 
-  sendQueuedNow: async (id: string, queuedId: string) =>
-    (await request<{ session: ChatSession }>(
-      `/api/sessions/${encodeURIComponent(id)}/queued/${encodeURIComponent(queuedId)}/send`,
-      { method: 'POST' },
-    )).session,
-
   stopSession: async (id: string) =>
     request<{ ok: true }>(`/api/sessions/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
 

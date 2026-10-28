@@ -117,7 +117,7 @@ describe('context service', () => {
 
     const meta = ctx.sessions.create()
     ctx.sessions.append(meta.id, 'message/user', { id: 'm1', text: '开始', at: 1 })
-    // 「立即发送」中断了一个还在思考的回合：这条消息只有 reasoning。
+    // 「停止」中断了一个还在思考的回合：这条消息只有 reasoning。
     ctx.sessions.append(meta.id, 'message/assistant', {
       id: 'a1',
       parts: [{ type: 'reasoning', text: '正在分析…' }],
