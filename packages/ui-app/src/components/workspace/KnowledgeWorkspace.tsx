@@ -117,6 +117,8 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
   const [pendingHeading, setPendingHeading] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  // Set while a click/跳转 drives the scroll, so the spy cannot steal the highlight.
+  const spySuppressed = useRef(false)
 
   const load = async () => {
     setError(null)
@@ -250,21 +252,69 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
 
   const headings = useMemo(() => selected && mode === 'read' ? headingsOf(selected.body) : [], [selected, mode])
 
-  // Scroll-spy for the outline: the topmost heading in the relaxed viewport wins.
+  // Hold the spy off until the scroll stops moving. A fixed timeout is not enough:
+  // a long jump (bottom of a long page → 摘要) is still in flight when it fires,
+  // and the heading passing the read line would take the highlight.
+  const holdSpy = () => {
+    spySuppressed.current = true
+    const root = scrollRef.current
+    if (!root) {
+      spySuppressed.current = false
+      return
+    }
+    let last = root.scrollTop
+    let still = 0
+    const started = performance.now()
+    const tick = () => {
+      if (!spySuppressed.current) return
+      const now = root.scrollTop
+      still = Math.abs(now - last) < 1 ? still + 1 : 0
+      last = now
+      if (still >= 4 || performance.now() - started > 1500) {
+        spySuppressed.current = false
+        return
+      }
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }
+
+  // Scroll-spy for the outline: the last heading whose top has crossed the read
+  // line wins, and the final heading is pinned once the column hits the bottom.
+  // A short page can never bring its last heading up to the line, so without the
+  // bottom rule the last section would be unreachable — and a smooth-scroll jump
+  // would be overwritten by whatever heading passes the line on the way.
   useEffect(() => {
     const root = scrollRef.current
     const content = contentRef.current
     if (mode !== 'read' || !root || !content) return
     const nodes = [...content.querySelectorAll('h2, h3')] as HTMLElement[]
     if (!nodes.length) return
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries
-        .filter(entry => entry.isIntersecting)
-        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)
-      if (visible[0]?.target.id) setActiveHeading(visible[0].target.id)
-    }, { root, rootMargin: '0px 0px -72% 0px' })
-    for (const node of nodes) observer.observe(node)
-    return () => observer.disconnect()
+    const READ_LINE = 88
+
+    const update = () => {
+      if (spySuppressed.current) return
+      const atBottom = root.scrollTop + root.clientHeight >= root.scrollHeight - 2
+      if (atBottom) {
+        setActiveHeading(nodes[nodes.length - 1]!.id)
+        return
+      }
+      const rootTop = root.getBoundingClientRect().top
+      let current = nodes[0]!.id
+      for (const node of nodes) {
+        if (node.getBoundingClientRect().top - rootTop <= READ_LINE) current = node.id
+        else break
+      }
+      setActiveHeading(current)
+    }
+
+    update()
+    root.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      root.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
   }, [mode, selected?.id, selected?.body])
 
   // A search hit names a heading; scroll to it once the page has rendered.
@@ -273,6 +323,7 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
     const nodes = contentRef.current?.querySelectorAll('h2, h3')
     if (!nodes?.length) return
     const target = [...nodes].find(node => node.id === pendingHeading)
+    holdSpy()
     target?.scrollIntoView({ block: 'start', behavior: 'smooth' })
     setActiveHeading(pendingHeading)
     setPendingHeading(null)
@@ -471,8 +522,12 @@ export function KnowledgeWorkspace({ sessionId }: { sessionId?: string }) {
     const nodes = contentRef.current?.querySelectorAll('h2, h3')
     if (!nodes) return
     const target = [...nodes].find(node => node.id === id)
-    target?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (!target) return
+    // Hold the spy off until the smooth scroll settles, otherwise the heading
+    // passing the read line mid-flight wins and the click looks ignored.
+    holdSpy()
     setActiveHeading(id)
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
   const pages = data?.pages ?? []
