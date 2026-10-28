@@ -42,6 +42,11 @@ export function isSidebarShortcut(event: KeyLike) {
   return isPlainMod(event) && event.key.toLowerCase() === 'b'
 }
 
+/** ⌘J / Ctrl+J: show or hide the terminal dock. */
+export function isTerminalShortcut(event: KeyLike) {
+  return isPlainMod(event) && event.key.toLowerCase() === 'j'
+}
+
 /** ⌘\ / Ctrl+\: expand or collapse the active right-hand panel. */
 export function isExpandShortcut(event: KeyLike) {
   return isPlainMod(event) && (event.key === '\\' || event.code === 'Backslash')

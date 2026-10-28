@@ -165,6 +165,27 @@
     width: 1280
     height: 800
 
+# Interactive shells for the UI. `script(1)` provides the pty, so no native
+# module is needed. Terminals are user-facing only: no agent tool writes to
+# them, because that would be a shell outside the command boundary.
+- id: terminal
+  name: '@ruobai/terminal'
+  config:
+    root: !!js "process.cwd()"
+
+- id: terminal-web
+  name: '@ruobai/terminal-web'
+
+# Development servers declared in .ruobai/launch.json (or .claude/launch.json).
+# The UI starts and stops them; no tool does, for the same boundary reason.
+- id: preview
+  name: '@ruobai/preview'
+  config:
+    root: !!js "process.cwd()"
+
+- id: preview-web
+  name: '@ruobai/preview-web'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'

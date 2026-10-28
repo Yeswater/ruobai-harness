@@ -6,6 +6,7 @@ import { ContextMenuProvider } from './components/ContextMenu.tsx'
 import { PromptProvider } from './components/PromptDialog.tsx'
 import './slots.ts'
 import './styles.css'
+import './panels.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root is missing')

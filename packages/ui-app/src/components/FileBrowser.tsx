@@ -74,9 +74,11 @@ interface FileBrowserProps {
   sessionId?: string
   /** Insert an `@path` reference into the composer. */
   onReference?: (path: string) => void
+  /** Open this file once per token; used by the session panel. */
+  openPath?: { path: string; token: number }
 }
 
-export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
+export function FileBrowser({ sessionId, onReference, openPath }: FileBrowserProps) {
   const contextMenu = useContextMenu()
   const [root, setRoot] = useState<WorkspaceEntry | null>(null)
   const [children, setChildren] = useState<Record<string, WorkspaceEntry[]>>({})
@@ -274,6 +276,15 @@ export function FileBrowser({ sessionId, onReference }: FileBrowserProps) {
       return false
     }
   }
+
+  const openedToken = useRef(0)
+  useEffect(() => {
+    if (!openPath || openPath.token === openedToken.current) return
+    openedToken.current = openPath.token
+    void openFile(openPath.path)
+    // `openFile` closes over the current session and tabs; only the request
+    // token should retrigger this.
+  }, [openPath?.token])
 
   const closeTab = (path: string) => {
     const index = tabs.findIndex(tab => tab.path === path)

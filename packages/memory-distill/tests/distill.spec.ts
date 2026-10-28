@@ -18,7 +18,10 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
 })
 
-async function waitFor(check: () => Promise<boolean> | boolean, timeout = 3_000) {
+// The commit is scheduled behind a 1 ms idle boundary; under a full parallel
+// suite the event loop can starve it past three seconds. Assertions stay the
+// same, only the scheduling tolerance is wider.
+async function waitFor(check: () => Promise<boolean> | boolean, timeout = 8_000) {
   const started = Date.now()
   while (Date.now() - started < timeout) {
     if (await check()) return

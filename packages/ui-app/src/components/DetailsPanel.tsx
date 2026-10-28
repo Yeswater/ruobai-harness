@@ -3,9 +3,11 @@ import type { ChatSession } from '@ruobai/chat-protocol'
 import { modKeyLabel } from '../shortcuts.ts'
 import { FileBrowser } from './FileBrowser.tsx'
 import { GitPanel } from './git/GitPanel.tsx'
+import { PreviewPane } from './PreviewPane.tsx'
+import { SessionPanel } from './SessionPanel.tsx'
 import { CollapseIcon, CloseIcon, ExpandIcon } from './Icons.tsx'
 
-export type FileView = 'files' | 'git'
+export type FileView = 'files' | 'git' | 'preview' | 'session'
 
 interface DetailsPanelProps {
   session: ChatSession | null
@@ -17,16 +19,26 @@ interface DetailsPanelProps {
   onClose: () => void
   /** Insert `@path` for the given file into the composer. */
   onReferenceFile: (path: string) => void
+  /** Open this file once per token when the file browser mounts/updates. */
+  openPath?: { path: string; token: number }
+  onOpenContext: () => void
+  onOpenGit: () => void
+  onOpenFile: (path: string) => void
+  onOpenSettings: () => void
+  onOpenChanges: () => void
 }
 
 const TITLES: Record<FileView, string> = {
   files: '文件',
   git: 'Git',
+  preview: '预览',
+  session: '会话',
 }
 
 /** File explorer and source control, independent of the session panel. */
 export function DetailsPanel({
   session, view, width, expanded, onToggleExpand, onResize, onClose, onReferenceFile,
+  openPath, onOpenContext, onOpenGit, onOpenFile, onOpenSettings, onOpenChanges,
 }: DetailsPanelProps) {
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -74,12 +86,25 @@ export function DetailsPanel({
         </div>
       </div>
 
-      <div className={`details-scroll bare ${view === 'git' ? 'git-scroll' : ''}`}>
-        {session
-          ? view === 'files'
-            ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} />
-            : <GitPanel sessionId={session.id} expanded={expanded} />
-          : <div className="loading">no session</div>}
+      <div className={`details-scroll bare ${view === 'git' ? 'git-scroll' : ''} ${view === 'preview' ? 'preview-scroll' : ''} ${view === 'session' ? 'session-scroll' : ''}`}>
+        {view === 'preview'
+          ? <PreviewPane />
+          : view === 'session'
+            ? (
+              <SessionPanel
+                session={session}
+                onOpenContext={onOpenContext}
+                onOpenGit={onOpenGit}
+                onOpenFile={onOpenFile}
+                onOpenSettings={onOpenSettings}
+                onOpenChanges={onOpenChanges}
+              />
+            )
+            : session
+              ? view === 'files'
+                ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} openPath={openPath} />
+                : <GitPanel sessionId={session.id} expanded={expanded} />
+              : <div className="loading">no session</div>}
       </div>
     </aside>
   )

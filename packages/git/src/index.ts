@@ -11,8 +11,9 @@ import {
   parseNumstat, parseStatus,
 } from './parse.ts'
 import type {
-  GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitFileStat,
+  CreatePullInput, GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitFileStat,
   GitInfo, GitLogQuery, GitLogResult, GitOperation, GitPushOptions, GitRemote, GitSyncResult,
+  PullResult,
 } from './types.ts'
 
 export * from './types.ts'
@@ -538,6 +539,106 @@ export class GitService extends Service {
     const output = await this.run(root, ['push', remote, name], { network: true })
     return { output: summarize(output, '已推送标签') }
   }
+
+  /**
+   * Commit the selected paths on a fresh branch, push it, and open a PR.
+   *
+   * GitHub goes through `gh`, Gitee through the Gitee service's API. Paths are
+   * committed with a pathspec so other staged work stays out of the commit.
+   */
+  async createPullRequest(root: string, input: CreatePullInput): Promise<PullResult> {
+    const title = input.title.trim()
+    if (!title) throw new GitError('PR 标题不能为空')
+    const branch = assertBranch(input.branch, 'branch')
+    const base = assertBranch(input.base, 'base')
+    if (branch === base) throw new GitError('新分支不能与基础分支同名')
+    if (!(await this.isRepo(root))) throw new GitError('当前工作区不是 Git 仓库')
+
+    const current = (await this.run(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+    if (!current || current === 'HEAD') throw new GitError('detached HEAD 下不能创建 PR')
+
+    const files = [...new Set(input.files.map(file => file.trim()).filter(Boolean))]
+    for (const file of files) assertWorkspacePath(root, file)
+
+    let head = current
+    let commit: string | undefined
+    if (files.length) {
+      const { changes } = await this.status(root)
+      const changed = new Set(changes.map(change => change.path))
+      const missing = files.filter(file => !changed.has(file))
+      if (missing.length) {
+        throw new GitError(`这些文件没有未提交改动: ${missing.slice(0, 5).join(', ')}`)
+      }
+      await this.run(root, ['checkout', '-b', branch])
+      await this.run(root, ['add', '--', ...files])
+      const message = input.body?.trim() ? `${title}\n\n${input.body.trim()}` : title
+      await this.run(root, ['commit', '-m', message, '--', ...files])
+      head = branch
+      commit = (await this.run(root, ['rev-parse', '--short', 'HEAD'])).trim()
+    } else if (current === base) {
+      throw new GitError('没有选中的改动，且当前已在基础分支上')
+    }
+
+    const remote = await this.pullRemote(root)
+    await this.run(root, ['push', '--set-upstream', remote.name, `HEAD:refs/heads/${head}`], { network: true })
+
+    if (remote.provider === 'github') {
+      const url = await this.ghCreate(root, { title, body: input.body?.trim() ?? '', base, head })
+      return { url, provider: 'github', branch: head, base, ...(commit ? { commit } : {}) }
+    }
+
+    const gitee = this.ctx.get('gitee', false) as
+      | { createPull?(owner: string, repo: string, value: { title: string; head: string; base: string; body?: string }): Promise<{ html_url?: string; url?: string }> }
+      | undefined
+    if (!gitee?.createPull) throw new GitError('Gitee PR 需要挂载 @ruobai/gitee 并配置令牌')
+    const pull = await gitee.createPull(remote.owner, remote.repo, {
+      title,
+      head,
+      base,
+      ...(input.body?.trim() ? { body: input.body.trim() } : {}),
+    })
+    const url = pull.html_url ?? pull.url
+    if (!url) throw new GitError('Gitee 未返回 PR 链接')
+    return { url, provider: 'gitee', branch: head, base, ...(commit ? { commit } : {}) }
+  }
+
+  private async pullRemote(root: string) {
+    const names = (await this.run(root, ['remote'])).split('\n').map(name => name.trim()).filter(Boolean)
+    const ordered = names.includes('origin') ? ['origin', ...names.filter(name => name !== 'origin')] : names
+    for (const name of ordered) {
+      const url = (await this.run(root, ['remote', 'get-url', name])).trim()
+      const parsed = parseRemote(url)
+      if (parsed) return { ...parsed, name }
+    }
+    throw new GitError('找不到 GitHub 或 Gitee 远程仓库')
+  }
+
+  private async ghCreate(root: string, input: { title: string; body: string; base: string; head: string }) {
+    try {
+      const { stdout } = await exec('gh', [
+        'pr', 'create',
+        '--base', input.base,
+        '--head', input.head,
+        '--title', input.title,
+        '--body', input.body || input.title,
+      ], {
+        cwd: root,
+        timeout: this.config.networkTimeoutMs,
+        maxBuffer: 1_000_000,
+        env: { ...process.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1' },
+      })
+      const url = /https:\/\/github\.com\/\S+\/pull\/\d+/.exec(stdout)?.[0]
+      if (!url) throw new GitError(`gh 未返回 PR 链接: ${stdout.slice(0, 200)}`)
+      return url
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new GitError('未找到 gh CLI，请安装后执行 gh auth login')
+      }
+      if (error instanceof GitError) throw error
+      const stderr = (error as { stderr?: string }).stderr
+      throw new GitError(`创建 PR 失败: ${(stderr || (error as Error).message).slice(0, 500)}`)
+    }
+  }
 }
 
 function assertRemoteUrl(url: string) {
@@ -581,9 +682,39 @@ declare module '@ruobai/cordis' {
   }
 }
 
+
 export default GitService
 
 export const meta = {
   title: 'Git',
   description: 'Git 状态、差异、提交、日志、分支与远程同步。',
+}
+
+function assertBranch(value: string, label: string) {
+  const name = value.trim()
+  if (!name) throw new GitError(`${label} 不能为空`)
+  if (name.length > 120) throw new GitError(`${label} 过长`)
+  if (!/^[A-Za-z0-9._/-]+$/.test(name) || name.startsWith('-') || name.includes('..') || name.endsWith('/')) {
+    throw new GitError(`${label} 不是合法的分支名: ${name}`)
+  }
+  return name
+}
+
+function assertWorkspacePath(root: string, file: string) {
+  if (!file || file.startsWith('/') || file.includes('..') || file.includes('\\')) {
+    throw new GitError(`非法路径: ${file}`)
+  }
+  const target = resolve(root, file)
+  const prefix = root.endsWith('/') ? root : `${root}/`
+  if (target !== root && !target.startsWith(prefix)) throw new GitError(`路径越界: ${file}`)
+  return file
+}
+
+function parseRemote(url: string): { provider: 'github' | 'gitee'; owner: string; repo: string } | undefined {
+  const normalized = url.trim().replace(/\.git$/, '')
+  let match = /(?:^|@)github\.com[:/]([^/]+)\/([^/]+)$/.exec(normalized)
+  if (match) return { provider: 'github', owner: match[1]!, repo: match[2]! }
+  match = /(?:^|@)gitee\.com[:/]([^/]+)\/([^/]+)$/.exec(normalized)
+  if (match) return { provider: 'gitee', owner: match[1]!, repo: match[2]! }
+  return undefined
 }

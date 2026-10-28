@@ -6,7 +6,7 @@ import { api, type ActivitySummary, type PermissionMode, type SkillSummary, type
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
 import {
   isExpandShortcut, isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut,
-  modKeyLabel,
+  isTerminalShortcut, modKeyLabel,
 } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
@@ -16,9 +16,11 @@ import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
 import { ContextView } from './components/ContextView.tsx'
 import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
+import { ChangesView } from './components/ChangesView.tsx'
+import { TerminalPanel } from './components/TerminalPanel.tsx'
 import { TodoPanel } from './components/TodoPanel.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
-import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
+import { BranchIcon, FilePanelIcon, ListIcon, MenuIcon, MonitorIcon, MoreIcon, SearchIcon, TerminalIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/settings/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { FunctionWorkspace } from './components/workspace/FunctionWorkspace.tsx'
@@ -28,11 +30,12 @@ import { Transcript } from './components/Transcript.tsx'
 import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
-type MainView = 'chat' | 'trajectory' | 'context'
+type MainView = 'chat' | 'changes' | 'trajectory' | 'context'
 
 const MAIN_VIEW_KEY = 'rbh-main-view'
 const MAIN_TABS: Array<{ id: MainView; label: string }> = [
   { id: 'chat', label: '会话' },
+  { id: 'changes', label: '更改' },
   { id: 'trajectory', label: '轨迹' },
   { id: 'context', label: '上下文' },
 ]
@@ -75,6 +78,8 @@ export function App() {
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [fileOpen, setFileOpen] = useState(false)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [fileRequest, setFileRequest] = useState<{ path: string; token: number } | null>(null)
   const [expandedPanel, setExpandedPanel] = useState<'file' | null>(null)
   const [panelView, setPanelView] = useState<FileView>('files')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
@@ -244,6 +249,10 @@ export function App() {
         if (expandedPanel) setExpandedPanel(null)
         else if (fileOpen) toggleExpandPanel()
       }
+      if (isTerminalShortcut(event)) {
+        event.preventDefault()
+        setTerminalOpen(current => !current)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -298,6 +307,20 @@ export function App() {
         break
       case 'show-git':
         showFilePanel('git')
+        break
+      case 'preview':
+        showFilePanel('preview')
+        break
+      case 'session-info':
+        setPanelView('session')
+        setFileOpen(true)
+        break
+      case 'changes':
+        setFunctionView(null)
+        setMainView('changes')
+        break
+      case 'terminal':
+        setTerminalOpen(current => !current)
         break
       case 'toggle-sidebar':
         toggleSidebar()
@@ -453,6 +476,14 @@ export function App() {
                 <Slot name="header.actions" props={{ sessionId: harness.session?.id }} />
                 <div className="main-tools" role="toolbar" aria-label="面板">
                   <button
+                    className={`icon-btn ${fileOpen && panelView === 'session' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('session')}
+                    aria-label="会话信息"
+                    title="会话信息"
+                  >
+                    <ListIcon size={16} />
+                  </button>
+                  <button
                     className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
                     onClick={() => showFilePanel('files')}
                     aria-label="文件"
@@ -467,6 +498,22 @@ export function App() {
                     title="Git"
                   >
                     <BranchIcon size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${fileOpen && panelView === 'preview' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('preview')}
+                    aria-label="预览"
+                    title="预览本地服务器"
+                  >
+                    <MonitorIcon size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${terminalOpen ? 'active' : ''}`}
+                    onClick={() => setTerminalOpen(current => !current)}
+                    aria-label="终端"
+                    title={`终端 (${modKeyLabel()}J)`}
+                  >
+                    <TerminalIcon size={16} />
                   </button>
                   <span className="main-tools-sep" />
                   <button
@@ -604,8 +651,10 @@ export function App() {
               />
             </>
           )
-          : mainView === 'trajectory'
-            ? <TrajectoryView session={harness.session} />
+          : mainView === 'changes'
+            ? <ChangesView session={harness.session} />
+            : mainView === 'trajectory'
+              ? <TrajectoryView session={harness.session} />
             : (
               <ContextView
                 session={harness.session}
@@ -613,6 +662,14 @@ export function App() {
                 onRefresh={harness.refreshContext}
               />
             )}
+        {terminalOpen
+          ? (
+            <TerminalPanel
+              workspace={harness.session?.workspace}
+              onClose={() => setTerminalOpen(false)}
+            />
+          )
+          : null}
       </main>
 
       {fileOpen
@@ -629,6 +686,25 @@ export function App() {
               if (expandedPanel === 'file') setExpandedPanel(null)
             }}
             onReferenceFile={(path) => setReference({ path, token: Date.now() })}
+            openPath={fileRequest ?? undefined}
+            onOpenContext={() => {
+              setFunctionView(null)
+              setMainView('context')
+            }}
+            onOpenGit={() => {
+              setPanelView('git')
+              setFileOpen(true)
+            }}
+            onOpenFile={(path) => {
+              setFileRequest({ path, token: Date.now() })
+              setPanelView('files')
+              setFileOpen(true)
+            }}
+            onOpenSettings={() => openSettings('behavior')}
+            onOpenChanges={() => {
+              setFunctionView(null)
+              setMainView('changes')
+            }}
           />
         )
         : null}

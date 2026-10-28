@@ -127,3 +127,21 @@ export interface GitPushOptions {
   branch?: string
   setUpstream?: boolean
 }
+
+export interface CreatePullInput {
+  title: string
+  body?: string
+  /** Branch that will carry the commit; created when files are included. */
+  branch: string
+  base: string
+  /** Workspace-relative paths to commit; empty means the current branch. */
+  files: string[]
+}
+
+export interface PullResult {
+  url: string
+  provider: 'github' | 'gitee'
+  branch: string
+  base: string
+  commit?: string
+}

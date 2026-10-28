@@ -50,6 +50,8 @@ pnpm build:ui
 - [`docs/todo.md`](docs/todo.md)：会话级任务清单，压缩后仍保留目标。
 - [`docs/session-export.md`](docs/session-export.md)：会话导出为 Markdown 或事件 JSONL。
 - [`docs/agent-tooling.md`](docs/agent-tooling.md)：大文件读写、多行 grep、视觉截图与测试基线。
+- [`docs/terminal-and-preview.md`](docs/terminal-and-preview.md)：交互式终端与开发服务器预览。
+- [`docs/session-panel.md`](docs/session-panel.md)：右侧会话信息栏（环境 / 上下文 / 输出 / 更改）。
 - [`docs/product-roadmap-review.md`](docs/product-roadmap-review.md)：外部产品 Roadmap 的逐条评审与取舍。
 - [`docs/prompt-cache.md`](docs/prompt-cache.md)：KV cache 交互设计与实测。
 - [`docs/sandbox-macos.md`](docs/sandbox-macos.md)：macOS 沙箱实现与实测附录。

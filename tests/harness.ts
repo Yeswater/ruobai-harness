@@ -35,6 +35,8 @@ import ModeGoal from '@ruobai/mode-goal'
 import ModePlan from '@ruobai/mode-plan'
 import ModeService from '@ruobai/modes'
 import PermissionService from '@ruobai/permissions'
+import PreviewService from '@ruobai/preview'
+import PreviewWeb from '@ruobai/preview-web'
 import SessionService from '@ruobai/session'
 import SessionExport from '@ruobai/session-export'
 import SecretsService from '@ruobai/secrets'
@@ -48,6 +50,8 @@ import ToolRegistry from '@ruobai/tools'
 import BashTools from '@ruobai/tool-bash'
 import BrowserPreview from '@ruobai/browser-preview'
 import FsTools from '@ruobai/tool-fs'
+import TerminalService from '@ruobai/terminal'
+import TerminalWeb from '@ruobai/terminal-web'
 import Todo from '@ruobai/todo'
 import TodoWeb from '@ruobai/todo-web'
 import ToolTask from '@ruobai/tool-task'
@@ -190,6 +194,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(Todo))
   await mount(ctx.plugin(BrowserPreview, { waitMs: 50 }))
+  await mount(ctx.plugin(TerminalService, { root: dir }))
+  await mount(ctx.plugin(TerminalWeb))
+  await mount(ctx.plugin(PreviewService, { root: dir, startTimeoutMs: 10_000 }))
+  await mount(ctx.plugin(PreviewWeb))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AttachmentMeta, ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import { previewBus, terminalBus } from './panel-events.ts'
 import {
   api,
   connectEvents,
@@ -378,6 +379,8 @@ export function useHarness() {
           setSession(previous => previous ? applyEvent(previous, event) : previous)
         }
       },
+      onTerminal: (event) => terminalBus.emit(event),
+      onPreview: (event) => previewBus.emit(event),
       onTodo: (payload) => {
         if (payload.sessionId !== activeRef.current) return
         setTodo(previous => previous && previous.rev > payload.rev ? previous : payload)

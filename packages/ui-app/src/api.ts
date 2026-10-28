@@ -372,6 +372,68 @@ export interface ApprovalRequest {
   createdAt: number
 }
 
+export interface CheckpointChange {
+  seq: number
+  path: string
+  tool: string
+  beforeExisted: boolean
+  beforeBytes?: number
+  afterBytes?: number
+  at?: number
+  /** Unified diff captured at write time, when it was small enough. */
+  diff?: string
+}
+
+export interface TerminalInfo {
+  id: string
+  title: string
+  cwd: string
+  pid?: number
+  alive: boolean
+  cols: number
+  rows: number
+  createdAt: number
+  exitCode?: number | null
+}
+
+export type TerminalEvent =
+  | { kind: 'output'; id: string; data: string }
+  | { kind: 'exit'; id: string; code: number | null }
+  | { kind: 'changed'; terminals: TerminalInfo[] }
+
+export type PreviewStatus = 'stopped' | 'starting' | 'running' | 'failed'
+
+export interface PreviewConfiguration {
+  name: string
+  runtimeExecutable: string
+  runtimeArgs?: string[]
+  port?: number
+  url?: string
+  cwd?: string
+}
+
+export interface PreviewState {
+  name: string
+  status: PreviewStatus
+  pid?: number
+  url?: string
+  port?: number
+  startedAt?: number
+  exitCode?: number | null
+  error?: string
+}
+
+export interface PreviewSnapshot {
+  path: string
+  configurations: PreviewConfiguration[]
+  states: PreviewState[]
+  error?: string
+}
+
+export type PreviewEvent =
+  | { kind: 'state'; state: PreviewState }
+  | { kind: 'log'; name: string; line: string }
+
 export interface ContextInfo {
   estimatedTokens: number
   compactAt: number
@@ -568,6 +630,43 @@ export interface TodoSnapshot {
 }
 
 export const api = {
+  listTerminals: async () =>
+    (await request<{ terminals: TerminalInfo[] }>('/api/terminal')).terminals,
+
+  createTerminal: async (input: { cwd?: string; cols?: number; rows?: number } = {}) =>
+    (await request<{ terminal: TerminalInfo }>('/api/terminal', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })).terminal,
+
+  deleteTerminal: async (id: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  writeTerminal: async (id: string, data: string) =>
+    request<{ ok: true }>(`/api/terminal/${encodeURIComponent(id)}/input`, {
+      method: 'POST',
+      body: JSON.stringify({ data }),
+    }),
+
+  resizeTerminal: async (id: string, cols: number, rows: number) =>
+    request<{ resized: boolean }>(`/api/terminal/${encodeURIComponent(id)}/resize`, {
+      method: 'POST',
+      body: JSON.stringify({ cols, rows }),
+    }),
+
+  terminalBuffer: async (id: string) =>
+    (await request<{ buffer: string }>(`/api/terminal/${encodeURIComponent(id)}/buffer`)).buffer,
+
+  previewSnapshot: async () => request<PreviewSnapshot>('/api/preview'),
+
+  previewAction: async (name: string, action: 'start' | 'stop' | 'restart') =>
+    (await request<{ state: PreviewState }>(`/api/preview/${encodeURIComponent(name)}/${action}`, {
+      method: 'POST',
+    })).state,
+
+  previewLogs: async (name: string) =>
+    request<{ state: PreviewState; logs: string[] }>(`/api/preview/${encodeURIComponent(name)}`),
+
   todo: async (id: string) =>
     request<TodoSnapshot>(`/api/todo?sessionId=${encodeURIComponent(id)}`),
 
@@ -719,6 +818,21 @@ export const api = {
     const suffix = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
     return (await request<{ editors: EditorChoice[] }>(`/api/workspace/editors${suffix}`)).editors
   },
+
+  getCheckpoints: async (id: string) =>
+    (await request<{ changes: CheckpointChange[] }>(`/api/checkpoints/${encodeURIComponent(id)}`)).changes,
+
+  createPull: async (id: string, input: {
+    title: string
+    body?: string
+    branch: string
+    base: string
+    files: string[]
+  }) =>
+    request<{ url: string; provider: 'github' | 'gitee'; branch: string; base: string; commit?: string }>(
+      '/api/git/pr',
+      { method: 'POST', body: JSON.stringify({ ...input, sessionId: id }) },
+    ),
 
   getGitInfo: async (id: string) =>
     request<GitInfo>(`/api/git/info?sessionId=${encodeURIComponent(id)}`),
@@ -1057,6 +1171,8 @@ export interface EventHandlers {
   onChat?: (event: ChatEvent) => void
   onApproval?: (payload: ApprovalEvent) => void
   onTodo?: (payload: TodoSnapshot) => void
+  onTerminal?: (payload: TerminalEvent) => void
+  onPreview?: (payload: PreviewEvent) => void
 }
 
 export type ApprovalEvent =
@@ -1114,6 +1230,20 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('terminal', (event) => {
+      try {
+        handlers.onTerminal?.(JSON.parse((event as MessageEvent<string>).data) as TerminalEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
+    source.addEventListener('preview', (event) => {
+      try {
+        handlers.onPreview?.(JSON.parse((event as MessageEvent<string>).data) as PreviewEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
   }
 
   try {
@@ -1133,6 +1263,8 @@ export function connectEvents(handlers: EventHandlers) {
           document.documentElement.dataset.live = 'ws'
           handlers.onOpen?.()
         } else if (payload.type === 'todo') handlers.onTodo?.(payload.data as TodoSnapshot)
+        else if (payload.type === 'terminal') handlers.onTerminal?.(payload.data as TerminalEvent)
+        else if (payload.type === 'preview') handlers.onPreview?.(payload.data as PreviewEvent)
         else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)
         else if (payload.type === 'approval') {
           handlers.onApproval?.(payload.kind === 'requested'
