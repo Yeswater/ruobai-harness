@@ -13,7 +13,7 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
 })
 
-async function setup() {
+async function setup(config: Record<string, unknown> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'rbh-fs-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
 
@@ -22,7 +22,7 @@ async function setup() {
   await tools
   const approval = ctx.plugin(ApprovalService)
   await approval
-  const fsTools = ctx.plugin(FsTools, { root })
+  const fsTools = ctx.plugin(FsTools, { root, ...config })
   await fsTools
   cleanups.push(() => fsTools.dispose(), () => approval.dispose(), () => tools.dispose())
   return { ctx, root }
@@ -119,6 +119,30 @@ describe('tool registry and fs tools', () => {
     // The old regression: the result used to be rejected for being over the
     // read cap even though editing does not consume context.
     expect(Buffer.byteLength(content)).toBeGreaterThan(65_536)
+  })
+
+  it('attaches a workspace image for vision models, or explains why it cannot', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+
+    const attached = await setup({ sendImages: 'always' })
+    await writeFile(join(attached.root, 'shot.png'), png)
+    const ok = await attached.ctx.tools.invoke('view_image', { path: 'shot.png' })
+    expect(ok.isError).toBe(false)
+    expect(ok.content).toContain('shot.png')
+    expect(ok.images?.[0]).toMatchObject({ mimeType: 'image/png', name: 'shot.png' })
+    expect(Buffer.from(ok.images![0]!.data, 'base64').subarray(1, 4).toString()).toBe('PNG')
+
+    const plain = await setup()
+    await writeFile(join(plain.root, 'shot.png'), png)
+    const note = await plain.ctx.tools.invoke('view_image', { path: 'shot.png' })
+    expect(note.isError).toBe(false)
+    expect(note.images).toBeUndefined()
+    expect(note.content).toContain('未声明图片输入')
+
+    await writeFile(join(plain.root, 'note.txt'), 'hello')
+    const wrong = await plain.ctx.tools.invoke('view_image', { path: 'note.txt' })
+    expect(wrong.isError).toBe(true)
+    expect(wrong.content).toContain('not a PNG')
   })
 
   it('replaces exactly one occurrence with a diff preview', async () => {

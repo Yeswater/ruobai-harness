@@ -20,10 +20,16 @@ export interface Config {
   height?: number
   /** Relative to the session workspace. */
   screenshotsDir?: string
+  /**
+   * Attach the PNG to the tool result for vision models.
+   * `auto` only attaches when the model declares image input.
+   */
+  sendImages?: 'auto' | 'always' | 'never'
 }
 
 const DEFAULT_HOSTS = ['127.0.0.1', 'localhost', '::1']
 const MAX_EXPRESSION = 20_000
+const MAX_IMAGE_BYTES = 3_500_000
 const MAX_RESULT_CHARS = 8_000
 const MAX_CONSOLE = 8
 
@@ -93,7 +99,7 @@ export function apply(ctx: Context, config: Config) {
   }, findChrome(config.chromePath))
 
   const allowedHosts = config.allowedHosts?.length ? config.allowedHosts : DEFAULT_HOSTS
-  const definitions = [screenshotTool(service, allowedHosts, config), evalTool(service, allowedHosts, config)]
+  const definitions = [screenshotTool(ctx, service, allowedHosts, config), evalTool(service, allowedHosts, config)]
 
   ctx.effect(() => {
     const disposers = definitions.map(definition => ctx.tools.register(definition))
@@ -104,6 +110,7 @@ export function apply(ctx: Context, config: Config) {
 export default { name, inject, apply }
 
 function screenshotTool(
+  ctx: Context,
   service: BrowserPreviewService,
   allowedHosts: string[],
   config: Config,
@@ -112,7 +119,8 @@ function screenshotTool(
     name: 'browser_screenshot',
     description: [
       'Render a local URL in headless Chrome and save a PNG under .ruobai/screenshots/.',
-      'Returns the path, page title, size and console errors/warnings.',
+      'Returns the path, page title, size and console errors/warnings;',
+      'vision-capable models also receive the PNG itself (includeImage: false opts out).',
       'Only loopback hosts are allowed unless browser-preview.allowedHosts lists more.',
       'Use it to verify visual changes in light/dark mode and at different widths.',
     ].join(' '),
@@ -125,6 +133,10 @@ function screenshotTool(
         height: { type: 'number', description: 'Viewport height in CSS pixels; default 800.' },
         colorScheme: { type: 'string', enum: ['light', 'dark'], description: 'Emulate prefers-color-scheme.' },
         fullPage: { type: 'boolean', description: 'Capture the whole page (height capped at 4000px).' },
+        includeImage: {
+          type: 'boolean',
+          description: 'Attach the PNG to the result for vision models. Default true.',
+        },
       },
       required: ['url'],
     },
@@ -148,12 +160,42 @@ function screenshotTool(
           await writeFile(file, png)
           const root = run?.workspace ? resolve(run.workspace) : process.cwd()
           const shown = relative(root, file).split('\\').join('/')
-          return [
+          const mode = config.sendImages ?? 'auto'
+          const support = ctx.tools.imageSupport(run?.sessionId)
+          const attach = args?.includeImage !== false && mode !== 'never'
+            && (mode === 'always' || support === 'yes')
+          const oversized = png.byteLength > MAX_IMAGE_BYTES
+          const lines = [
             `Screenshot: ${shown} (${width}x${height}${args?.colorScheme ? `, ${args.colorScheme}` : ''})`,
             `Title: ${page.title || '(none)'}`,
             `URL: ${page.url}`,
             ...consoleLines(session.consoleMessages()),
-          ].join('\n')
+          ]
+          if (attach && !oversized) {
+            lines.push('Image attached to this tool result.')
+            return {
+              text: lines.join('\n'),
+              images: [{ mimeType: 'image/png', data: png.toString('base64'), name: shown }],
+            }
+          }
+          if (attach && oversized) {
+            lines.push(`Image is ${(png.byteLength / 1_048_576).toFixed(1)} MB, above the ${MAX_IMAGE_BYTES / 1_048_576} MB limit; not attached.`)
+          } else if (args?.includeImage === false || mode === 'never') {
+            lines.push('Image not attached (disabled).')
+          } else {
+            const who = run?.sessionId
+              ? (() => {
+                  const meta = ctx.sessions.get(run.sessionId!)?.meta
+                  return meta?.provider ? `${meta.provider}/${meta.model ?? '?'}` : '当前模型'
+                })()
+              : '当前模型'
+            lines.push(
+              `${who} 未声明图片输入，PNG 只保存到磁盘。`
+                + '要让我直接看到页面，请在 设置 → 模型 → 输入类型 勾选“图片”，或换用支持视觉的模型；'
+                + '也可以继续用 browser_eval 读取几何与计算样式。',
+            )
+          }
+          return lines.join('\n')
         } finally {
           await session.close()
         }

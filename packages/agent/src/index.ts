@@ -501,6 +501,7 @@ export class AgentService extends Service {
             name: call.name,
             content: result.content,
             isError: result.isError,
+            ...(result.images?.length ? { images: result.images } : {}),
           })
           // Edit-time gate: formatter + incremental lint, fed back before the
           // next step. Ephemeral by design; the stop gate is the persisted one.

@@ -59,8 +59,17 @@
 
 `packages/context/tests/context.spec.ts` 覆盖这两种形状：只有 reasoning 的 step 不进请求；中断后再发消息，请求里只留下正文与已完成的调用。
 
+## JSONL 头部丢失的修复
+
+会话在 `session-jsonl` 完成启动扫描之前创建时，适配器还没订阅 `session/created`，头部与最早的 title/meta 事件会丢失；文件里只剩后续事件，重启时因为找不到头部而被整段忽略，表现为会话“消失”。
+
+- 订阅提前到扫描文件之前，缩小窗口。
+- 加载时如果文件没有头部但有事件：从事件恢复元信息（标题优先取 `session/title`，否则第一条用户消息；工作区/模型/模式/权限取最近的 `context/snapshot`），在原序号前补齐 `session/title`、`session/meta`（必要时补惰性的 `session/repair`），重写文件后再恢复会话。
+- 原有序号保持不变，`append` 用事件条数作为下一个 seq，补齐后不会与既有序号冲突。
+
 ## 验证
 
+- `packages/session-jsonl/tests/repair.spec.ts`：无头部文件能恢复标题/工作区/模型；补齐后新事件序号不冲突；再次启动仍能恢复。
 - `packages/chat/tests/runtime.spec.ts`：运行中排队并在结束后作为独立回合执行；排队消息在工具返回后的步骤边界插话进同一回合（只产生一个回合，且该消息之后仍有 assistant step）；停止后排队照常开始；取回排队项；运行中切到 `read-only` 立即生效；全局 `full-access` 作为默认并让审批自动放行。
 - `packages/ui-server/tests/api.spec.ts`：第二次提交返回 `201 { queued: true }`，运行中 fork 仍是 409；排队项的取回走通。
 - 浏览器实测（mock 提供方，`POST /api/sessions/:id/model` 切到 `mock/mock-1`）：运行中回车出现排队气泡；权限 chip 在运行中可点，切成"仅可查看"后接口立即返回 `read-only`；回合结束后排队消息自动成为下一轮且气泡消失；设置 → 通用 → 默认权限含"完全权限"并弹出确认框。

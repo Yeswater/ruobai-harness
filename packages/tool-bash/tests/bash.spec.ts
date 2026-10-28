@@ -162,4 +162,18 @@ describe('bash tool', () => {
     expect(result.isError).toBe(true)
     expect(result.content).toContain('denied')
   })
+
+  it('accepts large multi-line scripts and rejects only the hard cap', async () => {
+    const { ctx } = await setup()
+    const command = `${'# padding line\n'.repeat(1_200)}echo long-ok`
+    expect(command.length).toBeGreaterThan(8_000)
+    const { result } = await call(ctx, { command })
+    expect(result.isError).toBe(false)
+    expect(result.content).toContain('long-ok')
+
+    const huge = `echo ${'x'.repeat(33_000)}`
+    const { result: rejected } = await call(ctx, { command: huge })
+    expect(rejected.isError).toBe(true)
+    expect(rejected.content).toContain('longer than')
+  })
 })

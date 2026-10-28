@@ -254,7 +254,7 @@ export interface ProviderPreset {
   note?: string
   website?: string
   baseUrl: string
-  models: Array<{ id: string }>
+  models: Array<{ id: string; inputTypes?: Array<'text' | 'image'> }>
 }
 
 export interface ProviderInput {

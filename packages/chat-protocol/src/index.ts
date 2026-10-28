@@ -34,6 +34,8 @@ export interface ToolBlock {
   input: string
   output: string
   isError?: boolean
+  /** Images returned by the tool, already base64 encoded. */
+  images?: Array<{ mimeType: string; data: string; name?: string }>
   /** When the call was dispatched (epoch ms). */
   startedAt?: number
   /** When its result landed; absent while it runs. */

@@ -17,6 +17,8 @@
 
 **边界**：超过 8 MiB 的文件仍拒绝整文件编辑，错误信息会说明「按窗口读、用 write_file，或调大 maxEditBytes」。二进制文件保持不变。
 
+`bash` 的单条命令上限是 32k 字符（此前 8k，heredoc 补丁很容易超过）。超限时错误会建议拆分步骤，或把大段内容交给 `write_file` / `edit_file`。
+
 ## 2. grep
 
 **原因**：`grep` 逐行读文件并对每一行跑正则，`\.a \{[\s\S]{0,1800}?\.b \{` 永远不可能匹配单行，于是返回“No matches”，而不是告诉调用方匹配模式用错了。
@@ -71,6 +73,7 @@ pnpm test:baseline packages/tool-fs/tests/fs.spec.ts
 - **默认只允许 loopback**（`127.0.0.1` / `localhost` / `::1`）。要截远程页面，必须在 `cordis.yml` 的 `allowedHosts` 里显式添加——边界写在代码里，而不是让工具自己决定。
 - **控制台错误算结果的一部分**：页面截图正常但脚本报错是常见情况，工具会把 `console.error`、未捕获异常与 `Log.entryAdded` 一起返回。
 - 整页截图高度封顶 4000 px，避免一张图几十 MB。
+- 截图会作为工具结果的一部分交给视觉模型；纯文本模型只收到路径与说明。详见 [`tool-images.md`](tool-images.md)。
 
 Chrome 不在常见路径时，工具返回明确的错误，要求设置 `browser-preview.chromePath`；没有 Chrome 的机器上功能不可用，但不会影响其他工具。
 

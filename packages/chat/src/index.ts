@@ -505,6 +505,7 @@ export class ChatService extends Service {
         if (block && block.type === 'tool') {
           block.output = event.data.content
           block.isError = Boolean(event.data.isError)
+          if (event.data.images?.length) block.images = event.data.images
           // Timing rides the log, so a reloaded session shows the same duration.
           block.finishedAt = event.ts
           break

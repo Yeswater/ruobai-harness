@@ -10,6 +10,22 @@ export interface ToolRunContext {
   workspace?: string
 }
 
+export interface ToolImage {
+  /** e.g. image/png */
+  mimeType: string
+  /** Base64 without the data: prefix. */
+  data: string
+  name?: string
+}
+
+export interface ToolOutputObject {
+  text: string
+  /** Attached to the tool result; only models that accept images can use it. */
+  images?: ToolImage[]
+}
+
+export type ToolOutput = string | ToolOutputObject
+
 export interface ToolDefinition extends ToolSchema {
   /** Ask for human approval before executing (mutating tools). */
   requiresApproval?: boolean
@@ -19,7 +35,7 @@ export interface ToolDefinition extends ToolSchema {
   approvalSubject?(args: any, run: ToolRunContext): { kind: 'command' | 'path'; value: string } | undefined
   /** Human-readable summary and optional diff shown in the approval card. */
   preview?(args: any, run: ToolRunContext): Promise<ToolPreview> | ToolPreview
-  execute(args: any, run: ToolRunContext): Promise<string> | string
+  execute(args: any, run: ToolRunContext): Promise<ToolOutput> | ToolOutput
 }
 
 export interface ToolPreview {
@@ -30,6 +46,7 @@ export interface ToolPreview {
 export interface ToolResult {
   content: string
   isError: boolean
+  images?: ToolImage[]
 }
 
 export interface ToolCallInfo {
@@ -63,6 +80,30 @@ export class ToolRegistry extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'tools')
+  }
+
+  /**
+   * Whether the active model declares image input.
+   *
+   * `unknown` means the provider's model entry has no `inputTypes`; tools that
+   * can attach images treat it as text-only unless configured otherwise, so a
+   * text-only endpoint is not asked to parse image content.
+   */
+  imageSupport(sessionId?: string): 'yes' | 'no' | 'unknown' {
+    // Optional lookup: this registry does not inject sessions or settings, and
+    // a test or a partial composition may mount it without either.
+    const sessions = this.ctx.get('sessions', false) as
+      | { get?(id: string): { meta?: { provider?: string; model?: string } } | undefined }
+      | undefined
+    const meta = sessionId ? sessions?.get?.(sessionId)?.meta : undefined
+    const settings = this.ctx.get('settings', false) as
+      | { findProvider?(id: string): { models?: Array<{ id: string; inputTypes?: string[] }> } | undefined }
+      | undefined
+    const entry = meta?.provider ? settings?.findProvider?.(meta.provider) : undefined
+    const model = entry?.models?.find(item => item.id === meta?.model)
+    const types = model?.inputTypes
+    if (!types?.length) return 'unknown'
+    return types.includes('image') ? 'yes' : 'no'
   }
 
   register(definition: ToolDefinition): () => void {
@@ -191,9 +232,11 @@ export class ToolRegistry extends Service {
     this.ctx.emit('tool/before', call)
     try {
       const value = await tool.execute(args, run)
+      const output: ToolOutputObject = typeof value === 'string' ? { text: value } : value
       const result: ToolResult = {
-        content: typeof value === 'string' ? value : JSON.stringify(value),
+        content: output.text,
         isError: false,
+        ...(output.images?.length ? { images: output.images } : {}),
       }
       this.ctx.emit('tool/after', call, result)
       return result

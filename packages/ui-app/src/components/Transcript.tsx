@@ -480,6 +480,19 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
                   <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
                 </>
               )}
+            {block.images?.length
+              ? (
+                <div className="tool-images">
+                  {block.images.map((image, index) => (
+                    <img
+                      key={index}
+                      src={`data:${image.mimeType};base64,${image.data}`}
+                      alt={image.name ?? `工具图片 ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              )
+              : null}
           </div>
         )
         : null}

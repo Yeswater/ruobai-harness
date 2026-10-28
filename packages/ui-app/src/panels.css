@@ -849,3 +849,19 @@ button.session-row:hover {
   padding: 8px 4px 2px;
   border-top: 1px dashed var(--border);
 }
+
+/* Images returned by tools (screenshots, generated images). */
+.tool-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tool-images img {
+  max-width: min(100%, 420px);
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}

@@ -851,7 +851,10 @@ export class SettingsService extends Service {
           website: 'https://platform.deepseek.com',
           baseUrl: process.env.RBU_BASE_URL ?? DEEPSEEK_BASE,
           mode: 'direct',
-          models: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }],
+          models: [
+            { id: 'deepseek-chat', inputTypes: ['text'] },
+            { id: 'deepseek-reasoner', inputTypes: ['text'] },
+          ],
         }]
         llm.activeProvider = process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'mock'
         llm.activeModel = process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : undefined

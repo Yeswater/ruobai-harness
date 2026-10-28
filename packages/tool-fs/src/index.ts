@@ -17,11 +17,14 @@ export interface Config {
   maxEditBytes?: number
   /** Lines returned by a windowed `read_file`. */
   readWindowLines?: number
+  /** Attach workspace images to tool results for vision models. */
+  sendImages?: 'auto' | 'always' | 'never'
 }
 
 // `.ruobai` holds mutable harness data (checkpoints, wiki, scratch). Searching
 // it duplicates every edited file through the checkpoint blob store.
 const IGNORED = new Set(['node_modules', '.git', '.sessions', '.ruobai', 'dist', 'lib'])
+const MAX_IMAGE_BYTES = 3_500_000
 
 function inside(root: string, target: string) {
   const rel = relative(root, target)
@@ -123,6 +126,17 @@ function bounded(value: unknown, name: string, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(number)))
 }
 
+function imageMime(buffer: Buffer): string | undefined {
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) return 'image/jpeg'
+  const head6 = buffer.subarray(0, 6).toString('ascii')
+  if (head6 === 'GIF87a' || head6 === 'GIF89a') return 'image/gif'
+  if (buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp'
+  }
+  return undefined
+}
+
 function assertEditable(size: number, maxEditBytes: number, path: unknown) {
   if (size <= maxEditBytes) return
   throw new Error(
@@ -198,6 +212,9 @@ function tools(
   readWindowLines: number,
   capture?: CaptureFn,
   guard?: GuardLookup,
+  imageSupport?: (sessionId?: string) => 'yes' | 'no' | 'unknown',
+  sendImages: 'auto' | 'always' | 'never' = 'auto',
+  sessionModel?: (sessionId?: string) => { provider?: string; model?: string } | undefined,
 ): ToolDefinition[] {
   const rootFor = (run?: ToolRunContext) => run?.workspace ? resolve(run.workspace) : fallbackRoot
 
@@ -243,6 +260,46 @@ function tools(
         if (await looksBinary(target)) throw new Error('binary files are not supported')
         const label = relative(root, target).split(/[\\/]/).join('/')
         return readWindow(target, label, offset ?? 1, limit ?? readWindowLines, info.size)
+      },
+    },
+    {
+      name: 'view_image',
+      description: [
+        'Read a PNG, JPEG, WebP or GIF from the workspace.',
+        'Vision-capable models receive the image itself; others get the path and a note.',
+        'SVG is text: use read_file instead.',
+      ].join(' '),
+      readOnly: true,
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string', description: 'Path relative to the workspace root.' } },
+        required: ['path'],
+      },
+      async execute(args, run) {
+        const root = rootFor(run)
+        const target = resolveInside(root, args?.path)
+        guardCheck(guard, target, 'read')
+        const info = await stat(target)
+        if (!info.isFile()) throw new Error(`not a file: ${args?.path}`)
+        if (info.size > MAX_IMAGE_BYTES) {
+          throw new Error(`image is larger than ${MAX_IMAGE_BYTES} bytes`)
+        }
+        const buffer = await readFile(target)
+        const mimeType = imageMime(buffer)
+        if (!mimeType) throw new Error('not a PNG, JPEG, WebP or GIF image')
+        const label = relative(root, target).split(/[\\/]/).join('/')
+        const support = imageSupport?.(run?.sessionId) ?? 'unknown'
+        const attach = sendImages === 'always' || (sendImages !== 'never' && support === 'yes')
+        const head = `Image: ${label} (${mimeType}, ${info.size} bytes)`
+        if (!attach) {
+          const meta = run?.sessionId ? sessionModel?.(run.sessionId) : undefined
+          const who = meta?.provider ? `${meta.provider}/${meta.model ?? '?'}` : '当前模型'
+          return `${head}\n${who} 未声明图片输入，未附加图片；请在 设置 → 模型 → 输入类型 勾选“图片”，或换用支持视觉的模型。`
+        }
+        return {
+          text: `${head}\nImage attached to this tool result.`,
+          images: [{ mimeType, data: buffer.toString('base64'), name: label }],
+        }
       },
     },
     {
@@ -433,6 +490,9 @@ export default class FsTools {
         if (!policy?.check) return undefined
         return { check: (path, access) => policy.check!(path, access) }
       },
+      sessionId => ctx.tools.imageSupport(sessionId),
+      config.sendImages ?? 'auto',
+      sessionId => (sessionId ? ctx.sessions.get(sessionId)?.meta : undefined),
     )
     ctx.effect(() => {
       const disposers = definitions.map(definition => ctx.tools.register(definition))

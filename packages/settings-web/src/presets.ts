@@ -11,7 +11,7 @@ export interface ProviderPreset {
   note?: string
   website?: string
   baseUrl: string
-  models: Array<{ id: string }>
+  models: Array<{ id: string; inputTypes?: Array<'text' | 'image'> }>
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -20,14 +20,17 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'DeepSeek',
     website: 'https://platform.deepseek.com',
     baseUrl: 'https://api.deepseek.com/v1',
-    models: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }],
+    models: [{ id: 'deepseek-chat', inputTypes: ['text'] }, { id: 'deepseek-reasoner', inputTypes: ['text'] }],
   },
   {
     id: 'openai',
     name: 'OpenAI',
     website: 'https://platform.openai.com',
     baseUrl: 'https://api.openai.com/v1',
-    models: [{ id: 'gpt-4.1' }, { id: 'gpt-4.1-mini' }],
+    models: [
+      { id: 'gpt-4.1', inputTypes: ['text', 'image'] },
+      { id: 'gpt-4.1-mini', inputTypes: ['text', 'image'] },
+    ],
   },
   {
     id: 'openrouter',

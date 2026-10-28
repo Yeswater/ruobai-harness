@@ -77,7 +77,11 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
       note: preset.note ?? '',
       website: preset.website ?? '',
       baseUrl: preset.baseUrl,
-      models: preset.models.map(model => known.get(model.id) ?? { id: model.id, name: '', inputTypes: ['text'] }),
+      models: preset.models.map(model => known.get(model.id) ?? {
+        id: model.id,
+        name: '',
+        inputTypes: model.inputTypes ?? ['text'],
+      }),
     })
     setNotice(`已填入 ${preset.name} 的地址与模型，可继续点「拉取模型」确认`)
   }

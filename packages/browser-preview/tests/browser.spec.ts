@@ -27,7 +27,7 @@ describe('browser preview: url policy', () => {
 })
 
 describe.skipIf(!chrome)('browser preview: headless Chrome', () => {
-  async function fixture() {
+  async function fixture(extra: Record<string, unknown> = {}) {
     const root = await mkdtemp(join(tmpdir(), 'rbh-browser-'))
     cleanups.push(() => rm(root, { recursive: true, force: true }))
     const server = createServer((_req, res) => {
@@ -51,7 +51,7 @@ describe.skipIf(!chrome)('browser preview: headless Chrome', () => {
     const ctx = new Context()
     const tools = ctx.plugin(ToolRegistry)
     await tools
-    const plugin = ctx.plugin(BrowserPreview, { width: 640, height: 480, waitMs: 50 })
+    const plugin = ctx.plugin(BrowserPreview, { width: 640, height: 480, waitMs: 50, sendImages: 'always', ...extra })
     await plugin
     cleanups.push(() => plugin.dispose(), () => tools.dispose())
     return { ctx, root, url }
@@ -81,6 +81,14 @@ describe.skipIf(!chrome)('browser preview: headless Chrome', () => {
     expect(result.content).toContain('fixture boom')
   }, 30_000)
 
+  it('can opt out of attaching the image', async () => {
+    const { ctx, root, url } = await fixture({ sendImages: 'never' })
+    const result = await ctx.tools.invoke('browser_screenshot', { url }, { workspace: root })
+    expect(result.isError).toBe(false)
+    expect(result.images).toBeUndefined()
+    expect(result.content).toContain('not attached')
+  }, 30_000)
+
   it('writes a PNG and rejects non-loopback hosts', async () => {
     const { ctx, root, url } = await fixture()
     const result = await ctx.tools.invoke('browser_screenshot', { url, colorScheme: 'light' }, { workspace: root })
@@ -91,6 +99,8 @@ describe.skipIf(!chrome)('browser preview: headless Chrome', () => {
     const png = await readFile(join(root, shown!))
     expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     expect(result.content).toContain('Title: fixture')
+    expect(result.images?.[0]).toMatchObject({ mimeType: 'image/png' })
+    expect(Buffer.from(result.images![0]!.data, 'base64').subarray(1, 4).toString()).toBe('PNG')
 
     const denied = await ctx.tools.invoke('browser_screenshot', { url: 'http://example.com' }, { workspace: root })
     expect(denied.isError).toBe(true)
