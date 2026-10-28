@@ -11,6 +11,7 @@ import {
   type ModeInfo,
   type ModelProvider,
   type PermissionMode,
+  type TodoSnapshot,
 } from './api.ts'
 
 function appendDelta(session: ChatSession, messageId: string, kind: 'text' | 'reasoning', delta: string): ChatSession {
@@ -107,6 +108,7 @@ export function useHarness() {
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null)
   const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
+  const [todo, setTodo] = useState<TodoSnapshot | null>(null)
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
 
@@ -231,6 +233,7 @@ export function useHarness() {
     if (!activeId) return
     let cancelled = false
     setSession(null)
+    setTodo(null)
     void api.getSession(activeId)
       .then(next => {
         if (!cancelled) setSession(next)
@@ -238,6 +241,12 @@ export function useHarness() {
       .catch(caught => {
         if (!cancelled) fail(caught)
       })
+    // Optional panel: a deployment without `todo-web` simply has no list.
+    void api.todo(activeId)
+      .then((snapshot) => {
+        if (!cancelled) setTodo(snapshot)
+      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -368,6 +377,10 @@ export function useHarness() {
         } else {
           setSession(previous => previous ? applyEvent(previous, event) : previous)
         }
+      },
+      onTodo: (payload) => {
+        if (payload.sessionId !== activeRef.current) return
+        setTodo(previous => previous && previous.rev > payload.rev ? previous : payload)
       },
       onApproval: (payload) => {
         if (payload.kind === 'requested') {
@@ -511,6 +524,7 @@ export function useHarness() {
     commandPrefix,
     refreshSettings,
     approvals,
+    todo,
     recentWorkspaces,
     select,
     send,

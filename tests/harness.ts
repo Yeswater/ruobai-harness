@@ -36,6 +36,8 @@ import ModePlan from '@ruobai/mode-plan'
 import ModeService from '@ruobai/modes'
 import PermissionService from '@ruobai/permissions'
 import SessionService from '@ruobai/session'
+import SessionExport from '@ruobai/session-export'
+import SecretsService from '@ruobai/secrets'
 import SettingsService from '@ruobai/settings'
 import ShellService from '@ruobai/shell'
 import DirectShell from '@ruobai/shell-direct'
@@ -45,6 +47,8 @@ import SkillsWeb from '@ruobai/skills-web'
 import ToolRegistry from '@ruobai/tools'
 import BashTools from '@ruobai/tool-bash'
 import FsTools from '@ruobai/tool-fs'
+import Todo from '@ruobai/todo'
+import TodoWeb from '@ruobai/todo-web'
 import ToolTask from '@ruobai/tool-task'
 import Trajectory from '@ruobai/trajectory'
 import TrajectoryWeb from '@ruobai/trajectory-web'
@@ -62,6 +66,7 @@ export interface Harness {
   /** Isolated temp directory used for settings and protocol roots. */
   dir: string
   settingsPath: string
+  secretsPath: string
   dispose(): Promise<void>
 }
 
@@ -109,6 +114,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(FsTools, { root: process.cwd() }))
   await mount(ctx.plugin(BashTools, { root: process.cwd() }))
   await mount(ctx.plugin(SettingsService, { path: join(dir, 'settings.json') }))
+  // File backend: tests must never touch the developer's login keychain.
+  await mount(ctx.plugin(SecretsService, { provider: 'file', path: join(dir, 'secrets.json') }))
   // Deterministic tests: ignore ambient keys and the seeded provider.
   await ctx.settings.update({ llm: { activeProvider: 'mock', activeModel: 'mock-1' } })
   await mount(ctx.plugin(McpService))
@@ -180,6 +187,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(HooksService))
   await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
+  await mount(ctx.plugin(Todo))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))
 
@@ -199,11 +207,14 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(A2aWeb))
   await mount(ctx.plugin(WebWs))
   await mount(ctx.plugin(McpWeb))
+  await mount(ctx.plugin(TodoWeb))
+  await mount(ctx.plugin(SessionExport))
 
   return {
     ctx,
     dir,
     settingsPath: join(dir, 'settings.json'),
+    secretsPath: join(dir, 'secrets.json'),
     async dispose() {
       for (const fiber of fibers.reverse()) await fiber.dispose()
       await rm(dir, { recursive: true, force: true })

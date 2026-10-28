@@ -137,6 +137,15 @@
 - id: tool-task
   name: '@ruobai/tool-task'
 
+# Session-scoped task list. The model maintains it with `todo_write`; the
+# projection feeds both the system prompt and the panel, so progress survives
+# compaction and a UI reload.
+- id: todo
+  name: '@ruobai/todo'
+
+- id: todo-web
+  name: '@ruobai/todo-web'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'
@@ -239,6 +248,10 @@
 # Browser-facing projection consumed by ui-server.
 - id: chat
   name: '@ruobai/chat'
+
+# Session export: Markdown for reading, JSONL for replay. Read-only.
+- id: session-export
+  name: '@ruobai/session-export'
 
 # Gate status API, SSE channel and the Settings → 门禁 panel.
 - id: hooks-web
@@ -355,6 +368,11 @@
 
 - id: settings-web
   name: '@ruobai/settings-web'
+
+# API keys and tokens move out of settings.json into the OS keychain (macOS)
+# or a 0600 file. Removing this row restores plaintext storage.
+- id: secrets
+  name: '@ruobai/secrets'
 
 # MCP servers are configured in Settings → MCP and hot-reloaded. Each tool is
 # exposed as mcp__<server>__<tool>.

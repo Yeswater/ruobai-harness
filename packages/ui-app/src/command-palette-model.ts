@@ -63,6 +63,12 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     keywords: 'permission approval guard 审批 安全 规则',
   },
   {
+    id: 'export-session',
+    label: '导出当前会话',
+    description: '下载 Markdown 记录（工具输出折叠）',
+    keywords: 'export download markdown 导出 下载 记录 存档',
+  },
+  {
     id: 'show-files',
     label: '打开文件面板',
     description: '浏览工作区文件、预览并引用到对话',

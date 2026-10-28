@@ -248,6 +248,15 @@ export interface PublicSettings {
   }
 }
 
+export interface ProviderPreset {
+  id: string
+  name: string
+  note?: string
+  website?: string
+  baseUrl: string
+  models: Array<{ id: string }>
+}
+
 export interface ProviderInput {
   name?: string
   note?: string
@@ -546,7 +555,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export interface TodoItem {
+  id: string
+  text: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+export interface TodoSnapshot {
+  sessionId: string
+  rev: number
+  items: TodoItem[]
+}
+
 export const api = {
+  todo: async (id: string) =>
+    request<TodoSnapshot>(`/api/todo?sessionId=${encodeURIComponent(id)}`),
+
   listSessions: async () =>
     (await request<{ sessions: SessionSummary[] }>('/api/sessions')).sessions,
 
@@ -992,6 +1016,9 @@ export const api = {
       body: JSON.stringify({ model }),
     })).settings,
 
+  providerPresets: async () =>
+    (await request<{ presets: ProviderPreset[] }>('/api/providers/presets')).presets,
+
   fetchProviderModels: async (input: { baseUrl: string; apiKey?: string; id?: string }) =>
     (await request<{ models: ProviderModel[] }>('/api/providers/models', {
       method: 'POST',
@@ -1029,6 +1056,7 @@ export interface EventHandlers {
   onError?: () => void
   onChat?: (event: ChatEvent) => void
   onApproval?: (payload: ApprovalEvent) => void
+  onTodo?: (payload: TodoSnapshot) => void
 }
 
 export type ApprovalEvent =
@@ -1079,6 +1107,13 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('todo', (event) => {
+      try {
+        handlers.onTodo?.(JSON.parse((event as MessageEvent<string>).data) as TodoSnapshot)
+      } catch {
+        // ignore malformed frames
+      }
+    })
   }
 
   try {
@@ -1089,6 +1124,7 @@ export function connectEvents(handlers: EventHandlers) {
         const payload = JSON.parse(message.data) as {
           type: string
           event?: ChatEvent
+          data?: unknown
           kind?: 'requested' | 'resolved'
           request?: ApprovalRequest
           resolution?: { id: string; decision: ApprovalDecision }
@@ -1096,7 +1132,8 @@ export function connectEvents(handlers: EventHandlers) {
         if (payload.type === 'hello') {
           document.documentElement.dataset.live = 'ws'
           handlers.onOpen?.()
-        } else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)
+        } else if (payload.type === 'todo') handlers.onTodo?.(payload.data as TodoSnapshot)
+        else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)
         else if (payload.type === 'approval') {
           handlers.onApproval?.(payload.kind === 'requested'
             ? { kind: 'requested', request: payload.request! }

@@ -164,9 +164,15 @@ importers:
       '@ruobai/sandbox-web':
         specifier: workspace:*
         version: link:packages/sandbox-web
+      '@ruobai/secrets':
+        specifier: workspace:*
+        version: link:packages/secrets
       '@ruobai/session':
         specifier: workspace:*
         version: link:packages/session
+      '@ruobai/session-export':
+        specifier: workspace:*
+        version: link:packages/session-export
       '@ruobai/session-jsonl':
         specifier: workspace:*
         version: link:packages/session-jsonl
@@ -191,6 +197,12 @@ importers:
       '@ruobai/skills-web':
         specifier: workspace:*
         version: link:packages/skills-web
+      '@ruobai/todo':
+        specifier: workspace:*
+        version: link:packages/todo
+      '@ruobai/todo-web':
+        specifier: workspace:*
+        version: link:packages/todo-web
       '@ruobai/tool-bash':
         specifier: workspace:*
         version: link:packages/tool-bash
@@ -898,11 +910,41 @@ importers:
         specifier: workspace:*
         version: link:../sandbox-macos
 
+  packages/secrets:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+
   packages/session:
     dependencies:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+
+  packages/session-export:
+    dependencies:
+      '@ruobai/chat':
+        specifier: workspace:*
+        version: link:../chat
+      '@ruobai/chat-protocol':
+        specifier: workspace:*
+        version: link:../chat-protocol
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/session-jsonl:
     dependencies:
@@ -1018,6 +1060,36 @@ importers:
       '@ruobai/skills':
         specifier: workspace:*
         version: link:../skills
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
+  packages/todo:
+    dependencies:
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/todo-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/todo':
+        specifier: workspace:*
+        version: link:../todo
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server

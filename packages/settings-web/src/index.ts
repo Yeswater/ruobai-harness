@@ -3,6 +3,7 @@ import type { Context } from '@ruobai/cordis'
 import { builtinDangerRules } from '@ruobai/approval'
 import type { CommandPrefix, PermissionMode, ProviderInput } from '@ruobai/settings'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
+import { PROVIDER_PRESETS } from './presets.ts'
 
 export const name = 'settings-web'
 export const inject = ['web', 'settings']
@@ -84,6 +85,12 @@ async function handleProviders(ctx: Context, req: IncomingMessage, res: ServerRe
       throw new HttpError(405, 'method not allowed')
     }
 
+    if (parts[2] === 'presets' && parts.length === 3) {
+      if (req.method !== 'GET') throw new HttpError(405, 'method not allowed')
+      sendJson(res, 200, { presets: PROVIDER_PRESETS })
+      return true
+    }
+
     if (parts[2] === 'models' && parts.length === 3) {
       if (req.method !== 'POST') throw new HttpError(405, 'method not allowed')
       const body = await readJson(req) as { baseUrl?: string; apiKey?: string; id?: string }
@@ -137,12 +144,12 @@ async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: stri
       signal: AbortSignal.timeout(15_000),
     })
   } catch (error) {
-    throw new HttpError(502, `model list request failed: ${error instanceof Error ? error.message : String(error)}`)
+    throw new HttpError(502, describeNetworkError(error))
   }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
-    throw new HttpError(502, `models ${response.status}: ${text.slice(0, 300)}`)
+    throw new HttpError(502, describeHttpStatus(response.status, text))
   }
 
   const payload: any = await response.json().catch(() => undefined)
@@ -157,6 +164,24 @@ async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: stri
     .map((row: any) => typeof row === 'string' ? row : row?.id)
     .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
   return [...new Set<string>(ids)].map(id => ({ id }))
+}
+
+function describeHttpStatus(status: number, detail: string): string {
+  const suffix = detail ? `：${detail.slice(0, 200)}` : ''
+  if (status === 401 || status === 403) return `密钥无效或没有权限（HTTP ${status}）${suffix}`
+  if (status === 404) return `请求地址可能不对，OpenAI 兼容接口通常以 /v1 结尾（HTTP 404）${suffix}`
+  if (status === 429) return `被限流或额度不足（HTTP 429）${suffix}`
+  if (status >= 500) return `供应商服务异常（HTTP ${status}）${suffix}`
+  return `模型列表请求失败（HTTP ${status}）${suffix}`
+}
+
+function describeNetworkError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/timeout|aborted|timed out/i.test(message)) return '连接超时：检查地址是否可达、是否需要代理'
+  if (/ECONNREFUSED/i.test(message)) return '连接被拒绝：本地服务未启动，或端口不对'
+  if (/ENOTFOUND|EAI_AGAIN/i.test(message)) return '域名解析失败：检查地址拼写与网络'
+  if (/certificate|self[- ]signed/i.test(message)) return '证书校验失败：本地服务需要有效的 HTTPS 证书'
+  return `连接失败：${message}`
 }
 
 async function handleApproval(ctx: Context, req: IncomingMessage, res: ServerResponse, url: URL) {

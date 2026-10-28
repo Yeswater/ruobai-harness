@@ -44,6 +44,10 @@ export function apply(ctx: Context) {
     broadcast({ type: 'approval', kind: 'resolved', resolution })
   }), 'web-ws.approval-resolved')
 
+  ctx.effect(() => ctx.on('ui/broadcast', (channel, data) => {
+    broadcast({ type: channel, data })
+  }), 'web-ws.ui')
+
   const heartbeat = setInterval(() => {
     for (const client of wss.clients) {
       if (client.readyState === WebSocket.OPEN) client.ping()

@@ -31,6 +31,9 @@ const PROTECTED_PLUGINS = new Set([
   '@ruobai/tools',
   '@ruobai/settings',
   '@ruobai/settings-web',
+  // Disabling it at runtime would leave keys only in the OS keychain while the
+  // provider entries look unconfigured; removal belongs in cordis.yml.
+  '@ruobai/secrets',
 ])
 
 interface LoaderEntry {
@@ -56,6 +59,11 @@ declare module '@ruobai/cordis' {
   interface Context {
     ui: UiApi
   }
+
+  interface Events {
+    /** Mirrors every `ui.broadcast` so push-capable plugins can relay it. */
+    'ui/broadcast'(channel: string, data: unknown): void
+  }
 }
 
 /**
@@ -79,6 +87,7 @@ export class UiApi extends Service {
   /** Fan a plugin-owned event out to every live SSE client. */
   broadcast(channel: string, data: unknown) {
     this.sse.broadcast(channel, data)
+    this.ctx.emit('ui/broadcast', channel, data)
   }
 
   async *[Service.init]() {

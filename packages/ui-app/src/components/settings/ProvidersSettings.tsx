@@ -4,6 +4,7 @@ import {
   type ProviderInput,
   type ProviderMode,
   type ProviderModel,
+  type ProviderPreset,
   type PublicProvider,
   type PublicSettings,
 } from '../../api.ts'
@@ -57,6 +58,29 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [presets, setPresets] = useState<ProviderPreset[]>([])
+  const [presetPick, setPresetPick] = useState('')
+
+  useEffect(() => {
+    void api.providerPresets().then(setPresets).catch(() => undefined)
+  }, [])
+
+  const applyPreset = (presetId: string) => {
+    setPresetPick('')
+    const preset = presets.find(item => item.id === presetId)
+    if (!preset || !draft) return
+    // Keep metadata the user already set (context window, output cap) when a
+    // model id appears in both lists; templates only carry ids.
+    const known = new Map(draft.models.filter(model => model.id).map(model => [model.id, model]))
+    patch({
+      name: preset.name,
+      note: preset.note ?? '',
+      website: preset.website ?? '',
+      baseUrl: preset.baseUrl,
+      models: preset.models.map(model => known.get(model.id) ?? { id: model.id, name: '', inputTypes: ['text'] }),
+    })
+    setNotice(`已填入 ${preset.name} 的地址与模型，可继续点「拉取模型」确认`)
+  }
 
   const selected = providers.find(provider => provider.id === selectedId)
 
@@ -284,6 +308,26 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
             <>
               <div className="settings-form-section">
                 <h3 className="settings-form-title">基本信息</h3>
+                {presets.length
+                  ? (
+                    <label className="field">
+                      <span>从预设填入</span>
+                      <Select
+                        value={presetPick}
+                        options={[
+                          { value: '', label: '选择模板…' },
+                          ...presets.map(preset => ({
+                            value: preset.id,
+                            label: preset.name,
+                            description: preset.baseUrl,
+                          })),
+                        ]}
+                        onChange={applyPreset}
+                        ariaLabel="从预设填入供应商配置"
+                      />
+                    </label>
+                  )
+                  : null}
                 <div className="form-row two">
                   <label className="field">
                     <span>名称 *</span>

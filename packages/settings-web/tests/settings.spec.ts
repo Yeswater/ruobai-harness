@@ -69,8 +69,11 @@ describe('provider API', () => {
     expect(created.settings.llm.activeProvider).toBe(provider.id)
     expect(created.settings.llm.activeModel).toBe('fake-a')
 
+    // The key lives in the secret store, never in settings.json.
     const stored = JSON.parse(await readFile(harness.settingsPath, 'utf8'))
-    expect(stored.llm.providers.find((item: any) => item.id === provider.id).apiKey).toBe('sk-test')
+    expect(stored.llm.providers.find((item: any) => item.id === provider.id).apiKey).toBeUndefined()
+    const secrets = JSON.parse(await readFile(harness.secretsPath, 'utf8'))
+    expect(secrets[`llm/${provider.id}`]).toBe('sk-test')
 
     const fetched = await (await fetch(`${base}/api/providers/models`, {
       method: 'POST',
@@ -155,5 +158,29 @@ describe('provider API', () => {
       body: JSON.stringify({ agent: { defaultPermission: 'everything' } }),
     })
     expect(invalid.status).toBe(400)
+  })
+})
+
+describe('provider presets', () => {
+  it('serves presets and explains a rejected key', async () => {
+    const harness = await createHarness()
+    cleanups.push(() => harness.dispose())
+    const base = harness.ctx.web.url
+
+    const { presets } = await (await fetch(`${base}/api/providers/presets`)).json() as {
+      presets: Array<{ id: string; name: string; baseUrl: string }>
+    }
+    expect(presets.map(preset => preset.id)).toContain('deepseek')
+    for (const preset of presets) expect(preset.baseUrl.startsWith('http')).toBe(true)
+
+    const baseUrl = await fakeModelsServer()
+    const response = await fetch(`${base}/api/providers/models`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ baseUrl }),
+    })
+    expect(response.status).toBe(502)
+    const body = await response.json() as { error: string }
+    expect(body.error).toContain('密钥无效或没有权限')
   })
 })

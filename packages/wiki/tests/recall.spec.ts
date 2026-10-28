@@ -68,11 +68,15 @@ describe('wiki recall', () => {
   it('finds the expected page in the top 5 for repository docs', async () => {
     const { ctx, sessionId } = await setup()
     const docs = (await readdir('docs')).filter(name => name.endsWith('.md')).sort()
-    for (const name of docs) {
+    for (const [index, name] of docs.entries()) {
       const body = await readFile(join('docs', name), 'utf8')
+      const stem = name.replace(/\.md$/, '')
+      // Page ids are ASCII by contract; a Chinese filename still has to be
+      // searchable, so it gets a stable surrogate id rather than being skipped.
+      const id = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(stem) ? stem : `doc-${index}`
       await ctx.wiki.write({
-        id: name.replace(/\.md$/, ''),
-        title: name.replace(/\.md$/, '').replace(/-/g, ' '),
+        id,
+        title: stem.replace(/-/g, ' '),
         body,
         sources: [{ kind: 'file', path: `docs/${name}` }],
       }, sessionId)

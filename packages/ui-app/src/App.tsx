@@ -16,6 +16,7 @@ import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
 import { ContextView } from './components/ContextView.tsx'
 import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
+import { TodoPanel } from './components/TodoPanel.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
 import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/settings/SettingsDialog.tsx'
@@ -250,8 +251,12 @@ export function App() {
 
   // Commands that need runtime state (nothing streaming, nothing to stop) drop out.
   const paletteCommands = useMemo(
-    () => PALETTE_COMMANDS.filter(command => command.id !== 'stop-turn' || harness.session?.streaming),
-    [harness.session?.streaming],
+    () => PALETTE_COMMANDS.filter((command) => {
+      if (command.id === 'stop-turn') return harness.session?.streaming === true
+      if (command.id === 'export-session') return Boolean(harness.session?.messages.length)
+      return true
+    }),
+    [harness.session?.streaming, harness.session?.messages.length],
   )
 
   const runPaletteCommand = (id: string) => {
@@ -282,6 +287,11 @@ export function App() {
         break
       case 'permissions':
         openSettings('permissions')
+        break
+      case 'export-session':
+        if (harness.session) {
+          window.open(`/api/export/session/${encodeURIComponent(harness.session.id)}.md`, '_blank', 'noopener')
+        }
         break
       case 'show-files':
         showFilePanel('files')
@@ -547,6 +557,8 @@ export function App() {
                   if (session) void harness.withdrawQueued(session.id, queuedId)
                 }}
               />
+
+              <TodoPanel todo={harness.todo} />
 
               {pendingApprovals.length
                 ? (
