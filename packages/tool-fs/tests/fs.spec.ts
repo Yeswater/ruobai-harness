@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -86,6 +86,39 @@ describe('tool registry and fs tools', () => {
     const result = await pending
     expect(result.isError).toBe(true)
     await expect(readFile(join(root, 'blocked.txt'), 'utf8')).rejects.toThrow()
+  })
+
+  it('pages through files above the read cap and edits them in place', async () => {
+    const { ctx, root } = await setup()
+    const lines = Array.from({ length: 12_000 }, (_, index) => `line ${index + 1}`)
+    await writeFile(join(root, 'big.css'), lines.join('\n'))
+    expect((await stat(join(root, 'big.css'))).size).toBeGreaterThan(65_536)
+
+    const first = await ctx.tools.invoke('read_file', { path: 'big.css' })
+    expect(first.isError).toBe(false)
+    expect(first.content).toContain('[big.css: lines 1-2000 of 12000')
+    expect(first.content).toContain('line 2000')
+    expect(first.content).not.toContain('line 2001')
+
+    const tail = await ctx.tools.invoke('read_file', { path: 'big.css', offset: 12_000, limit: 1 })
+    expect(tail.content).toContain('line 12000')
+
+    const requested = nextRequest(ctx)
+    const pending = ctx.tools.invoke('edit_file', {
+      path: 'big.css',
+      oldText: 'line 11999',
+      newText: 'LINE 11999',
+    })
+    const request = await requested
+    expect(request.diff).toContain('-line 11999')
+    ctx.approval.resolve(request.id, 'allow')
+    const edited = await pending
+    expect(edited.isError).toBe(false)
+    const content = await readFile(join(root, 'big.css'), 'utf8')
+    expect(content).toContain('LINE 11999')
+    // The old regression: the result used to be rejected for being over the
+    // read cap even though editing does not consume context.
+    expect(Buffer.byteLength(content)).toBeGreaterThan(65_536)
   })
 
   it('replaces exactly one occurrence with a diff preview', async () => {

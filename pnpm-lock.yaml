@@ -26,6 +26,9 @@ importers:
       '@ruobai/approval-deadline':
         specifier: workspace:*
         version: link:packages/approval-deadline
+      '@ruobai/browser-preview':
+        specifier: workspace:*
+        version: link:packages/browser-preview
       '@ruobai/chat':
         specifier: workspace:*
         version: link:packages/chat
@@ -360,6 +363,18 @@ importers:
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
+
+  packages/browser-preview:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/chat:
     dependencies:

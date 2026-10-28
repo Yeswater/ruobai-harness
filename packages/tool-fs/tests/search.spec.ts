@@ -22,6 +22,8 @@ async function setup() {
   await writeFile(join(root, 'src', 'a.ts'), 'const needle = 1\nexport default needle\n')
   await writeFile(join(root, 'src', 'deep', 'b.ts'), '// needle here\n')
   await writeFile(join(root, 'node_modules', 'pkg', 'index.js'), 'needle\n')
+  await mkdir(join(root, '.ruobai', 'checkpoints', 'blobs'), { recursive: true })
+  await writeFile(join(root, '.ruobai', 'checkpoints', 'blobs', 'dup.css'), 'needle in a blob\n')
   await writeFile(join(root, 'README.md'), 'Needle upper\n')
   await writeFile(join(root, 'bin.dat'), Buffer.from([0, 110, 101, 101, 100, 108, 101]))
 
@@ -45,6 +47,7 @@ describe('grep and glob tools', () => {
     expect(result.content).toContain('src/a.ts:2:export default needle')
     expect(result.content).toContain('src/deep/b.ts:1:// needle here')
     expect(result.content).not.toContain('node_modules')
+    expect(result.content).not.toContain('.ruobai')
     expect(result.content).not.toContain('bin.dat')
     expect(result.content).not.toContain('README.md')
   })
@@ -89,6 +92,22 @@ describe('grep and glob tools', () => {
 
     const capped = await ctx.tools.invoke('grep', { pattern: 'needle', maxResults: 1 })
     expect(capped.content).toContain('truncated at 1')
+  })
+
+  it('matches across line boundaries only when multiline is set', async () => {
+    const { ctx, root } = await setup()
+    await writeFile(join(root, 'src', 'block.css'), '.a {\n  color: red;\n}\n\n.b {\n  color: blue;\n}\n')
+    const pattern = '\\.a \\{[\\s\\S]{0,80}?\\.b \\{'
+
+    const single = await ctx.tools.invoke('grep', { pattern })
+    expect(single.content).toContain('No matches')
+    expect(single.content).toContain('multiline: true')
+
+    const multi = await ctx.tools.invoke('grep', { pattern, multiline: true })
+    expect(multi.isError).toBe(false)
+    expect(multi.content).toContain('src/block.css:1:')
+    expect(multi.content).toContain('.a {')
+    expect(multi.content).toContain('.b {')
   })
 
   it('rejects paths outside the workspace', async () => {

@@ -46,6 +46,7 @@ import SkillsService from '@ruobai/skills'
 import SkillsWeb from '@ruobai/skills-web'
 import ToolRegistry from '@ruobai/tools'
 import BashTools from '@ruobai/tool-bash'
+import BrowserPreview from '@ruobai/browser-preview'
 import FsTools from '@ruobai/tool-fs'
 import Todo from '@ruobai/todo'
 import TodoWeb from '@ruobai/todo-web'
@@ -188,6 +189,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(Todo))
+  await mount(ctx.plugin(BrowserPreview, { waitMs: 50 }))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))
 

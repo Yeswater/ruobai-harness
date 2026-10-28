@@ -13,7 +13,9 @@
     "build:ui": "pnpm --filter @ruobai/ui-app build",
     "typecheck": "tsc -p tsconfig.json && tsc -p packages/ui-app/tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:baseline": "node scripts/test-baseline.mjs",
+    "test:flake": "node scripts/test-flake.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",
@@ -22,6 +24,7 @@
     "@ruobai/agent": "workspace:*",
     "@ruobai/approval": "workspace:*",
     "@ruobai/approval-deadline": "workspace:*",
+    "@ruobai/browser-preview": "workspace:*",
     "@ruobai/chat": "workspace:*",
     "@ruobai/checkpoints": "workspace:*",
     "@ruobai/checkpoints-web": "workspace:*",

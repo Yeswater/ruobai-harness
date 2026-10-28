@@ -36,50 +36,81 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
   const before = splitLines(oldText)
   const after = splitLines(newText)
   if (!before.length && !after.length) return []
-  if (before.length > MAX_DIFF_LINES || after.length > MAX_DIFF_LINES) {
-    return [
-      ...before.map((text, index) => ({ kind: 'del' as const, oldLine: index + 1, text })),
-      ...after.map((text, index) => ({ kind: 'add' as const, newLine: index + 1, text })),
-    ]
-  }
 
-  const rows = before.length
-  const cols = after.length
-  const table: Uint16Array[] = Array.from(
-    { length: rows + 1 },
-    () => new Uint16Array(cols + 1),
-  )
-  for (let i = rows - 1; i >= 0; i -= 1) {
-    for (let j = cols - 1; j >= 0; j -= 1) {
-      table[i]![j] = before[i] === after[j]
-        ? table[i + 1]![j + 1]! + 1
-        : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
-    }
-  }
+  // Trim shared edges first: a small edit in a large file must stay a small
+  // diff instead of tripping the table guard and printing both files whole.
+  const limit = Math.min(before.length, after.length)
+  let pre = 0
+  while (pre < limit && before[pre] === after[pre]) pre += 1
+  let suf = 0
+  const suffixLimit = Math.min(before.length, after.length) - pre
+  while (suf < suffixLimit && before[before.length - 1 - suf] === after[after.length - 1 - suf]) suf += 1
 
+  const beforeMid = before.slice(pre, before.length - suf)
+  const afterMid = after.slice(pre, after.length - suf)
+  if (!beforeMid.length && !afterMid.length) return []
+
+  const context = 3
   const lines: DiffLine[] = []
-  let i = 0
-  let j = 0
-  while (i < rows && j < cols) {
-    if (before[i] === after[j]) {
-      lines.push({ kind: 'context', oldLine: i + 1, newLine: j + 1, text: before[i]! })
+  for (let index = Math.max(0, pre - context); index < pre; index += 1) {
+    lines.push({ kind: 'context', oldLine: index + 1, newLine: index + 1, text: before[index]! })
+  }
+
+  if (beforeMid.length > MAX_DIFF_LINES || afterMid.length > MAX_DIFF_LINES) {
+    beforeMid.forEach((text, index) => {
+      lines.push({ kind: 'del', oldLine: pre + index + 1, text })
+    })
+    afterMid.forEach((text, index) => {
+      lines.push({ kind: 'add', newLine: pre + index + 1, text })
+    })
+  } else {
+    const rows = beforeMid.length
+    const cols = afterMid.length
+    const table: Uint16Array[] = Array.from(
+      { length: rows + 1 },
+      () => new Uint16Array(cols + 1),
+    )
+    for (let i = rows - 1; i >= 0; i -= 1) {
+      for (let j = cols - 1; j >= 0; j -= 1) {
+        table[i]![j] = beforeMid[i] === afterMid[j]
+          ? table[i + 1]![j + 1]! + 1
+          : Math.max(table[i + 1]![j]!, table[i]![j + 1]!)
+      }
+    }
+
+    let i = 0
+    let j = 0
+    while (i < rows && j < cols) {
+      if (beforeMid[i] === afterMid[j]) {
+        lines.push({ kind: 'context', oldLine: pre + i + 1, newLine: pre + j + 1, text: beforeMid[i]! })
+        i += 1
+        j += 1
+      } else if (table[i + 1]![j]! >= table[i]![j + 1]!) {
+        lines.push({ kind: 'del', oldLine: pre + i + 1, text: beforeMid[i]! })
+        i += 1
+      } else {
+        lines.push({ kind: 'add', newLine: pre + j + 1, text: afterMid[j]! })
+        j += 1
+      }
+    }
+    while (i < rows) {
+      lines.push({ kind: 'del', oldLine: pre + i + 1, text: beforeMid[i]! })
       i += 1
-      j += 1
-    } else if (table[i + 1]![j]! >= table[i]![j + 1]!) {
-      lines.push({ kind: 'del', oldLine: i + 1, text: before[i]! })
-      i += 1
-    } else {
-      lines.push({ kind: 'add', newLine: j + 1, text: after[j]! })
+    }
+    while (j < cols) {
+      lines.push({ kind: 'add', newLine: pre + j + 1, text: afterMid[j]! })
       j += 1
     }
   }
-  while (i < rows) {
-    lines.push({ kind: 'del', oldLine: i + 1, text: before[i]! })
-    i += 1
-  }
-  while (j < cols) {
-    lines.push({ kind: 'add', newLine: j + 1, text: after[j]! })
-    j += 1
+
+  const tailStart = before.length - suf
+  for (let index = tailStart; index < Math.min(before.length, tailStart + context); index += 1) {
+    lines.push({
+      kind: 'context',
+      oldLine: index + 1,
+      newLine: after.length - suf + (index - tailStart) + 1,
+      text: before[index]!,
+    })
   }
   return lines
 }

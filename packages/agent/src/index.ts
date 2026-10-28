@@ -130,6 +130,12 @@ export class AgentService extends Service {
         // per-call attribution.
         + 'When independent reads or searches can answer the request, issue them together in one step; '
         + 'keep dependent calls in separate steps instead of chaining unrelated commands into one shell call. '
+        // Scratch files belong in the ignored data directory; a temp file under
+        // src/ is picked up by builds, git status and reviewers.
+        + 'Put temporary or scratch files under .ruobai/scratch/ inside the workspace, never in the source tree. '
+        // Large files are served as line windows; two field reports came from
+        // treating the byte cap as "this file cannot be edited".
+        + 'For files larger than the read cap, page through them with read_file offset/limit; edit_file rewrites the whole file and has a separate, larger cap. '
         // Reasoning models echo the prompt's language; the UI shows the trace
         // to a Chinese-reading user, so ask for it explicitly.
         + 'Write your reasoning in Simplified Chinese (中文) even when the request is in another language.',
