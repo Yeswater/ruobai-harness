@@ -124,6 +124,28 @@ async function mutate(ctx: Context, req: IncomingMessage, res: ServerResponse, r
     }))
     return
   }
+  if (route === '/pr') {
+    const title = typeof body.title === 'string' ? body.title : ''
+    const branch = typeof body.branch === 'string' ? body.branch : ''
+    const base = typeof body.base === 'string' ? body.base : ''
+    if (!title.trim() || !branch.trim() || !base.trim()) {
+      throw new HttpError(400, 'title, branch and base are required')
+    }
+    const files = Array.isArray(body.files)
+      ? body.files
+          .filter((item): item is string => typeof item === 'string' && item.length > 0)
+          .slice(0, 500)
+          .map(path => ctx.workspace.resolvePath(path, root).path)
+      : []
+    sendJson(res, 200, await ctx.git.createPullRequest(root, {
+      title,
+      branch,
+      base,
+      files,
+      ...(typeof body.body === 'string' && body.body.trim() ? { body: body.body } : {}),
+    }))
+    return
+  }
   if (route === '/fetch') {
     sendJson(res, 200, await ctx.git.fetch(root))
     return

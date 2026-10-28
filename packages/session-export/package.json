@@ -1,0 +1,16 @@
+{
+  "name": "@ruobai/session-export",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/chat": "workspace:*",
+    "@ruobai/chat-protocol": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/web-server": "workspace:*"
+  }
+}

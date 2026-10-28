@@ -53,6 +53,29 @@ describe('ui server', () => {
     expect(session.messages.some(message => message.blocks.some(block => block.type === 'tool'))).toBe(true)
   })
 
+  it('summarises user activity for the empty-session contribution graph', async () => {
+    const { ctx } = await setup()
+    const created = await (await fetch(`${ctx.web.url}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'activity test' }),
+    })).json() as { session: ChatSession }
+
+    await fetch(`${ctx.web.url}/api/sessions/${created.session.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '点亮今天' }),
+    })
+
+    const activity = await (await fetch(`${ctx.web.url}/api/activity`)).json() as {
+      days: Array<{ date: string; count: number }>
+      total: number
+    }
+    expect(activity.days).toHaveLength(365)
+    expect(activity.total).toBe(1)
+    expect(activity.days.at(-1)!.count).toBe(1)
+  })
+
   it('renames, forks and deletes sessions', async () => {
     const { ctx } = await setup()
     const base = ctx.web.url
@@ -475,7 +498,7 @@ describe('ui server', () => {
     expect(forked.status).toBe(409)
   })
 
-  it('takes back and sends a queued message', async () => {
+  it('takes a queued message back', async () => {
     const harness = await createHarness({ delay: 30 })
     harnesses.push(harness)
     const { ctx } = harness
@@ -509,10 +532,12 @@ describe('ui server', () => {
 
     const again = await (await send()).json() as { message: { id: string }; queued?: boolean }
     expect(again.queued).toBe(true)
-    const sent = await fetch(`${ctx.web.url}/api/sessions/${sid}/queued/${again.message.id}/send`, {
-      method: 'POST',
+    const takenAgain = await fetch(`${ctx.web.url}/api/sessions/${sid}/queued/${again.message.id}`, {
+      method: 'DELETE',
     })
-    expect(sent.status).toBe(200)
+    expect(takenAgain.status).toBe(200)
+    const entry = await takenAgain.json() as { queued: { id: string } }
+    expect(entry.queued.id).toBe(again.message.id)
   })
 
   it('creates a session bound to a workspace and rejects invalid roots', async () => {

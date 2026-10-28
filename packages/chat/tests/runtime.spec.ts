@@ -86,19 +86,35 @@ describe('running session', () => {
     expect(userTexts(ctx, session.id)).toEqual(['第一条'])
   })
 
-  it('sends a queued message now by interrupting the turn', async () => {
+  it('folds a queued message into the running turn at the next step boundary', async () => {
     const ctx = await setup(30)
-    const session = ctx.chat.create('send-now')
-    const ended = turnsEnded(ctx, 2)
+    const session = ctx.chat.create('interject')
+    let turns = 0
+    ctx.on('agent/turn-end', () => { turns += 1 })
 
-    ctx.chat.send(session.id, '第一条')
-    const queued = ctx.chat.send(session.id, '第二条')
-    expect(ctx.agents.isRunning(session.id)).toBe(true)
+    // The mock's file branch calls a tool first: the step boundary only opens
+    // once that tool has returned.
+    ctx.chat.send(session.id, '看一下文件')
+    expect(ctx.chat.send(session.id, '顺便说一下第二条').queued).toBe(true)
 
-    ctx.chat.sendNow(session.id, queued.message.id)
-    await ended
-    expect(userTexts(ctx, session.id)).toEqual(['第一条', '第二条'])
+    for (let attempt = 0; attempt < 400 && ctx.agents.isRunning(session.id); attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    await new Promise(resolve => setTimeout(resolve, 60))
+
+    // One turn, not two: the queued message was read inside it.
+    expect(turns).toBe(1)
+    expect(userTexts(ctx, session.id)).toEqual(['看一下文件', '顺便说一下第二条'])
     expect(ctx.chat.get(session.id)?.queued).toBeUndefined()
+
+    // And it was admitted before the turn ended, i.e. an assistant step still
+    // followed it.
+    const events = ctx.sessions.get(session.id)!.events
+    const admitted = events.findIndex(event =>
+      event.type === 'message/user' && event.data.text === '顺便说一下第二条')
+    const lastAssistant = events.map(event => event.type).lastIndexOf('message/assistant')
+    expect(admitted).toBeGreaterThan(0)
+    expect(admitted).toBeLessThan(lastAssistant)
   })
 
   it('applies a permission change made mid-turn', async () => {

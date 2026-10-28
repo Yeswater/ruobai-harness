@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AttachmentMeta, ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import { previewBus, terminalBus } from './panel-events.ts'
 import {
   api,
   connectEvents,
@@ -11,6 +12,7 @@ import {
   type ModeInfo,
   type ModelProvider,
   type PermissionMode,
+  type TodoSnapshot,
 } from './api.ts'
 
 function appendDelta(session: ChatSession, messageId: string, kind: 'text' | 'reasoning', delta: string): ChatSession {
@@ -68,15 +70,29 @@ function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {
 
 let bootstrapPromise: Promise<{ sessions: SessionSummary[]; activeId: string | null }> | undefined
 
+const ACTIVE_KEY = 'rbh-active-session'
+
+function storedActiveId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_KEY)
+  } catch {
+    return null
+  }
+}
+
 /** One initial load per page, shared by StrictMode's double effect run. */
 function bootstrap() {
   bootstrapPromise ??= (async () => {
     let list = await api.listSessions()
     if (!list.length) {
       const created = await api.createSession()
-      list = [summarize(created)]
+      return { sessions: [summarize(created)], activeId: created.id }
     }
-    return { sessions: list, activeId: list[0]?.id ?? null }
+    // Come back to the session that was open, not just the busiest one: an
+    // untouched new session never moves to the top on its own.
+    const stored = storedActiveId()
+    const activeId = stored && list.some(item => item.id === stored) ? stored : list[0]?.id ?? null
+    return { sessions: list, activeId }
   })()
   return bootstrapPromise
 }
@@ -93,6 +109,7 @@ export function useHarness() {
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null)
   const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
+  const [todo, setTodo] = useState<TodoSnapshot | null>(null)
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
 
@@ -103,6 +120,15 @@ export function useHarness() {
   useEffect(() => {
     sessionsRef.current = sessions
   }, [sessions])
+
+  useEffect(() => {
+    if (!activeId) return
+    try {
+      localStorage.setItem(ACTIVE_KEY, activeId)
+    } catch {
+      // private mode: the selection just will not survive a reload
+    }
+  }, [activeId])
 
   const fail = useCallback((caught: unknown) => {
     setError(caught instanceof Error ? caught.message : String(caught))
@@ -208,6 +234,7 @@ export function useHarness() {
     if (!activeId) return
     let cancelled = false
     setSession(null)
+    setTodo(null)
     void api.getSession(activeId)
       .then(next => {
         if (!cancelled) setSession(next)
@@ -215,6 +242,12 @@ export function useHarness() {
       .catch(caught => {
         if (!cancelled) fail(caught)
       })
+    // Optional panel: a deployment without `todo-web` simply has no list.
+    void api.todo(activeId)
+      .then((snapshot) => {
+        if (!cancelled) setTodo(snapshot)
+      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -307,6 +340,20 @@ export function useHarness() {
       onOpen: () => {
         setConnected(true)
         setError(null)
+        // The page may have been offline while the host restarted, so frames
+        // for sessions created in that window were never delivered. Take the
+        // server's list and keep anything it has not heard about yet.
+        void api.listSessions()
+          .then((list) => {
+            const known = new Set(list.map(item => item.id))
+            const next = [
+              ...list,
+              ...sessionsRef.current.filter(item => !known.has(item.id)),
+            ].sort((a, b) => b.updatedAt - a.updatedAt)
+            sessionsRef.current = next
+            setSessions(next)
+          })
+          .catch(() => undefined)
       },
       onError: () => setConnected(false),
       onChat: (event) => {
@@ -331,6 +378,12 @@ export function useHarness() {
         } else {
           setSession(previous => previous ? applyEvent(previous, event) : previous)
         }
+      },
+      onTerminal: (event) => terminalBus.emit(event),
+      onPreview: (event) => previewBus.emit(event),
+      onTodo: (payload) => {
+        if (payload.sessionId !== activeRef.current) return
+        setTodo(previous => previous && previous.rev > payload.rev ? previous : payload)
       },
       onApproval: (payload) => {
         if (payload.kind === 'requested') {
@@ -451,13 +504,6 @@ export function useHarness() {
     }
   }, [fail])
 
-  /** Interrupt the turn and start a queued message right away. */
-  const sendQueuedNow = useCallback((id: string, queuedId: string) => {
-    void api.sendQueuedNow(id, queuedId)
-      .then((next) => setSession(previous => previous && previous.id === id ? next : previous))
-      .catch(fail)
-  }, [fail])
-
   const resolveApproval = useCallback((id: string, decision: ApprovalDecision) => {
     setApprovals(previous => previous.filter(item => item.id !== id))
     void api.resolveApproval(id, decision).catch((caught) => {
@@ -481,6 +527,7 @@ export function useHarness() {
     commandPrefix,
     refreshSettings,
     approvals,
+    todo,
     recentWorkspaces,
     select,
     send,
@@ -494,7 +541,6 @@ export function useHarness() {
     setModel,
     setPermission,
     withdrawQueued,
-    sendQueuedNow,
     resolveApproval,
     dismissError: () => setError(null),
   }

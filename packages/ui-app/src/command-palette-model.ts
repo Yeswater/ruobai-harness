@@ -63,10 +63,41 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
     keywords: 'permission approval guard 审批 安全 规则',
   },
   {
+    id: 'export-session',
+    label: '导出当前会话',
+    description: '下载 Markdown 记录（工具输出折叠）',
+    keywords: 'export download markdown 导出 下载 记录 存档',
+  },
+  {
+    id: 'changes',
+    label: '查看更改',
+    description: '未提交改动、会话产出与 diff 预览',
+    keywords: 'changes diff commit pr 更改 改动 提交 预览',
+  },
+  {
+    id: 'session-info',
+    label: '会话信息',
+    description: '环境、上下文占用、输出文件与工作区改动',
+    keywords: 'session info environment context changes 会话 环境 上下文 改动 输出',
+  },
+  {
     id: 'show-files',
     label: '打开文件面板',
     description: '浏览工作区文件、预览并引用到对话',
     keywords: 'file tree files 文件 树 浏览 预览 引用',
+  },
+  {
+    id: 'terminal',
+    label: '打开终端',
+    description: '在当前工作区运行 shell',
+    keywords: 'terminal shell console 终端 命令行',
+    shortcut: 'J',
+  },
+  {
+    id: 'preview',
+    label: '打开预览',
+    description: '启动本地开发服务器并内嵌页面',
+    keywords: 'preview server dev 预览 服务器 开发',
   },
   {
     id: 'show-git',

@@ -46,6 +46,14 @@ pnpm build:ui
 - [`AGENTS.md`](AGENTS.md)：开发规范与禁区，改动前先读。
 - [`docs/protocols.md`](docs/protocols.md)：prompt 与消息协议。
 - [`docs/compaction.md`](docs/compaction.md)：上下文压缩策略。
+- [`docs/secrets.md`](docs/secrets.md)：密钥存储（系统钥匙串 / 0600 文件）与迁移。
+- [`docs/todo.md`](docs/todo.md)：会话级任务清单，压缩后仍保留目标。
+- [`docs/session-export.md`](docs/session-export.md)：会话导出为 Markdown 或事件 JSONL。
+- [`docs/agent-tooling.md`](docs/agent-tooling.md)：大文件读写、多行 grep、视觉截图与测试基线。
+- [`docs/tool-images.md`](docs/tool-images.md)：把工具产生的图片作为模型输入（截图 / 本地图片）。
+- [`docs/terminal-and-preview.md`](docs/terminal-and-preview.md)：交互式终端与开发服务器预览。
+- [`docs/session-panel.md`](docs/session-panel.md)：右侧会话信息栏（环境 / 上下文 / 输出 / 更改）。
+- [`docs/product-roadmap-review.md`](docs/product-roadmap-review.md)：外部产品 Roadmap 的逐条评审与取舍。
 - [`docs/prompt-cache.md`](docs/prompt-cache.md)：KV cache 交互设计与实测。
 - [`docs/sandbox-macos.md`](docs/sandbox-macos.md)：macOS 沙箱实现与实测附录。
 - [`docs/blog/`](docs/blog/)：工程判断与取舍的记录。

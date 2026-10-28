@@ -30,6 +30,9 @@
   config:
     root: !!js "process.cwd()"
     store: .ruobai/checkpoints
+    # Large single files (styles.css is ~300 KB) must stay revertible. The
+    # store is content-addressed, so only distinct versions are kept.
+    maxBytes: 2097152
 
 - id: checkpoints-web
   name: '@ruobai/checkpoints-web'
@@ -126,6 +129,13 @@
   name: '@ruobai/tool-fs'
   config:
     root: !!js "process.cwd()"
+    # A whole-file *read* is bounded so a stray large file cannot flood the
+    # prompt; bigger files are served as line windows (offset/limit).
+    maxBytes: 65536
+    # Editing rewrites the file, not the context: keep this large enough for
+    # the repository's biggest hand-edited files.
+    maxEditBytes: 8388608
+    readWindowLines: 2000
 
 # Shell execution: confined cwd, timeout, output cap, approval.
 - id: tool-bash
@@ -136,6 +146,45 @@
 # Sub-agent delegation; child sessions stay out of the session list.
 - id: tool-task
   name: '@ruobai/tool-task'
+
+# Session-scoped task list. The model maintains it with `todo_write`; the
+# projection feeds both the system prompt and the panel, so progress survives
+# compaction and a UI reload.
+- id: todo
+  name: '@ruobai/todo'
+
+- id: todo-web
+  name: '@ruobai/todo-web'
+
+# Visual verification: headless Chrome over CDP, screenshot + one expression.
+# Each call gets an isolated profile and is closed afterwards. Navigation is
+# limited to loopback unless `allowedHosts` names more.
+- id: browser-preview
+  name: '@ruobai/browser-preview'
+  config:
+    width: 1280
+    height: 800
+
+# Interactive shells for the UI. `script(1)` provides the pty, so no native
+# module is needed. Terminals are user-facing only: no agent tool writes to
+# them, because that would be a shell outside the command boundary.
+- id: terminal
+  name: '@ruobai/terminal'
+  config:
+    root: !!js "process.cwd()"
+
+- id: terminal-web
+  name: '@ruobai/terminal-web'
+
+# Development servers declared in .ruobai/launch.json (or .claude/launch.json).
+# The UI starts and stops them; no tool does, for the same boundary reason.
+- id: preview
+  name: '@ruobai/preview'
+  config:
+    root: !!js "process.cwd()"
+
+- id: preview-web
+  name: '@ruobai/preview-web'
 
 # Human approval for mutating tools.
 - id: approval
@@ -239,6 +288,10 @@
 # Browser-facing projection consumed by ui-server.
 - id: chat
   name: '@ruobai/chat'
+
+# Session export: Markdown for reading, JSONL for replay. Read-only.
+- id: session-export
+  name: '@ruobai/session-export'
 
 # Gate status API, SSE channel and the Settings → 门禁 panel.
 - id: hooks-web
@@ -355,6 +408,11 @@
 
 - id: settings-web
   name: '@ruobai/settings-web'
+
+# API keys and tokens move out of settings.json into the OS keychain (macOS)
+# or a 0600 file. Removing this row restores plaintext storage.
+- id: secrets
+  name: '@ruobai/secrets'
 
 # MCP servers are configured in Settings → MCP and hot-reloaded. Each tool is
 # exposed as mcp__<server>__<tool>.

@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import type { AttachmentMeta } from '@ruobai/chat-protocol'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
-import { api, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
+import { api, type ActivitySummary, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
 import {
   isExpandShortcut, isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut,
-  modKeyLabel,
+  isTerminalShortcut, modKeyLabel,
 } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
@@ -16,8 +16,11 @@ import { DetailsPanel, type FileView } from './components/DetailsPanel.tsx'
 import { ContextView } from './components/ContextView.tsx'
 import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
+import { ChangesView } from './components/ChangesView.tsx'
+import { TerminalPanel } from './components/TerminalPanel.tsx'
+import { TodoPanel } from './components/TodoPanel.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
-import { BranchIcon, FilePanelIcon, MenuIcon, MoreIcon, SearchIcon } from './components/Icons.tsx'
+import { BranchIcon, FilePanelIcon, ListIcon, MenuIcon, MonitorIcon, MoreIcon, SearchIcon, TerminalIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/settings/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { FunctionWorkspace } from './components/workspace/FunctionWorkspace.tsx'
@@ -27,11 +30,12 @@ import { Transcript } from './components/Transcript.tsx'
 import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
-type MainView = 'chat' | 'trajectory' | 'context'
+type MainView = 'chat' | 'changes' | 'trajectory' | 'context'
 
 const MAIN_VIEW_KEY = 'rbh-main-view'
 const MAIN_TABS: Array<{ id: MainView; label: string }> = [
   { id: 'chat', label: '会话' },
+  { id: 'changes', label: '更改' },
   { id: 'trajectory', label: '轨迹' },
   { id: 'context', label: '上下文' },
 ]
@@ -74,6 +78,8 @@ export function App() {
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [fileOpen, setFileOpen] = useState(false)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [fileRequest, setFileRequest] = useState<{ path: string; token: number } | null>(null)
   const [expandedPanel, setExpandedPanel] = useState<'file' | null>(null)
   const [panelView, setPanelView] = useState<FileView>('files')
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
@@ -98,6 +104,22 @@ export function App() {
   const [mainView, setMainView] = useState<MainView>(loadMainView)
   const [functionView, setFunctionView] = useState<FunctionView | null>(null)
   const [toolsTab, setToolsTab] = useState<ToolTab>('skills')
+  const [activity, setActivity] = useState<ActivitySummary | null>(null)
+
+  // A session that nobody has typed into yet: no messages in the log and no
+  // function workspace on screen. The empty screen keeps its own chrome.
+  const emptySession = Boolean(
+    !functionView && mainView === 'chat' && harness.session && harness.session.messages.length === 0,
+  )
+
+  useEffect(() => {
+    if (!emptySession) return
+    let cancelled = false
+    api.getActivity()
+      .then((next) => { if (!cancelled) setActivity(next) })
+      .catch(() => { if (!cancelled) setActivity(null) })
+    return () => { cancelled = true }
+  }, [emptySession, harness.session?.id, harness.sessions.length])
 
   useEffect(() => {
     localStorage.setItem(MAIN_VIEW_KEY, mainView)
@@ -227,6 +249,10 @@ export function App() {
         if (expandedPanel) setExpandedPanel(null)
         else if (fileOpen) toggleExpandPanel()
       }
+      if (isTerminalShortcut(event)) {
+        event.preventDefault()
+        setTerminalOpen(current => !current)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -234,8 +260,12 @@ export function App() {
 
   // Commands that need runtime state (nothing streaming, nothing to stop) drop out.
   const paletteCommands = useMemo(
-    () => PALETTE_COMMANDS.filter(command => command.id !== 'stop-turn' || harness.session?.streaming),
-    [harness.session?.streaming],
+    () => PALETTE_COMMANDS.filter((command) => {
+      if (command.id === 'stop-turn') return harness.session?.streaming === true
+      if (command.id === 'export-session') return Boolean(harness.session?.messages.length)
+      return true
+    }),
+    [harness.session?.streaming, harness.session?.messages.length],
   )
 
   const runPaletteCommand = (id: string) => {
@@ -267,11 +297,30 @@ export function App() {
       case 'permissions':
         openSettings('permissions')
         break
+      case 'export-session':
+        if (harness.session) {
+          window.open(`/api/export/session/${encodeURIComponent(harness.session.id)}.md`, '_blank', 'noopener')
+        }
+        break
       case 'show-files':
         showFilePanel('files')
         break
       case 'show-git':
         showFilePanel('git')
+        break
+      case 'preview':
+        showFilePanel('preview')
+        break
+      case 'session-info':
+        setPanelView('session')
+        setFileOpen(true)
+        break
+      case 'changes':
+        setFunctionView(null)
+        setMainView('changes')
+        break
+      case 'terminal':
+        setTerminalOpen(current => !current)
         break
       case 'toggle-sidebar':
         toggleSidebar()
@@ -354,128 +403,164 @@ export function App() {
         }}
       />
 
-      <main className="main">
-        <header className="main-head">
+      <main className={`main ${emptySession ? 'empty-session' : ''}`}>
+        <header className={emptySession ? 'main-head minimal' : 'main-head'}>
           <div className="main-head-left">
             <button className="icon-btn menu-btn" onClick={toggleSidebar} aria-label="Toggle sidebar">
               <MenuIcon />
             </button>
-            <div className="main-title">
-              {activeFunction
-                ? (
-                  <>
-                    <div className="main-title-row">
-                      <h1>{activeFunction.label}</h1>
-                      <button className="function-back" onClick={() => setFunctionView(null)}>
-                        返回会话
-                      </button>
-                    </div>
-                    <p className="main-sub">{activeFunction.description}</p>
-                  </>
-                )
-                : (
-                  <>
-                    <h1>{harness.session?.title ?? 'New session'}</h1>
-                    <nav className="main-tabs" role="tablist" aria-label="对话视图">
-                      {MAIN_TABS.map(tab => (
+            {emptySession
+              ? null
+              : (
+                <div className="main-title">
+                  {activeFunction
+                    ? (
+                      <>
+                        <div className="main-title-row">
+                          <h1>{activeFunction.label}</h1>
+                          <button className="function-back" onClick={() => setFunctionView(null)}>
+                            返回会话
+                          </button>
+                        </div>
+                        <p className="main-sub">{activeFunction.description}</p>
+                      </>
+                    )
+                    : (
+                      <>
+                        <h1>{harness.session?.title ?? 'New session'}</h1>
+                        <nav className="main-tabs" role="tablist" aria-label="对话视图">
+                          {MAIN_TABS.map(tab => (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={mainView === tab.id}
+                              className={mainView === tab.id ? 'active' : ''}
+                              onClick={() => {
+                                setFunctionView(null)
+                                setMainView(tab.id)
+                              }}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </nav>
+                      </>
+                    )}
+                </div>
+              )}
+          </div>
+
+          {emptySession
+            ? null
+            : (
+              <div className="main-head-center">
+                <button
+                  className="palette-trigger"
+                  onClick={() => setPaletteOpen(true)}
+                  aria-label="全局搜索"
+                  title={`全局搜索 (${modKeyLabel()}K)`}
+                >
+                  <SearchIcon size={13} />
+                  <span>搜索</span>
+                  <span className="keycap">{modKeyLabel()}K</span>
+                </button>
+              </div>
+            )}
+
+          {emptySession
+            ? null
+            : (
+              <div className="main-head-right">
+                <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
+                <Slot name="header.actions" props={{ sessionId: harness.session?.id }} />
+                <div className="main-tools" role="toolbar" aria-label="面板">
+                  <button
+                    className={`icon-btn ${fileOpen && panelView === 'session' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('session')}
+                    aria-label="会话信息"
+                    title="会话信息"
+                  >
+                    <ListIcon size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('files')}
+                    aria-label="文件"
+                    title="文件"
+                  >
+                    <FilePanelIcon size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${fileOpen && panelView === 'git' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('git')}
+                    aria-label="Git"
+                    title="Git"
+                  >
+                    <BranchIcon size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${fileOpen && panelView === 'preview' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('preview')}
+                    aria-label="预览"
+                    title="预览本地服务器"
+                  >
+                    <MonitorIcon size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${terminalOpen ? 'active' : ''}`}
+                    onClick={() => setTerminalOpen(current => !current)}
+                    aria-label="终端"
+                    title={`终端 (${modKeyLabel()}J)`}
+                  >
+                    <TerminalIcon size={16} />
+                  </button>
+                  <span className="main-tools-sep" />
+                  <button
+                    className={`icon-btn ${toolsMenuOpen ? 'active' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setToolsMenuOpen(current => !current)
+                    }}
+                    aria-label="更多工具"
+                    aria-haspopup="menu"
+                    aria-expanded={toolsMenuOpen}
+                    title="更多工具"
+                  >
+                    <MoreIcon size={16} />
+                  </button>
+                  {toolsMenuOpen
+                    ? (
+                      <div className="main-tools-menu" role="menu" onClick={event => event.stopPropagation()}>
                         <button
-                          key={tab.id}
-                          type="button"
-                          role="tab"
-                          aria-selected={mainView === tab.id}
-                          className={mainView === tab.id ? 'active' : ''}
+                          role="menuitem"
+                          onClick={() => { setToolsMenuOpen(false); toggleSidebar() }}
+                        >
+                          切换工作区栏
+                          <span className="menu-key">{modKeyLabel()}B</span>
+                        </button>
+                        <button
+                          role="menuitem"
+                          onClick={() => { setToolsMenuOpen(false); openSettings('behavior') }}
+                        >
+                          打开设置
+                          <span className="menu-key">{modKeyLabel()},</span>
+                        </button>
+                        <button
+                          role="menuitem"
                           onClick={() => {
-                            setFunctionView(null)
-                            setMainView(tab.id)
+                            setToolsMenuOpen(false)
+                            setPreference(theme === 'dark' ? 'light' : 'dark')
                           }}
                         >
-                          {tab.label}
+                          切换主题
                         </button>
-                      ))}
-                    </nav>
-                  </>
-                )}
-            </div>
-          </div>
-
-          <div className="main-head-center">
-            <button
-              className="palette-trigger"
-              onClick={() => setPaletteOpen(true)}
-              aria-label="全局搜索"
-              title={`全局搜索 (${modKeyLabel()}K)`}
-            >
-              <SearchIcon size={13} />
-              <span>搜索</span>
-              <span className="keycap">{modKeyLabel()}K</span>
-            </button>
-          </div>
-
-          <div className="main-head-right">
-            <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
-            <Slot name="header.actions" props={{ sessionId: harness.session?.id }} />
-            <div className="main-tools" role="toolbar" aria-label="面板">
-              <button
-                className={`icon-btn ${fileOpen && panelView === 'files' ? 'active' : ''}`}
-                onClick={() => showFilePanel('files')}
-                aria-label="文件"
-                title="文件"
-              >
-                <FilePanelIcon size={16} />
-              </button>
-              <button
-                className={`icon-btn ${fileOpen && panelView === 'git' ? 'active' : ''}`}
-                onClick={() => showFilePanel('git')}
-                aria-label="Git"
-                title="Git"
-              >
-                <BranchIcon size={16} />
-              </button>
-              <span className="main-tools-sep" />
-              <button
-                className={`icon-btn ${toolsMenuOpen ? 'active' : ''}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setToolsMenuOpen(current => !current)
-                }}
-                aria-label="更多工具"
-                aria-haspopup="menu"
-                aria-expanded={toolsMenuOpen}
-                title="更多工具"
-              >
-                <MoreIcon size={16} />
-              </button>
-              {toolsMenuOpen
-                ? (
-                  <div className="main-tools-menu" role="menu" onClick={event => event.stopPropagation()}>
-                    <button
-                      role="menuitem"
-                      onClick={() => { setToolsMenuOpen(false); toggleSidebar() }}
-                    >
-                      切换工作区栏
-                      <span className="menu-key">{modKeyLabel()}B</span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={() => { setToolsMenuOpen(false); openSettings('behavior') }}
-                    >
-                      打开设置
-                      <span className="menu-key">{modKeyLabel()},</span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setToolsMenuOpen(false)
-                        setPreference(theme === 'dark' ? 'light' : 'dark')
-                      }}
-                    >
-                      切换主题
-                    </button>
-                  </div>
-                )
-                : null}
-            </div>
-          </div>
+                      </div>
+                    )
+                    : null}
+                </div>
+              </div>
+            )}
         </header>
         {harness.error
           ? (
@@ -501,11 +586,7 @@ export function App() {
             <>
               <Transcript
                 session={harness.session}
-                onSuggestion={harness.send}
-                onSendQueued={(queuedId) => {
-                  const session = harness.session
-                  if (session) harness.sendQueuedNow(session.id, queuedId)
-                }}
+                activity={activity}
                 onEditQueued={(queuedId) => {
                   const session = harness.session
                   if (!session) return
@@ -523,6 +604,8 @@ export function App() {
                   if (session) void harness.withdrawQueued(session.id, queuedId)
                 }}
               />
+
+              <TodoPanel todo={harness.todo} />
 
               {pendingApprovals.length
                 ? (
@@ -568,8 +651,10 @@ export function App() {
               />
             </>
           )
-          : mainView === 'trajectory'
-            ? <TrajectoryView session={harness.session} />
+          : mainView === 'changes'
+            ? <ChangesView session={harness.session} />
+            : mainView === 'trajectory'
+              ? <TrajectoryView session={harness.session} />
             : (
               <ContextView
                 session={harness.session}
@@ -577,6 +662,14 @@ export function App() {
                 onRefresh={harness.refreshContext}
               />
             )}
+        {terminalOpen
+          ? (
+            <TerminalPanel
+              workspace={harness.session?.workspace}
+              onClose={() => setTerminalOpen(false)}
+            />
+          )
+          : null}
       </main>
 
       {fileOpen
@@ -593,6 +686,25 @@ export function App() {
               if (expandedPanel === 'file') setExpandedPanel(null)
             }}
             onReferenceFile={(path) => setReference({ path, token: Date.now() })}
+            openPath={fileRequest ?? undefined}
+            onOpenContext={() => {
+              setFunctionView(null)
+              setMainView('context')
+            }}
+            onOpenGit={() => {
+              setPanelView('git')
+              setFileOpen(true)
+            }}
+            onOpenFile={(path) => {
+              setFileRequest({ path, token: Date.now() })
+              setPanelView('files')
+              setFileOpen(true)
+            }}
+            onOpenSettings={() => openSettings('behavior')}
+            onOpenChanges={() => {
+              setFunctionView(null)
+              setMainView('changes')
+            }}
           />
         )
         : null}
@@ -614,6 +726,9 @@ export function App() {
         onPick={(path) => {
           setWorkspacePickerOpen(false)
           setFunctionView(null)
+          // The empty session on screen already is the new session; choosing
+          // its folder again should return to it, not leave another orphan row.
+          if (emptySession && harness.session?.workspace === path) return
           harness.createSession(path)
         }}
       />

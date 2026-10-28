@@ -15,6 +15,11 @@ const MAX_FILES = 20_000
 const MAX_DEPTH = 20
 const MAX_LINE = 500
 const MAX_PATTERN = 500
+/** Multiline search reads whole files; beyond this the cost is not worth it. */
+const MULTILINE_MAX_BYTES = 2 * 1024 * 1024
+const MULTILINE_SNIPPET = 300
+/** Patterns that look like they intend to cross a line boundary. */
+const MULTILINE_HINT = /\\n|\[\\s\\S\]|\\s\*\\n|\\s\+\\n|\(\?s\)/
 
 interface WalkState {
   files: number
@@ -107,6 +112,8 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
       name: 'grep',
       description: [
         'Search file contents inside the workspace and return path:line:text matches.',
+        'Matches one line at a time by default; set multiline to search across line breaks',
+        '(the pattern then gets the s and m flags, and each file up to 2 MB is read whole).',
         'Skips ignored directories and binary files, caps results, and is read-only.',
       ].join(' '),
       readOnly: true,
@@ -118,6 +125,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
           glob: { type: 'string', description: 'Only search files whose workspace-relative path matches this glob.' },
           caseSensitive: { type: 'boolean', description: 'Default true.' },
           fixed: { type: 'boolean', description: 'Treat pattern as a literal string instead of a regex.' },
+          multiline: { type: 'boolean', description: 'Match across line boundaries (s/m flags; whole-file read).' },
           maxResults: { type: 'number', description: 'Default 200, capped at 500.' },
         },
         required: ['pattern'],
@@ -127,10 +135,14 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         const pattern = String(args?.pattern ?? '')
         if (!pattern) throw new Error('pattern is required')
         if (pattern.length > MAX_PATTERN) throw new Error(`pattern is longer than ${MAX_PATTERN} characters`)
+        const multiline = args?.multiline === true
 
         let matcher: RegExp
         try {
-          matcher = new RegExp(args?.fixed ? escapeRegExp(pattern) : pattern, args?.caseSensitive === false ? 'i' : '')
+          matcher = new RegExp(
+            args?.fixed ? escapeRegExp(pattern) : pattern,
+            `${args?.caseSensitive === false ? 'i' : ''}${multiline ? 'sm' : ''}`,
+          )
         } catch (error) {
           throw new Error(`invalid pattern: ${error instanceof Error ? error.message : String(error)}`)
         }
@@ -142,6 +154,7 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         const fileGlob = typeof args?.glob === 'string' && args.glob.trim() ? args.glob.trim() : undefined
         const matches: string[] = []
         let more = false
+        let skippedLarge = 0
 
         const search = async (target: string) => {
           if (matches.length >= maxResults) {
@@ -153,6 +166,30 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
 
           try {
             const details = await stat(target)
+
+            if (multiline) {
+              if (details.size > MULTILINE_MAX_BYTES) {
+                skippedLarge += 1
+                return
+              }
+              const buffer = await readFile(target)
+              if (buffer.includes(0)) return
+              const text = buffer.toString('utf8')
+              const global = new RegExp(matcher.source, `${matcher.flags}g`)
+              let match: RegExpExecArray | null
+              while ((match = global.exec(text)) !== null) {
+                const line = text.slice(0, match.index).split('\n').length
+                const flat = match[0].replace(/\s+/g, ' ').trim()
+                matches.push(`${path}:${line}:${flat.slice(0, MULTILINE_SNIPPET)}${flat.length > MULTILINE_SNIPPET ? '…' : ''}`)
+                if (matches.length >= maxResults) {
+                  more = true
+                  return
+                }
+                if (!match[0].length) global.lastIndex += 1
+              }
+              return
+            }
+
             if (details.size <= context.maxBytes) {
               const buffer = await readFile(target)
               if (buffer.includes(0)) return
@@ -197,10 +234,17 @@ export function searchTools(context: SearchContext): ToolDefinition[] {
         if (info.isFile()) await search(start)
         else await walk(start, context, { files: 0, done: false }, 0, search)
 
-        if (!matches.length) return `No matches for ${args?.fixed ? JSON.stringify(pattern) : `/${pattern}/`}.`
-        return more
-          ? `${matches.join('\n')}\n… more matches were truncated at ${maxResults}`
-          : matches.join('\n')
+        if (!matches.length) {
+          const label = args?.fixed ? JSON.stringify(pattern) : `/${pattern}/`
+          const hint = !multiline && MULTILINE_HINT.test(pattern)
+            ? ' The pattern looks like it spans lines; this search matches one line at a time — pass multiline: true.'
+            : ''
+          return `No matches for ${label}.${hint}`
+        }
+        const lines = [...matches]
+        if (more) lines.push(`… more matches were truncated at ${maxResults}; raise maxResults (≤500) or narrow the search.`)
+        if (skippedLarge) lines.push(`… ${skippedLarge} file(s) larger than ${MULTILINE_MAX_BYTES} bytes were skipped.`)
+        return lines.join('\n')
       },
     },
     {

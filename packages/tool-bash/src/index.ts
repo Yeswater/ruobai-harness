@@ -15,7 +15,7 @@ export interface Config {
   maxOutputBytes?: number
 }
 
-const MAX_COMMAND_LENGTH = 8_000
+const MAX_COMMAND_LENGTH = 32_000
 
 function inside(root: string, target: string) {
   const rel = relative(root, target)
@@ -32,7 +32,10 @@ function commandOf(args: any) {
   const command = typeof args?.command === 'string' ? args.command.trim() : ''
   if (!command) throw new Error('command is required')
   if (command.length > MAX_COMMAND_LENGTH) {
-    throw new Error(`command is longer than ${MAX_COMMAND_LENGTH} characters`)
+    throw new Error(
+      `command is longer than ${MAX_COMMAND_LENGTH} characters; split it into smaller steps, `
+        + 'or use write_file/edit_file for large content',
+    )
   }
   return command
 }

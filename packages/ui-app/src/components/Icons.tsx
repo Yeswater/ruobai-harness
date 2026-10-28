@@ -265,6 +265,23 @@ export function ChatIcon({ size }: IconProps) {
   )
 }
 
+export function TrashIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5" />
+    </svg>
+  )
+}
+
+export function TerminalIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
+    </svg>
+  )
+}
+
 export function MonitorIcon({ size }: IconProps) {
   return (
     <svg {...base(size)}>

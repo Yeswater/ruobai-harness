@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/todo-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/todo": "workspace:*",
+    "@ruobai/web-server": "workspace:*"
+  }
+}

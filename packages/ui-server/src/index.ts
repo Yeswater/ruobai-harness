@@ -5,6 +5,7 @@ import { Service, type Context } from '@ruobai/cordis'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 import type {} from '@ruobai/chat'
 import { MAX_MESSAGE_BODY_BYTES, normalizeAttachments } from './attachments.ts'
+import { summarizeActivity } from './activity.ts'
 import { SseHub } from './sse.ts'
 
 const STATES = ['PENDING', 'LOADING', 'ACTIVE', 'FAILED', 'DISPOSED', 'UNLOADING'] as const
@@ -30,6 +31,9 @@ const PROTECTED_PLUGINS = new Set([
   '@ruobai/tools',
   '@ruobai/settings',
   '@ruobai/settings-web',
+  // Disabling it at runtime would leave keys only in the OS keychain while the
+  // provider entries look unconfigured; removal belongs in cordis.yml.
+  '@ruobai/secrets',
 ])
 
 interface LoaderEntry {
@@ -55,6 +59,11 @@ declare module '@ruobai/cordis' {
   interface Context {
     ui: UiApi
   }
+
+  interface Events {
+    /** Mirrors every `ui.broadcast` so push-capable plugins can relay it. */
+    'ui/broadcast'(channel: string, data: unknown): void
+  }
 }
 
 /**
@@ -78,6 +87,7 @@ export class UiApi extends Service {
   /** Fan a plugin-owned event out to every live SSE client. */
   broadcast(channel: string, data: unknown) {
     this.sse.broadcast(channel, data)
+    this.ctx.emit('ui/broadcast', channel, data)
   }
 
   async *[Service.init]() {
@@ -150,6 +160,16 @@ export class UiApi extends Service {
     if (pathname === '/api/modes') {
       if (method !== 'GET') throw new HttpError(405, 'method not allowed')
       sendJson(res, 200, { modes: this.ctx.modes.list(), default: this.ctx.modes.defaultId() })
+      return true
+    }
+
+    if (pathname === '/api/activity') {
+      if (method !== 'GET') throw new HttpError(405, 'method not allowed')
+      const sessions = this.ctx.sessions.list().map((meta) => {
+        const record = this.ctx.sessions.get(meta.id)
+        return { kind: meta.kind, events: record?.events ?? [] }
+      })
+      sendJson(res, 200, summarizeActivity(sessions))
       return true
     }
 
@@ -280,12 +300,11 @@ export class UiApi extends Service {
       return true
     }
 
-    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact|queued)(?:\/([^/]+))?(?:\/(send))?)?$/.exec(pathname)
+    const match = /^\/api\/sessions\/([^/]+)(?:\/(messages|stop|mode|model|permission|context|fork|trajectory|compact|queued)(?:\/([^/]+))?)?$/.exec(pathname)
     if (!match) return false
     const id = decodeURIComponent(match[1]!)
     const action = match[2]
     const queuedId = match[3] ? decodeURIComponent(match[3]) : undefined
-    const queuedAction = match[4]
 
     if (!action && method === 'GET') {
       const session = this.ctx.chat.get(id)
@@ -431,12 +450,6 @@ export class UiApi extends Service {
       if (!queuedId) throw new HttpError(400, 'queued message id is required')
       const queued = this.ctx.chat.withdraw(id, queuedId)
       sendJson(res, 200, { queued, session: this.ctx.chat.get(id) })
-      return true
-    }
-
-    if (action === 'queued' && method === 'POST' && queuedAction === 'send') {
-      if (!queuedId) throw new HttpError(400, 'queued message id is required')
-      sendJson(res, 200, { session: this.ctx.chat.sendNow(id, queuedId) })
       return true
     }
 

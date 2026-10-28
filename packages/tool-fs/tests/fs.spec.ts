@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -13,7 +13,7 @@ afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
 })
 
-async function setup() {
+async function setup(config: Record<string, unknown> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'rbh-fs-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
 
@@ -22,7 +22,7 @@ async function setup() {
   await tools
   const approval = ctx.plugin(ApprovalService)
   await approval
-  const fsTools = ctx.plugin(FsTools, { root })
+  const fsTools = ctx.plugin(FsTools, { root, ...config })
   await fsTools
   cleanups.push(() => fsTools.dispose(), () => approval.dispose(), () => tools.dispose())
   return { ctx, root }
@@ -86,6 +86,63 @@ describe('tool registry and fs tools', () => {
     const result = await pending
     expect(result.isError).toBe(true)
     await expect(readFile(join(root, 'blocked.txt'), 'utf8')).rejects.toThrow()
+  })
+
+  it('pages through files above the read cap and edits them in place', async () => {
+    const { ctx, root } = await setup()
+    const lines = Array.from({ length: 12_000 }, (_, index) => `line ${index + 1}`)
+    await writeFile(join(root, 'big.css'), lines.join('\n'))
+    expect((await stat(join(root, 'big.css'))).size).toBeGreaterThan(65_536)
+
+    const first = await ctx.tools.invoke('read_file', { path: 'big.css' })
+    expect(first.isError).toBe(false)
+    expect(first.content).toContain('[big.css: lines 1-2000 of 12000')
+    expect(first.content).toContain('line 2000')
+    expect(first.content).not.toContain('line 2001')
+
+    const tail = await ctx.tools.invoke('read_file', { path: 'big.css', offset: 12_000, limit: 1 })
+    expect(tail.content).toContain('line 12000')
+
+    const requested = nextRequest(ctx)
+    const pending = ctx.tools.invoke('edit_file', {
+      path: 'big.css',
+      oldText: 'line 11999',
+      newText: 'LINE 11999',
+    })
+    const request = await requested
+    expect(request.diff).toContain('-line 11999')
+    ctx.approval.resolve(request.id, 'allow')
+    const edited = await pending
+    expect(edited.isError).toBe(false)
+    const content = await readFile(join(root, 'big.css'), 'utf8')
+    expect(content).toContain('LINE 11999')
+    // The old regression: the result used to be rejected for being over the
+    // read cap even though editing does not consume context.
+    expect(Buffer.byteLength(content)).toBeGreaterThan(65_536)
+  })
+
+  it('attaches a workspace image for vision models, or explains why it cannot', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+
+    const attached = await setup({ sendImages: 'always' })
+    await writeFile(join(attached.root, 'shot.png'), png)
+    const ok = await attached.ctx.tools.invoke('view_image', { path: 'shot.png' })
+    expect(ok.isError).toBe(false)
+    expect(ok.content).toContain('shot.png')
+    expect(ok.images?.[0]).toMatchObject({ mimeType: 'image/png', name: 'shot.png' })
+    expect(Buffer.from(ok.images![0]!.data, 'base64').subarray(1, 4).toString()).toBe('PNG')
+
+    const plain = await setup()
+    await writeFile(join(plain.root, 'shot.png'), png)
+    const note = await plain.ctx.tools.invoke('view_image', { path: 'shot.png' })
+    expect(note.isError).toBe(false)
+    expect(note.images).toBeUndefined()
+    expect(note.content).toContain('未声明图片输入')
+
+    await writeFile(join(plain.root, 'note.txt'), 'hello')
+    const wrong = await plain.ctx.tools.invoke('view_image', { path: 'note.txt' })
+    expect(wrong.isError).toBe(true)
+    expect(wrong.content).toContain('not a PNG')
   })
 
   it('replaces exactly one occurrence with a diff preview', async () => {

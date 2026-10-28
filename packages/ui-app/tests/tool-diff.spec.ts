@@ -29,6 +29,16 @@ describe('line diff', () => {
     ])
   })
 
+  it('keeps a one-line edit in a large file small', () => {
+    const oldText = Array.from({ length: 5_000 }, (_, index) => `line ${index}`).join('\n')
+    const newText = oldText.replace('line 2500', 'LINE 2500')
+    const lines = diffLines(oldText, newText)
+    expect(lines.length).toBeLessThan(20)
+    expect(lines.filter(line => line.kind === 'del')).toHaveLength(1)
+    expect(lines.find(line => line.kind === 'del')).toMatchObject({ oldLine: 2501, text: 'line 2500' })
+    expect(lines.find(line => line.kind === 'add')).toMatchObject({ newLine: 2501, text: 'LINE 2500' })
+  })
+
   it('falls back to delete-then-add for very large inputs', () => {
     const oldText = Array.from({ length: 600 }, (_, index) => `old ${index}`).join('\n')
     const newText = Array.from({ length: 600 }, (_, index) => `new ${index}`).join('\n')

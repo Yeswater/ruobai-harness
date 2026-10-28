@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent 
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
-import { BrainIcon, CheckIcon, ChevronDownIcon, SparkIcon, ToolIcon } from './Icons.tsx'
+import type { ActivitySummary } from '../api.ts'
+import { BrainIcon, CheckIcon, ChevronDownIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
+import { ContributionGraph } from './ContributionGraph.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
 import { toolDetail, toolEdit, type ToolEdit } from '../tool-summary.ts'
@@ -16,25 +18,18 @@ import {
 
 interface TranscriptProps {
   session: ChatSession | null
-  onSuggestion: (text: string) => void
-  /** Interrupt the turn and start this queued message now. */
-  onSendQueued?: (queuedId: string) => void
+  /** Daily user activity for the empty-session contribution graph. */
+  activity: ActivitySummary | null
   /** Take a queued message back into the input box for editing. */
   onEditQueued?: (queuedId: string) => void
   /** Discard a queued message. */
   onWithdrawQueued?: (queuedId: string) => void
 }
 
-const SUGGESTIONS = [
-  '解释一下 Cordis 的 fiber 生命周期',
-  '帮我看一下 loader 的源码',
-  '给 UI 加一个会话搜索',
-]
-
 const FOLLOW_THRESHOLD = 24
 
 export function Transcript({
-  session, onSuggestion, onSendQueued, onEditQueued, onWithdrawQueued,
+  session, activity, onEditQueued, onWithdrawQueued,
 }: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -110,17 +105,8 @@ export function Transcript({
           {!session ? (
             <div className="loading">loading session…</div>
           ) : messages.length === 0 ? (
-            <div className="empty">
-              <div className="empty-mark"><SparkIcon size={26} /></div>
-              <h2>从这里开始</h2>
-              <p>由 ruobai-chat 服务驱动的本地会话。发一条消息，查看流式输出、工具卡片和右侧运行时面板。</p>
-              <div className="suggestions">
-                {SUGGESTIONS.map(text => (
-                  <button key={text} className="suggestion" onClick={() => onSuggestion(text)}>
-                    {text}
-                  </button>
-                ))}
-              </div>
+            <div className="contrib-screen">
+              <ContributionGraph activity={activity} />
             </div>
           ) : null}
 
@@ -158,13 +144,13 @@ export function Transcript({
             )
           })}
 
-          {/* Queued messages are not in the log yet: the host appends them when
-              their turn starts, so they are drawn from the queue instead. */}
+          {/* Queued messages are not in the log yet: the host admits them at the
+              next step boundary of the running turn, so they are drawn from the
+              queue until then. */}
           {queued.filter(item => !messages.some(message => message.id === item.id)).map(item => (
             <UserMessage
               key={item.id}
               queued
-              onSend={onSendQueued ? () => onSendQueued(item.id) : undefined}
               onEdit={onEditQueued ? () => onEditQueued(item.id) : undefined}
               onWithdraw={onWithdrawQueued ? () => onWithdrawQueued(item.id) : undefined}
               message={{
@@ -199,10 +185,9 @@ export function Transcript({
   )
 }
 
-function UserMessage({ message, queued, onSend, onEdit, onWithdraw }: {
+function UserMessage({ message, queued, onEdit, onWithdraw }: {
   message: ChatMessage
   queued?: boolean
-  onSend?: () => void
   onEdit?: () => void
   onWithdraw?: () => void
 }) {
@@ -236,17 +221,10 @@ function UserMessage({ message, queued, onSend, onEdit, onWithdraw }: {
       {queued
         ? (
           <div className="msg-queued">
-            <span>排队中 · 当前回合结束后发送</span>
-            {onSend || onEdit || onWithdraw
+            <span>排队中 · 当前步骤结束后发给模型</span>
+            {onEdit || onWithdraw
               ? (
                 <span className="msg-queued-actions">
-                  {onSend
-                    ? (
-                      <button type="button" className="msg-queued-action" onClick={onSend} title="打断当前回合，立刻发送这条">
-                        发送
-                      </button>
-                    )
-                    : null}
                   {onEdit
                     ? (
                       <button type="button" className="msg-queued-action" onClick={onEdit} title="撤回并放回输入框，编辑后重新发送">
@@ -502,6 +480,19 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
                   <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
                 </>
               )}
+            {block.images?.length
+              ? (
+                <div className="tool-images">
+                  {block.images.map((image, index) => (
+                    <img
+                      key={index}
+                      src={`data:${image.mimeType};base64,${image.data}`}
+                      alt={image.name ?? `工具图片 ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              )
+              : null}
           </div>
         )
         : null}

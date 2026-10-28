@@ -273,7 +273,7 @@ export function Sidebar(props: SidebarProps) {
             onClick={() => props.onSelect(session.id)}
             onDoubleClick={() => startRename(session)}
           >
-            <span className="session-title">{session.title}</span>
+            <span className="session-title">{session.title || '新的会话'}</span>
             <span className="session-meta">
               {session.streaming
                 ? <span className="pulse" aria-label="running" />
@@ -376,16 +376,46 @@ export function Sidebar(props: SidebarProps) {
                 <span className="brand-sub">Harness</span>
               </span>
             </div>
-            <button
-              className="icon-btn subtle sidebar-collapse"
-              onClick={props.onToggleCollapse}
-              aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
-              title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
-            >
-              <PanelLeftIcon />
-            </button>
+            <div className="sidebar-head-actions">
+              <button
+                className="sidebar-new"
+                onClick={props.onCreate}
+                aria-label="新建会话"
+                title={`新建会话 (${shortcutLabel('N')})`}
+              >
+                <PlusIcon size={13} />
+                <span>新建</span>
+              </button>
+              <button
+                className="icon-btn subtle sidebar-collapse"
+                onClick={props.onToggleCollapse}
+                aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+                title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+              >
+                <PanelLeftIcon />
+              </button>
+            </div>
           </div>
+        </div>
 
+        <nav className="function-rail" aria-label="功能">
+          {FUNCTION_VIEWS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`function-item ${props.functionView === item.id ? 'active' : ''}`}
+              onClick={() => props.onOpenFunction(item.id)}
+              aria-current={props.functionView === item.id ? 'page' : undefined}
+              title={item.description}
+            >
+              <span className="function-icon">{functionIcon(item.id)}</span>
+              <span className="function-label">{item.label}</span>
+              {item.badge ? <span className="function-badge">{item.badge}</span> : null}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-workspace-head">
           {searchOpen
             ? (
               <div className="session-search inline">
@@ -433,23 +463,6 @@ export function Sidebar(props: SidebarProps) {
             )}
         </div>
 
-        <nav className="function-rail" aria-label="功能">
-          {FUNCTION_VIEWS.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              className={`function-item ${props.functionView === item.id ? 'active' : ''}`}
-              onClick={() => props.onOpenFunction(item.id)}
-              aria-current={props.functionView === item.id ? 'page' : undefined}
-              title={item.description}
-            >
-              <span className="function-icon">{functionIcon(item.id)}</span>
-              <span className="function-label">{item.label}</span>
-              {item.badge ? <span className="function-badge">{item.badge}</span> : null}
-            </button>
-          ))}
-        </nav>
-
         <div className={`session-list ${drag ? 'dragging' : ''}`}>
           {visibleGroups.map(renderGroup)}
 
@@ -461,7 +474,7 @@ export function Sidebar(props: SidebarProps) {
                   ? '还没有归档的会话'
                   : props.sessions.length
                     ? '没有未归档的会话'
-                    : '还没有会话，点击右上角添加工作区'}
+                    : '还没有会话，点击左上角“新建”开始'}
             </div>
           )}
         </div>

@@ -287,6 +287,17 @@ declare module '@ruobai/cordis' {
   }
 }
 
+/**
+ * Secret storage contract. Structural on purpose: `@ruobai/secrets` depends on
+ * settings, so settings cannot import it back.
+ */
+export interface SecretStore {
+  readonly backend: string
+  get(key: string): string | undefined
+  set(key: string, value: string): Promise<void>
+  delete(key: string): Promise<void>
+}
+
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1'
 
 /** Shell control and expansion characters that make prefix matching unsafe. */
@@ -333,12 +344,52 @@ export class SettingsService extends Service {
     return this.data.llm?.providers?.find(entry => entry.id === id)
   }
 
-  /** Effective key: stored value, then environment fallbacks. */
+  /** Effective key: secret store, then stored value, then environment fallbacks. */
   apiKeyFor(id: string): string | undefined {
     const entry = this.findProvider(id)
-    return entry?.apiKey
+    return this.secrets()?.get(`llm/${id}`)
+      || entry?.apiKey
       || process.env.RBU_API_KEY
       || (entry?.baseUrl?.includes('deepseek') || id === 'deepseek' ? process.env.DEEPSEEK_API_KEY : undefined)
+  }
+
+  /**
+   * Move keys that predate `@ruobai/secrets` out of settings.json.
+   *
+   * Called by the secrets service once it is active. Keys already present in
+   * the store win, so re-running after a crash is safe.
+   */
+  async adoptSecrets(store: SecretStore): Promise<number> {
+    let moved = 0
+    let changed = false
+
+    for (const entry of this.data.llm?.providers ?? []) {
+      if (!entry.apiKey) continue
+      const key = `llm/${entry.id}`
+      if (!store.get(key)) {
+        await store.set(key, entry.apiKey)
+        moved++
+      }
+      delete entry.apiKey
+      changed = true
+    }
+
+    const gitee = this.data.gitee
+    if (gitee?.token) {
+      if (!store.get('gitee/token')) {
+        await store.set('gitee/token', gitee.token)
+        moved++
+      }
+      delete gitee.token
+      changed = true
+    }
+
+    if (changed) await this.commit()
+    return moved
+  }
+
+  private secrets(): SecretStore | undefined {
+    return this.ctx.get('secrets', false) as SecretStore | undefined
   }
 
   get(): PublicSettings {
@@ -452,9 +503,16 @@ export class SettingsService extends Service {
       models,
       ...(input.note !== undefined ? { note: input.note } : existing?.note ? { note: existing.note } : {}),
       ...(input.website !== undefined ? { website: input.website } : existing?.website ? { website: existing.website } : {}),
-      ...(input.apiKey === undefined
-        ? existing?.apiKey ? { apiKey: existing.apiKey } : {}
-        : input.apiKey.trim() ? { apiKey: input.apiKey.trim() } : {}),
+    }
+
+    const store = this.secrets()
+    if (input.apiKey === undefined) {
+      if (existing?.apiKey) entry.apiKey = existing.apiKey
+    } else {
+      const key = input.apiKey.trim()
+      if (key && store) await store.set(`llm/${targetId}`, key)
+      else if (key) entry.apiKey = key
+      else await store?.delete(`llm/${targetId}`)
     }
 
     const index = providers.findIndex(item => item.id === targetId)
@@ -478,6 +536,14 @@ export class SettingsService extends Service {
       const next = llm.providers[0]
       llm.activeProvider = next?.id ?? 'mock'
       llm.activeModel = next?.models[0]?.id
+    }
+    // A leftover key in the keychain is harmless; a failed deletion must not
+    // keep the provider visible in settings.
+    const store = this.secrets()
+    if (store) {
+      await store.delete(`llm/${id}`).catch((error) => {
+        this.ctx.logger('settings').warn(error)
+      })
     }
     return this.commit()
   }
@@ -624,7 +690,7 @@ export class SettingsService extends Service {
 
   /** Host-only: the token never appears in the public settings view. */
   giteeToken(): string | undefined {
-    return this.data.gitee?.token || process.env.GITEE_TOKEN || undefined
+    return this.secrets()?.get('gitee/token') || this.data.gitee?.token || process.env.GITEE_TOKEN || undefined
   }
 
   async updateGitee(patch: {
@@ -635,8 +701,15 @@ export class SettingsService extends Service {
     visibility?: GiteeVisibility
   }): Promise<PublicSettings> {
     const gitee = this.data.gitee ??= {}
-    if (patch.clearToken) delete gitee.token
-    else if (typeof patch.token === 'string' && patch.token.trim()) gitee.token = patch.token.trim()
+    const store = this.secrets()
+    const token = typeof patch.token === 'string' ? patch.token.trim() : ''
+    if (patch.clearToken) {
+      delete gitee.token
+      await store?.delete('gitee/token')
+    } else if (token) {
+      if (store) await store.set('gitee/token', token)
+      else gitee.token = token
+    }
 
     if (patch.owner !== undefined) {
       const owner = patch.owner.trim()
@@ -778,7 +851,10 @@ export class SettingsService extends Service {
           website: 'https://platform.deepseek.com',
           baseUrl: process.env.RBU_BASE_URL ?? DEEPSEEK_BASE,
           mode: 'direct',
-          models: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }],
+          models: [
+            { id: 'deepseek-chat', inputTypes: ['text'] },
+            { id: 'deepseek-reasoner', inputTypes: ['text'] },
+          ],
         }]
         llm.activeProvider = process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'mock'
         llm.activeModel = process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : undefined
