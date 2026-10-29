@@ -44,7 +44,10 @@ interface DragState {
 
 const VIEW_KEY = 'rbh-sidebar-view'
 const ORDER_KEY = 'rbh-sidebar-order'
-const COLLAPSED_KEY = 'rbh-sidebar-collapsed'
+/** Folded workspace/folder keys. Never the shell's own collapse key. */
+const FOLDED_KEY = 'rbh-sidebar-folded'
+/** Sessions shown before the group's "show more" row. */
+const GROUP_LIMIT = 5
 
 function loadView(): SidebarView {
   try {
@@ -70,9 +73,9 @@ function loadOrders(): ManualOrder {
   }
 }
 
-function loadCollapsed(): Set<string> {
+function loadFolded(): Set<string> {
   try {
-    const raw = localStorage.getItem(COLLAPSED_KEY)
+    const raw = localStorage.getItem(FOLDED_KEY)
     return new Set(raw ? JSON.parse(raw) as string[] : [])
   } catch {
     return new Set()
@@ -100,7 +103,8 @@ export function Sidebar(props: SidebarProps) {
   const contextMenu = useContextMenu()
   const [view, setView] = useState<SidebarView>(loadView)
   const [orders, setOrders] = useState<ManualOrder>(loadOrders)
-  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
+  const [folded, setFolded] = useState<Set<string>>(loadFolded)
+  const [revealed, setRevealed] = useState<Record<string, number>>({})
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [menuId, setMenuId] = useState<string | null>(null)
@@ -142,14 +146,27 @@ export function Sidebar(props: SidebarProps) {
     localStorage.setItem(ORDER_KEY, JSON.stringify(next))
   }
 
+  const searching = query.trim().length > 0
+  // Each workspace folds on its own: opening one never closes another.
+  const isFolded = (group: { key: string }) => {
+    if (searching) return false
+    return folded.has(group.key)
+  }
+
   const toggleGroup = (key: string) => {
-    setCollapsed((previous) => {
+    setFolded((previous) => {
       const next = new Set(previous)
       if (next.has(key)) next.delete(key)
       else next.add(key)
-      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]))
+      localStorage.setItem(FOLDED_KEY, JSON.stringify([...next]))
       return next
     })
+    // Re-opening starts from the first page of sessions again.
+    setRevealed(previous => ({ ...previous, [key]: GROUP_LIMIT }))
+  }
+
+  const revealMore = (key: string) => {
+    setRevealed(previous => ({ ...previous, [key]: (previous[key] ?? GROUP_LIMIT) + GROUP_LIMIT }))
   }
 
   const startRename = (session: SessionSummary) => {
@@ -175,7 +192,7 @@ export function Sidebar(props: SidebarProps) {
 
   const createIn = (group: { key: string; canCreate: boolean }) => {
     if (!group.canCreate) return
-    if (collapsed.has(group.key)) toggleGroup(group.key)
+    if (isFolded(group)) toggleGroup(group.key)
     props.onCreateIn(group.key === UNGROUPED_KEY ? undefined : group.key)
   }
 
@@ -325,8 +342,12 @@ export function Sidebar(props: SidebarProps) {
         </div>
       )
     }
-    const folded = collapsed.has(group.key)
+    const folded = isFolded(group)
     const current = group.sessions.some(session => session.id === props.activeId)
+    // An open workspace shows a page at a time; search results are never cut.
+    const limit = searching ? group.sessions.length : revealed[group.key] ?? GROUP_LIMIT
+    const shown = group.sessions.slice(0, limit)
+    const hidden = group.sessions.length - shown.length
     return (
       <div key={group.key || '__ungrouped'} className="ws-group">
         <div
@@ -356,13 +377,26 @@ export function Sidebar(props: SidebarProps) {
             </button>
           ) : null}
         </div>
-        {folded ? null : group.sessions.map(session => renderRow(session, group.key, 14 + group.depth * 14))}
+        {folded
+          ? null
+          : (
+            <>
+              {shown.map(session => renderRow(session, group.key, 14 + group.depth * 14))}
+              {hidden > 0
+                ? (
+                  <button className="ws-more" onClick={() => revealMore(group.key)}>
+                    显示更多（还有 {hidden} 条）
+                  </button>
+                )
+                : null}
+            </>
+          )}
       </div>
     )
   }
 
   const collapsedAncestor = (group: typeof groups[number]) =>
-    ancestorKeys(group.path).some(key => collapsed.has(key))
+    ancestorKeys(group.path).some(key => isFolded({ key }))
   const visibleGroups = view.groupBy === 'tree'
     ? groups.filter(group => !collapsedAncestor(group))
     : groups

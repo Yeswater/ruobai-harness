@@ -737,7 +737,7 @@ export const api = {
   getSession: async (id: string) =>
     (await request<{ session: ChatSession }>(`/api/sessions/${encodeURIComponent(id)}`)).session,
 
-  createSession: async (input: { title?: string; workspace?: string } = {}) =>
+  createSession: async (input: { title?: string; workspace?: string; mode?: string } = {}) =>
     (await request<{ session: ChatSession }>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(input),

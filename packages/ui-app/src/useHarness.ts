@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AttachmentMeta, ChatEvent, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
+import type { AttachmentMeta, ChatEvent, ChatMessage, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
 import { previewBus, terminalBus } from './panel-events.ts'
 import {
   api,
@@ -75,6 +75,8 @@ function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {
 let bootstrapPromise: Promise<{ sessions: SessionSummary[]; activeId: string | null }> | undefined
 
 const ACTIVE_KEY = 'rbh-active-session'
+const DRAFT_PREFIX = 'draft:'
+let draftSeq = 0
 
 function storedActiveId(): string | null {
   try {
@@ -84,18 +86,33 @@ function storedActiveId(): string | null {
   }
 }
 
+/**
+ * A new session that lives only in this tab. The host learns about it on the
+ * first message, so an untouched "new session" leaves neither a row nor a file.
+ */
+function draftSession(workspace?: string): ChatSession {
+  const now = Date.now()
+  return {
+    id: `${DRAFT_PREFIX}${++draftSeq}`,
+    title: 'New session',
+    model: '',
+    workspace,
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+    streaming: false,
+  }
+}
+
 /** One initial load per page, shared by StrictMode's double effect run. */
 function bootstrap() {
   bootstrapPromise ??= (async () => {
-    let list = await api.listSessions()
-    if (!list.length) {
-      const created = await api.createSession()
-      return { sessions: [summarize(created)], activeId: created.id }
-    }
-    // Come back to the session that was open, not just the busiest one: an
-    // untouched new session never moves to the top on its own.
+    const list = await api.listSessions()
+    // Rows whose log never got a user message are leftovers from older builds.
+    const usable = list.filter(item => item.messageCount > 0)
+    // Come back to the session that was open, not just the busiest one.
     const stored = storedActiveId()
-    const activeId = stored && list.some(item => item.id === stored) ? stored : list[0]?.id ?? null
+    const activeId = stored && usable.some(item => item.id === stored) ? stored : usable[0]?.id ?? null
     return { sessions: list, activeId }
   })()
   return bootstrapPromise
@@ -119,6 +136,7 @@ export function useHarness() {
   const [planProposal, setPlanProposal] = useState<PlanProposal | null>(null)
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
+  const draftRef = useRef<ChatSession | null>(null)
 
   useEffect(() => {
     activeRef.current = activeId
@@ -145,25 +163,32 @@ export function useHarness() {
     // Clicking the active row must not clear the transcript: activeId would
     // not change, so the loading effect would never run again.
     if (activeRef.current === id) return
+    // A draft that was never sent dies with the switch: it has no host session.
+    draftRef.current = null
     activeRef.current = id
     setActiveId(id)
     setSession(null)
   }, [])
 
-  const createFresh = useCallback((workspace?: string) => {
-    void api.createSession({ workspace })
-      .then((created) => {
-        const summary = summarize(created)
-        sessionsRef.current = upsert(sessionsRef.current, summary)
-        setSessions(previous => upsert(previous, summary))
-        activeRef.current = created.id
-        setActiveId(created.id)
-        setSession(created)
-        setApprovals([])
-        setAsks([])
-      })
-      .catch(fail)
-  }, [fail])
+  /**
+   * Open an unsent session. Nothing is created on the host: the session is
+   * persisted by `send` once there is a first message to store.
+   */
+  const startDraft = useCallback((workspace?: string) => {
+    const draft = draftSession(workspace)
+    draftRef.current = draft
+    activeRef.current = null
+    setActiveId(null)
+    setSession(draft)
+    setApprovals([])
+    setAsks([])
+    setTodo(null)
+    setCommitProposal(null)
+    setPlanProposal(null)
+    setContextInfo(null)
+  }, [])
+
+  const createFresh = startDraft
 
   /** Remove a session locally; select the next one or start a fresh session. */
   const dropSession = useCallback((id: string) => {
@@ -229,8 +254,14 @@ export function useHarness() {
     void bootstrap()
       .then(({ sessions, activeId }) => {
         if (cancelled) return
+        sessionsRef.current = sessions
         setSessions(sessions)
-        if (activeId) setActiveId(activeId)
+        if (activeId) {
+          activeRef.current = activeId
+          setActiveId(activeId)
+        } else {
+          startDraft()
+        }
       })
       .catch((caught) => {
         if (!cancelled) fail(caught)
@@ -238,12 +269,14 @@ export function useHarness() {
     return () => {
       cancelled = true
     }
-  }, [fail])
+  }, [fail, startDraft])
 
   useEffect(() => {
     if (!activeId) return
     let cancelled = false
-    setSession(null)
+    // A draft that was just persisted already has its session in hand: keep it
+    // on screen instead of flashing the empty state while the fetch runs.
+    setSession(previous => previous && previous.id === activeId ? previous : null)
     setTodo(null)
     setCommitProposal(null)
     setPlanProposal(null)
@@ -455,37 +488,85 @@ export function useHarness() {
     return () => events.close()
   }, [dropSession])
 
+  const foldSent = useCallback((sessionId: string, message: ChatMessage, queued: boolean) => {
+    setSession((previous) => {
+      if (!previous || previous.id !== sessionId) return previous
+      if (queued) {
+        // The event stream normally carries the queue; fold the response in
+        // as well so a missed frame cannot hide what the user just sent.
+        const queue = previous.queued ?? []
+        if (queue.some(item => item.id === message.id)) return previous
+        const body = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
+        const files = message.blocks.flatMap(block =>
+          block.type === 'attachment' ? [block.attachment] : [])
+        return {
+          ...previous,
+          queued: [...queue, {
+            id: message.id,
+            text: body,
+            createdAt: message.createdAt,
+            ...(files.length ? { attachments: files } : {}),
+          }],
+        }
+      }
+      if (previous.messages.some(item => item.id === message.id)) return previous
+      return { ...previous, messages: [...previous.messages, message] }
+    })
+  }, [])
+
+  /** Create the host session behind a draft; settings picked before the first
+   *  message ride along so the created session matches what the composer shows. */
+  const persistDraft = useCallback(async (draft: ChatSession) => {
+    let created = await api.createSession({
+      ...(draft.workspace ? { workspace: draft.workspace } : {}),
+      ...(draft.mode ? { mode: draft.mode } : {}),
+    })
+    try {
+      if (draft.provider && draft.model) {
+        created = await api.setSessionModel(created.id, draft.provider, draft.model)
+      }
+      if (draft.permission) {
+        created = await api.setSessionPermission(
+          created.id,
+          draft.permission as PermissionMode,
+          draft.permission === 'full-access',
+        )
+      }
+    } catch (error) {
+      // Never leave a session nobody can see: it has no messages and the list
+      // hides empty rows.
+      await api.deleteSession(created.id).catch(() => undefined)
+      throw error
+    }
+    return created
+  }, [])
+
   const send = useCallback((text: string, attachments: AttachmentMeta[] = []) => {
+    const deliver = (sessionId: string) => {
+      void api.sendMessage(sessionId, text, attachments)
+        .then(({ message, queued }) => foldSent(sessionId, message, Boolean(queued)))
+        .catch(fail)
+    }
     const id = activeRef.current
-    if (!id) return
-    void api.sendMessage(id, text, attachments)
-      .then(({ message, queued }) => {
-        setSession((previous) => {
-          if (!previous || previous.id !== id) return previous
-          if (queued) {
-            // The event stream normally carries the queue; fold the response in
-            // as well so a missed frame cannot hide what the user just sent.
-            const queue = previous.queued ?? []
-            if (queue.some(item => item.id === message.id)) return previous
-            const body = message.blocks.map(block => block.type === 'text' ? block.text : '').join('')
-            const files = message.blocks.flatMap(block =>
-              block.type === 'attachment' ? [block.attachment] : [])
-            return {
-              ...previous,
-              queued: [...queue, {
-                id: message.id,
-                text: body,
-                createdAt: message.createdAt,
-                ...(files.length ? { attachments: files } : {}),
-              }],
-            }
-          }
-          if (previous.messages.some(item => item.id === message.id)) return previous
-          return { ...previous, messages: [...previous.messages, message] }
-        })
+    if (id) {
+      deliver(id)
+      return
+    }
+    const draft = draftRef.current
+    if (!draft) return
+    void persistDraft(draft)
+      .then((created) => {
+        draftRef.current = null
+        activeRef.current = created.id
+        setActiveId(created.id)
+        setSession(created)
+        const summary = summarize(created)
+        sessionsRef.current = upsert(sessionsRef.current, summary)
+        setSessions(previous => upsert(previous, summary))
+        deliver(created.id)
       })
       .catch(fail)
-  }, [fail])
+  }, [fail, foldSent, persistDraft])
 
   const stop = useCallback(() => {
     const id = activeRef.current
@@ -494,21 +575,33 @@ export function useHarness() {
 
   const createSession = createFresh
 
+  // A host session with no messages never became a conversation: keep it out
+  // of the sidebar and the palette. The draft on screen has no row at all.
+  const visibleSessions = useMemo(
+    () => sessions.filter(item => item.messageCount > 0),
+    [sessions],
+  )
+
   const recentWorkspaces = useMemo(() => {
     const seen = new Set<string>()
     const list: string[] = []
-    for (const item of sessions) {
+    for (const item of visibleSessions) {
       const workspace = item.workspace
       if (!workspace || seen.has(workspace)) continue
       seen.add(workspace)
       list.push(workspace)
     }
     return list.slice(0, 8)
-  }, [sessions])
+  }, [visibleSessions])
 
   const setMode = useCallback((mode: string) => {
     const id = activeRef.current
-    if (!id) return
+    if (!id) {
+      // `send` persists `draftRef`, so the pick has to land there too.
+      if (draftRef.current) draftRef.current = { ...draftRef.current, mode }
+      setSession(previous => previous ? { ...previous, mode } : previous)
+      return
+    }
     void api.setSessionMode(id, mode)
       .then((next) => {
         setSession(previous => previous && previous.id === id ? { ...previous, mode: next.mode } : previous)
@@ -519,7 +612,11 @@ export function useHarness() {
 
   const setModel = useCallback((provider: string, model: string) => {
     const id = activeRef.current
-    if (!id) return
+    if (!id) {
+      if (draftRef.current) draftRef.current = { ...draftRef.current, provider, model }
+      setSession(previous => previous ? { ...previous, provider, model } : previous)
+      return
+    }
     void api.setSessionModel(id, provider, model)
       .then((next) => {
         setSession(previous => previous && previous.id === id
@@ -534,7 +631,11 @@ export function useHarness() {
 
   const setPermission = useCallback((mode: PermissionMode, confirm = false) => {
     const id = activeRef.current
-    if (!id) return
+    if (!id) {
+      if (draftRef.current) draftRef.current = { ...draftRef.current, permission: mode }
+      setSession(previous => previous ? { ...previous, permission: mode } : previous)
+      return
+    }
     void api.setSessionPermission(id, mode, confirm)
       .then((next) => {
         setSession(previous => previous && previous.id === id
@@ -620,7 +721,7 @@ export function useHarness() {
   }, [fail])
 
   return {
-    sessions,
+    sessions: visibleSessions,
     activeId,
     session,
     connected,

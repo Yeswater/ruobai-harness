@@ -119,11 +119,20 @@ export function App() {
   const [toolsTab, setToolsTab] = useState<ToolTab>('skills')
   const [activity, setActivity] = useState<ActivitySummary | null>(null)
 
+  // A draft has no host session yet, so server-bound props use its future id.
+  const sessionId = harness.activeId ?? undefined
+
   // A session that nobody has typed into yet: no messages in the log and no
   // function workspace on screen. The empty screen keeps its own chrome.
   const emptySession = Boolean(
     !functionView && mainView === 'chat' && harness.session && harness.session.messages.length === 0,
   )
+
+  // A new session opens with the empty screen alone: no side panel left over
+  // from the conversation the user came from.
+  useEffect(() => {
+    if (emptySession) setFileOpen(false)
+  }, [emptySession])
 
   useEffect(() => {
     if (!emptySession) return
@@ -139,7 +148,6 @@ export function App() {
   }, [mainView])
 
   useEffect(() => {
-    const sessionId = harness.session?.id
     let cancelled = false
     const load = () => {
       api.getSkills(sessionId)
@@ -152,7 +160,7 @@ export function App() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [harness.session?.id])
+  }, [sessionId])
   const pendingApprovals = harness.approvals
   // Shortcuts live outside React's render cycle; a ref keeps them current.
   const settingsOpenRef = useRef(settingsOpen)
@@ -421,6 +429,8 @@ export function App() {
           setSidebarOpen(false)
         }}
         onCreateIn={(workspace) => {
+          setFunctionView(null)
+          setMainView('chat')
           harness.createSession(workspace)
           setSidebarOpen(false)
         }}
@@ -510,9 +520,9 @@ export function App() {
             ? null
             : (
               <div className="main-head-right">
-                <Slot name="header.actions" props={{ sessionId: harness.session?.id }} />
+                <Slot name="header.actions" props={{ sessionId }} />
                 <div className="main-tools" role="toolbar" aria-label="面板">
-                  <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
+                  <OpenInMenu sessionId={sessionId} workspace={harness.session?.workspace} />
                   <span className="main-tools-sep" />
                   <button
                     className={`icon-btn ${sessionDockOpen ? 'active' : ''}`}
@@ -691,10 +701,10 @@ export function App() {
               <Composer
                 disabled={!harness.session}
                 streaming={harness.session?.streaming ?? false}
-                sessionId={harness.session?.id}
+                sessionId={sessionId}
                 workspace={harness.session?.workspace}
                 provider={harness.session?.provider}
-                model={harness.session?.model ?? 'ruobai-chat'}
+                model={harness.session?.model || 'ruobai-chat'}
                 models={harness.models}
                 modes={harness.modes}
                 skills={skills}
@@ -717,38 +727,42 @@ export function App() {
                 reference={reference}
               />
               </div>
-              <SessionDock
-                session={harness.session}
-                open={sessionDockOpen}
-                onToggle={() => setSessionDockOpen(value => !value)}
-                onOpenContext={() => {
-                  setFunctionView(null)
-                  setMainView('context')
-                }}
-                onOpenGit={() => {
-                  setPanelView('git')
-                  setFileOpen(true)
-                }}
-                onOpenFile={(path) => {
-                  setFileRequest({ path, token: Date.now() })
-                  setPanelView('files')
-                  setFileOpen(true)
-                }}
-                onOpenSettings={() => openSettings('behavior')}
-                onOpenChanges={() => {
-                  setFunctionView(null)
-                  setMainView('changes')
-                }}
-              />
+              {emptySession
+                ? null
+                : (
+                  <SessionDock
+                    session={harness.session}
+                    open={sessionDockOpen}
+                    onToggle={() => setSessionDockOpen(value => !value)}
+                    onOpenContext={() => {
+                      setFunctionView(null)
+                      setMainView('context')
+                    }}
+                    onOpenGit={() => {
+                      setPanelView('git')
+                      setFileOpen(true)
+                    }}
+                    onOpenFile={(path) => {
+                      setFileRequest({ path, token: Date.now() })
+                      setPanelView('files')
+                      setFileOpen(true)
+                    }}
+                    onOpenSettings={() => openSettings('behavior')}
+                    onOpenChanges={() => {
+                      setFunctionView(null)
+                      setMainView('changes')
+                    }}
+                  />
+                )}
             </div>
           )
           : mainView === 'changes'
-            ? <ChangesView session={harness.session} />
+            ? <ChangesView session={harness.activeId ? harness.session : null} />
             : mainView === 'trajectory'
-              ? <TrajectoryView session={harness.session} />
+              ? <TrajectoryView session={harness.activeId ? harness.session : null} />
             : (
               <ContextView
-                session={harness.session}
+                session={harness.activeId ? harness.session : null}
                 context={harness.contextInfo}
                 onRefresh={harness.refreshContext}
               />
@@ -781,7 +795,7 @@ export function App() {
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
-        sessionId={harness.session?.id}
+        sessionId={sessionId}
         themePreference={preference}
         onThemeChange={setPreference}
         onSaved={() => { void harness.refreshSettings() }}
@@ -795,9 +809,10 @@ export function App() {
         onPick={(path) => {
           setWorkspacePickerOpen(false)
           setFunctionView(null)
+          setMainView('chat')
           // The empty session on screen already is the new session; choosing
-          // its folder again should return to it, not leave another orphan row.
-          if (emptySession && harness.session?.workspace === path) return
+          // its folder again should return to it, not replace it.
+          if (!harness.session?.messages.length && harness.session?.workspace === path) return
           harness.createSession(path)
         }}
       />
