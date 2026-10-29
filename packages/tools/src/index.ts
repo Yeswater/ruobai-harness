@@ -31,6 +31,12 @@ export interface ToolDefinition extends ToolSchema {
   requiresApproval?: boolean
   /** Tool only observes state; required for the read-only permission mode. */
   readOnly?: boolean
+  /**
+   * Runs alone and before the rest of its step. Use it for tools whose result
+   * can change what the sibling calls should do — a question to the human, for
+   * example: acting first would defeat the answer.
+   */
+  blocksBatch?: boolean
   /** What a persistent approval rule matches against. */
   approvalSubject?(args: any, run: ToolRunContext): { kind: 'command' | 'path'; value: string } | undefined
   /** Human-readable summary and optional diff shown in the approval card. */

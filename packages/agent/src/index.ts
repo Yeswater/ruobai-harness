@@ -471,20 +471,28 @@ export class AgentService extends Service {
           return { args, result }
         }
 
+        // A blocking tool (for example a question to the human) must see the
+        // step alone: a sibling acting first could change the state the answer
+        // is about. It runs first and serial; the rest follow once it returns.
+        const blocking = calls.filter(call => this.ctx.tools.get(call.name)?.blocksBatch === true)
+        const ordered = blocking.length
+          ? [...blocking, ...calls.filter(call => !blocking.includes(call))]
+          : calls
+
         // Independent read-only calls from one model step run together; any
         // writer or approval stays serial so side effects keep their order.
-        const readOnlyBatch = calls.length > 1 && calls.every((call) => {
+        const readOnlyBatch = blocking.length === 0 && ordered.length > 1 && ordered.every((call) => {
           const tool = this.ctx.tools.get(call.name)
           return this.ctx.modes.allows(mode?.id, call.name)
             && tool?.readOnly === true
             && !tool.requiresApproval
         })
         const batch = readOnlyBatch && !controller.signal.aborted
-          ? await Promise.all(calls.map(executeCall))
+          ? await Promise.all(ordered.map(executeCall))
           : undefined
 
         let goalComplete = false
-        for (const [index, call] of calls.entries()) {
+        for (const [index, call] of ordered.entries()) {
           if (controller.signal.aborted) break
           if (!this.ctx.modes.allows(mode?.id, call.name)) {
             this.ctx.sessions.append(sessionId, 'tool/result', {

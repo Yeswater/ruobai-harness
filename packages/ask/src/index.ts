@@ -189,6 +189,9 @@ function askTool(service: AskService): ToolDefinition {
   return {
     name: 'ask_user',
     readOnly: true,
+    // The answer can change what the rest of the step should do, so this runs
+    // before (and without) its siblings.
+    blocksBatch: true,
     description: [
       'Ask the user a direct question and wait for their answer.',
       'Use it when the request is ambiguous or when the state you found contradicts the premise of the request,',
