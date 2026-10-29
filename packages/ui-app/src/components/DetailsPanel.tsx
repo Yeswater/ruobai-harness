@@ -4,9 +4,11 @@ import { modKeyLabel } from '../shortcuts.ts'
 import { FileBrowser } from './FileBrowser.tsx'
 import { GitPanel } from './git/GitPanel.tsx'
 import { PreviewPane } from './PreviewPane.tsx'
+import { TerminalPanel } from './TerminalPanel.tsx'
 import { CollapseIcon, CloseIcon, ExpandIcon } from './Icons.tsx'
+import { TITLES, type FileView } from '../panel-views.ts'
 
-export type FileView = 'files' | 'git' | 'preview'
+export type { FileView } from '../panel-views.ts'
 
 interface DetailsPanelProps {
   session: ChatSession | null
@@ -21,12 +23,6 @@ interface DetailsPanelProps {
   /** Open this file once per token when the file browser mounts/updates. */
   openPath?: { path: string; token: number }
   onOpenGit: () => void
-}
-
-const TITLES: Record<FileView, string> = {
-  files: '文件',
-  git: 'Git',
-  preview: '预览',
 }
 
 /** File explorer and source control, independent of the session panel. */
@@ -63,8 +59,11 @@ export function DetailsPanel({
             onDoubleClick={() => onResize(344)}
           />
         )}
+      {/* The rounded surface is the visible panel; the aside only reserves the
+          column and hosts the resizer, so insetting the card does not change the
+          width the grid and the drag handle work with. */}
+      <div className="details-surface">
       <div className="details-head">
-        <span className="details-title">{TITLES[view]}</span>
         <div className="details-head-actions">
           <button
             className={`icon-btn subtle ${expanded ? 'active' : ''}`}
@@ -81,13 +80,16 @@ export function DetailsPanel({
       </div>
 
       <div className={`details-scroll bare ${view === 'git' ? 'git-scroll' : ''} ${view === 'preview' ? 'preview-scroll' : ''}`}>
-        {view === 'preview'
+        {view === 'terminal'
+          ? <TerminalPanel workspace={session?.workspace} />
+          : view === 'preview'
           ? <PreviewPane />
           : session
             ? view === 'files'
               ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} openPath={openPath} />
               : <GitPanel sessionId={session.id} expanded={expanded} />
             : <div className="loading">no session</div>}
+      </div>
       </div>
     </aside>
   )

@@ -4,11 +4,10 @@ import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { api, type TerminalInfo } from '../api.ts'
 import { terminalBus } from '../panel-events.ts'
-import { CloseIcon, CollapseIcon, ExpandIcon, PlusIcon, TrashIcon } from './Icons.tsx'
+import { CloseIcon, PlusIcon, TrashIcon } from './Icons.tsx'
 
 interface TerminalPanelProps {
   workspace?: string
-  onClose: () => void
 }
 
 interface Instance {
@@ -24,16 +23,17 @@ interface Instance {
 const FONT = '"SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
 
 /**
- * Bottom terminal dock.
+ * Terminal panel, stacked in the right-hand column above the conversation.
  *
  * The shell lives on the server (a pty behind `/api/terminal`); this component
  * only renders bytes and sends keystrokes. Buffers replay from the server, so
- * closing and reopening the dock keeps the scrollback.
+ * closing and reopening the panel keeps the scrollback. It fills the column
+ * height and the width follows the panel, so there is no separate "expand"
+ * state any more — the panel is already the tall form.
  */
-export function TerminalPanel({ workspace, onClose }: TerminalPanelProps) {
+export function TerminalPanel({ workspace }: TerminalPanelProps) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const instances = useRef(new Map<string, Instance>())
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -180,7 +180,7 @@ export function TerminalPanel({ workspace, onClose }: TerminalPanelProps) {
       }
     })
     return () => cancelAnimationFrame(frame)
-  }, [activeId, expanded])
+  }, [activeId])
 
   useEffect(() => () => {
     for (const instance of instances.current.values()) instance.term.dispose()
@@ -214,7 +214,7 @@ export function TerminalPanel({ workspace, onClose }: TerminalPanelProps) {
   }
 
   return (
-    <section className={`terminal-dock ${expanded ? 'expanded' : ''}`} aria-label="终端">
+    <section className="terminal-dock" aria-label="终端">
       <div className="terminal-head">
         <div className="terminal-tabs" role="tablist">
           {terminals.map(item => (
@@ -248,17 +248,6 @@ export function TerminalPanel({ workspace, onClose }: TerminalPanelProps) {
         <div className="terminal-actions">
           <button className="icon-btn subtle" onClick={clearActive} aria-label="清屏" title="清屏">
             <TrashIcon size={14} />
-          </button>
-          <button
-            className={`icon-btn subtle ${expanded ? 'active' : ''}`}
-            onClick={() => setExpanded(value => !value)}
-            aria-label={expanded ? '收起终端' : '展开终端'}
-            title={expanded ? '收起' : '展开'}
-          >
-            {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
-          </button>
-          <button className="icon-btn subtle" onClick={onClose} aria-label="隐藏终端" title="隐藏终端">
-            <CloseIcon size={14} />
           </button>
         </div>
       </div>

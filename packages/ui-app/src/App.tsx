@@ -20,7 +20,6 @@ import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
 import { ChangesView } from './components/ChangesView.tsx'
 import { SessionDock } from './components/SessionDock.tsx'
-import { TerminalPanel } from './components/TerminalPanel.tsx'
 import { TodoPanel } from './components/TodoPanel.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
 import { BranchIcon, FilePanelIcon, ListIcon, MenuIcon, MonitorIcon, MoreIcon, SearchIcon, TerminalIcon } from './components/Icons.tsx'
@@ -91,7 +90,6 @@ export function App() {
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [fileOpen, setFileOpen] = useState(false)
-  const [terminalOpen, setTerminalOpen] = useState(false)
   const [fileRequest, setFileRequest] = useState<{ path: string; token: number } | null>(null)
   const [expandedPanel, setExpandedPanel] = useState<'file' | null>(null)
   const [panelView, setPanelView] = useState<FileView>('files')
@@ -287,12 +285,12 @@ export function App() {
       }
       if (isTerminalShortcut(event)) {
         event.preventDefault()
-        setTerminalOpen(current => !current)
+        showFilePanel('terminal')
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openSettings, toggleSidebar, expandedPanel, fileOpen, toggleExpandPanel])
+  }, [openSettings, toggleSidebar, expandedPanel, fileOpen, toggleExpandPanel, showFilePanel])
 
   // Commands that need runtime state (nothing streaming, nothing to stop) drop out.
   const paletteCommands = useMemo(
@@ -355,7 +353,7 @@ export function App() {
         setMainView('changes')
         break
       case 'terminal':
-        setTerminalOpen(current => !current)
+        showFilePanel('terminal')
         break
       case 'toggle-sidebar':
         toggleSidebar()
@@ -550,8 +548,8 @@ export function App() {
                     <MonitorIcon size={16} />
                   </button>
                   <button
-                    className={`icon-btn ${terminalOpen ? 'active' : ''}`}
-                    onClick={() => setTerminalOpen(current => !current)}
+                    className={`icon-btn ${fileOpen && panelView === 'terminal' ? 'active' : ''}`}
+                    onClick={() => showFilePanel('terminal')}
                     aria-label="终端"
                     title={`终端 (${modKeyLabel()}J)`}
                   >
@@ -757,14 +755,6 @@ export function App() {
                 onRefresh={harness.refreshContext}
               />
             )}
-        {terminalOpen
-          ? (
-            <TerminalPanel
-              workspace={harness.session?.workspace}
-              onClose={() => setTerminalOpen(false)}
-            />
-          )
-          : null}
       </main>
 
       {fileOpen

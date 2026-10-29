@@ -3,18 +3,15 @@
 
 /* ---------------------------------------------------------------- terminal */
 
+/* The terminal fills the right-hand panel it lives in. It used to be a bottom
+   dock that grew upward; as a panel it is already the tall form, so the width
+   comes from the column and the height from the card. */
 .terminal-dock {
   display: flex;
-  flex: none;
+  flex: 1;
   flex-direction: column;
-  height: 280px;
   min-height: 0;
-  border-top: 1px solid var(--border);
   background: var(--bg);
-}
-
-.terminal-dock.expanded {
-  height: 55vh;
 }
 
 .terminal-head {
@@ -23,7 +20,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 3px 8px;
+  padding: 3px 6px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -932,18 +929,21 @@ button.session-row:hover {
   flex: none;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--border);
+  margin: 8px 8px 8px 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--panel);
   transition: width .16s ease;
 }
 
 .session-dock.open {
-  width: 308px;
+  width: 300px;
 }
 
 .session-dock.collapsed {
-  width: 30px;
-  background: var(--bg);
+  width: 34px;
+  background: var(--tool-bg);
 }
 
 .session-dock-toggle {
@@ -973,6 +973,10 @@ button.session-row:hover {
 .session-dock.collapsed .session-dock-toggle {
   height: 100%;
   border-bottom: 0;
+}
+
+.session-dock.collapsed .session-dock-body {
+  display: none;
 }
 
 .session-dock-body {

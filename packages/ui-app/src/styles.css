@@ -1690,19 +1690,34 @@ body.resizing .sidebar-resizer::after {
 
 /* Details */
 
+/* The right-hand column is a floating card: the aside reserves the column and
+   carries the resizer, the surface inside it is what the user sees. */
 .details {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--border);
+  padding: 8px 8px 8px 0;
+  background: transparent;
+}
+
+.details-surface {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--panel);
 }
 
 .details-head {
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px 0 14px;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -2972,7 +2987,7 @@ body {
 }
 
 .details-head {
-  padding: 6px 8px 0 12px;
+  padding: 6px 8px;
 }
 
 .tab {
@@ -3814,20 +3829,11 @@ body {
 /* Session side panel cards */
 
 .details {
-  background: var(--bg);
+  background: transparent;
 }
 
 .details-head {
-  justify-content: space-between;
-  padding: 12px 12px 6px 16px;
-  border-bottom: 0;
-}
-
-.details-title {
-  color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: .02em;
+  padding: 6px 8px;
 }
 
 .details-scroll {
