@@ -1451,6 +1451,81 @@ button {
   border-color: var(--border-strong);
 }
 
+/* The commit card: a prepared message, one click to accept. */
+
+.approval.commit {
+  border-color: color-mix(in srgb, var(--ok) 38%, var(--border));
+  background: color-mix(in srgb, var(--ok) 5%, var(--panel));
+}
+
+.approval.commit .approval-title {
+  color: var(--ok);
+}
+
+.commit-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.commit-files code {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+
+.commit-message {
+  padding: 0 12px 8px;
+}
+
+.commit-message input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.commit-message input:focus {
+  border-color: var(--border-strong);
+}
+
+.commit-skipped {
+  padding: 0 12px 8px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.commit-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 10px;
+}
+
+.commit-candidates .chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.commit-candidates .chip.active {
+  border-color: var(--ok);
+  color: var(--text);
+}
+
 /* Settings tabs and behavior */
 
 .settings-tabs {

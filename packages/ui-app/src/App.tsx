@@ -10,6 +10,7 @@ import {
 } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { AskCard } from './components/AskCard.tsx'
+import { CommitCard } from './components/CommitCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
@@ -607,6 +608,18 @@ export function App() {
               />
 
               <TodoPanel todo={harness.todo} />
+
+              {harness.commitProposal
+                ? (
+                  <div className="approval-stack">
+                    <CommitCard
+                      proposal={harness.commitProposal}
+                      onCommit={message => harness.commitChanges(harness.commitProposal!.id, message)}
+                      onDismiss={() => harness.dismissCommit(harness.commitProposal!.id)}
+                    />
+                  </div>
+                )
+                : null}
 
               {harness.asks.length
                 ? (

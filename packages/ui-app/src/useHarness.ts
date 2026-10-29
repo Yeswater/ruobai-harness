@@ -9,6 +9,7 @@ import {
   type ApprovalRequest,
   type AskRequest,
   type CommandPrefix,
+  type CommitProposal,
   type ContextInfo,
   type ModeInfo,
   type ModelProvider,
@@ -112,6 +113,7 @@ export function useHarness() {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
   const [asks, setAsks] = useState<AskRequest[]>([])
   const [todo, setTodo] = useState<TodoSnapshot | null>(null)
+  const [commitProposal, setCommitProposal] = useState<CommitProposal | null>(null)
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
 
@@ -240,6 +242,7 @@ export function useHarness() {
     let cancelled = false
     setSession(null)
     setTodo(null)
+    setCommitProposal(null)
     void api.getSession(activeId)
       .then(next => {
         if (!cancelled) setSession(next)
@@ -251,6 +254,12 @@ export function useHarness() {
     void api.todo(activeId)
       .then((snapshot) => {
         if (!cancelled) setTodo(snapshot)
+      })
+      .catch(() => undefined)
+    // Optional panel: a host without `commit-prompt-web` simply has no card.
+    void api.getCommits(activeId)
+      .then((list) => {
+        if (!cancelled) setCommitProposal(list.at(-1) ?? null)
       })
       .catch(() => undefined)
     return () => {
@@ -395,6 +404,14 @@ export function useHarness() {
         if (payload.sessionId !== activeRef.current) return
         setTodo(previous => previous && previous.rev > payload.rev ? previous : payload)
       },
+      onCommit: (payload) => {
+        if (payload.kind === 'requested') {
+          if (payload.proposal.sessionId !== activeRef.current) return
+          setCommitProposal(payload.proposal)
+        } else if (payload.resolution.sessionId === activeRef.current) {
+          setCommitProposal(previous => previous?.id === payload.resolution.id ? null : previous)
+        }
+      },
       onApproval: (payload) => {
         if (payload.kind === 'requested') {
           const request = payload.request
@@ -533,6 +550,28 @@ export function useHarness() {
     })
   }, [fail])
 
+  /**
+   * Accept the card's commit. The card is cleared optimistically: the proposal is
+   * single-use, and a failure re-reads the pending list so a retry still works.
+   */
+  const commitChanges = useCallback((id: string, message: string) => {
+    setCommitProposal(null)
+    void api.resolveCommit(id, { action: 'commit', message }).catch((caught) => {
+      fail(caught)
+      const sessionId = activeRef.current
+      if (sessionId) void api.getCommits(sessionId).then(list => setCommitProposal(list.at(-1) ?? null)).catch(() => undefined)
+    })
+  }, [fail])
+
+  const dismissCommit = useCallback((id: string) => {
+    setCommitProposal(null)
+    void api.resolveCommit(id, { action: 'dismiss' }).catch((caught) => {
+      fail(caught)
+      const sessionId = activeRef.current
+      if (sessionId) void api.getCommits(sessionId).then(list => setCommitProposal(list.at(-1) ?? null)).catch(() => undefined)
+    })
+  }, [fail])
+
   const answerAsk = useCallback((id: string, answer: string) => {
     setAsks(previous => previous.filter(item => item.id !== id))
     void api.answerAsk(id, answer).catch((caught) => {
@@ -558,6 +597,7 @@ export function useHarness() {
     approvals,
     asks,
     todo,
+    commitProposal,
     recentWorkspaces,
     select,
     send,
@@ -573,6 +613,8 @@ export function useHarness() {
     withdrawQueued,
     resolveApproval,
     answerAsk,
+    commitChanges,
+    dismissCommit,
     dismissError: () => setError(null),
   }
 }

@@ -33,6 +33,8 @@
     "@ruobai/client-fixture": "workspace:*",
     "@ruobai/client-modules": "workspace:*",
     "@ruobai/commands": "workspace:*",
+    "@ruobai/commit-prompt": "workspace:*",
+    "@ruobai/commit-prompt-web": "workspace:*",
     "@ruobai/context": "workspace:*",
     "@ruobai/context-search": "workspace:*",
     "@ruobai/cordis": "workspace:*",

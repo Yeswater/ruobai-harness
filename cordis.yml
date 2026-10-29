@@ -342,6 +342,16 @@
 - id: workspace-web
   name: '@ruobai/workspace-web'
 
+# The commit card: after a completed turn (or `/commit`) prepare a message from
+# the session title and the dirty paths, then commit only when the user accepts.
+- id: commit-prompt
+  name: '@ruobai/commit-prompt'
+  config:
+    auto: true
+
+- id: commit-prompt-web
+  name: '@ruobai/commit-prompt-web'
+
 # Git status, staging, commits, history, branches and remote sync.
 - id: git
   name: '@ruobai/git'

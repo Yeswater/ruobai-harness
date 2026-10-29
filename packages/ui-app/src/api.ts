@@ -629,6 +629,29 @@ export interface TodoSnapshot {
   items: TodoItem[]
 }
 
+/** A commit the host prepared; the card only has to accept or edit it. */
+export interface CommitProposal {
+  id: string
+  sessionId: string
+  workspace: string
+  /** Message the card starts with. */
+  message: string
+  /** Alternative phrasings, offered as one-click choices. */
+  candidates: string[]
+  files: string[]
+  /** Harness state / build output left out of this commit. */
+  skipped: string[]
+  stat: { add: number; del: number }
+  createdAt: number
+}
+
+export type CommitEvent =
+  | { kind: 'requested'; proposal: CommitProposal }
+  | {
+    kind: 'resolved'
+    resolution: { id: string; sessionId: string; via: 'commit' | 'dismiss'; commit?: string; message?: string }
+  }
+
 export const api = {
   listTerminals: async () =>
     (await request<{ terminals: TerminalInfo[] }>('/api/terminal')).terminals,
@@ -669,6 +692,17 @@ export const api = {
 
   todo: async (id: string) =>
     request<TodoSnapshot>(`/api/todo?sessionId=${encodeURIComponent(id)}`),
+
+  getCommits: async (id: string) =>
+    (await request<{ proposals: CommitProposal[] }>(
+      `/api/commits?sessionId=${encodeURIComponent(id)}`,
+    )).proposals,
+
+  resolveCommit: async (id: string, input: { action: 'commit' | 'dismiss'; message?: string }) =>
+    (await request<{ resolution: { id: string; via: string; commit?: string } }>(
+      `/api/commits/${encodeURIComponent(id)}`,
+      { method: 'POST', body: JSON.stringify(input) },
+    )).resolution,
 
   listSessions: async () =>
     (await request<{ sessions: SessionSummary[] }>('/api/sessions')).sessions,
@@ -1183,6 +1217,7 @@ export interface EventHandlers {
   onApproval?: (payload: ApprovalEvent) => void
   onAsk?: (payload: AskEvent) => void
   onTodo?: (payload: TodoSnapshot) => void
+  onCommit?: (payload: CommitEvent) => void
   onTerminal?: (payload: TerminalEvent) => void
   onPreview?: (payload: PreviewEvent) => void
 }
@@ -1263,6 +1298,13 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('commit', (event) => {
+      try {
+        handlers.onCommit?.(JSON.parse((event as MessageEvent<string>).data) as CommitEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
     source.addEventListener('terminal', (event) => {
       try {
         handlers.onTerminal?.(JSON.parse((event as MessageEvent<string>).data) as TerminalEvent)
@@ -1298,6 +1340,7 @@ export function connectEvents(handlers: EventHandlers) {
           document.documentElement.dataset.live = 'ws'
           handlers.onOpen?.()
         } else if (payload.type === 'todo') handlers.onTodo?.(payload.data as TodoSnapshot)
+        else if (payload.type === 'commit') handlers.onCommit?.(payload.data as CommitEvent)
         else if (payload.type === 'terminal') handlers.onTerminal?.(payload.data as TerminalEvent)
         else if (payload.type === 'preview') handlers.onPreview?.(payload.data as PreviewEvent)
         else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)

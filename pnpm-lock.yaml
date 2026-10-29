@@ -53,6 +53,12 @@ importers:
       '@ruobai/commands':
         specifier: workspace:*
         version: link:packages/commands
+      '@ruobai/commit-prompt':
+        specifier: workspace:*
+        version: link:packages/commit-prompt
+      '@ruobai/commit-prompt-web':
+        specifier: workspace:*
+        version: link:packages/commit-prompt-web
       '@ruobai/context':
         specifier: workspace:*
         version: link:packages/context
@@ -511,6 +517,39 @@ importers:
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
+
+  packages/commit-prompt:
+    dependencies:
+      '@ruobai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/git':
+        specifier: workspace:*
+        version: link:../git
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/commit-prompt-web:
+    dependencies:
+      '@ruobai/commit-prompt':
+        specifier: workspace:*
+        version: link:../commit-prompt
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/context:
     dependencies:

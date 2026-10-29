@@ -11,6 +11,8 @@ import ChatService from '@ruobai/chat'
 import CheckpointsService from '@ruobai/checkpoints'
 import CheckpointsWeb from '@ruobai/checkpoints-web'
 import CommandService from '@ruobai/commands'
+import CommitPromptService from '@ruobai/commit-prompt'
+import CommitPromptWeb from '@ruobai/commit-prompt-web'
 import ContextSearch from '@ruobai/context-search'
 import ContextService from '@ruobai/context'
 import { Context } from '@ruobai/cordis'
@@ -220,6 +222,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(WikiWeb))
   await mount(ctx.plugin(A2aWeb))
   await mount(ctx.plugin(WebWs))
+  await mount(ctx.plugin(CommitPromptService))
+  await mount(ctx.plugin(CommitPromptWeb))
   await mount(ctx.plugin(McpWeb))
   await mount(ctx.plugin(TodoWeb))
   await mount(ctx.plugin(SessionExport))
