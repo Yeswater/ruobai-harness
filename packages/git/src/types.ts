@@ -145,3 +145,36 @@ export interface PullResult {
   base: string
   commit?: string
 }
+
+/** Connection state of a hosting service, cheap enough to read per request. */
+export interface GitHostStatus {
+  /** Credentials/CLI are present; the host is usable. */
+  configured: boolean
+  /** Signed-in account, when the host can report one. */
+  account?: string
+  /** Why it is not configured, when that is a normal state. */
+  detail?: string
+  /** Why the probe failed even though credentials exist. */
+  error?: string
+}
+
+/**
+ * A hosting service (Gitee, GitHub, …) plugged into the workspace.
+ *
+ * The registry is open: a plugin registers its own provider and the Changes
+ * panel lists it; plugins that are not loaded simply never appear.
+ */
+export interface GitHostProvider {
+  id: string
+  label: string
+  /** Does this remote URL belong to the host? */
+  matches(url: string): boolean
+  status(): Promise<GitHostStatus>
+}
+
+export interface GitHostInfo extends GitHostStatus {
+  id: string
+  label: string
+  /** Remotes in this repository that point at the host. */
+  remotes: GitRemote[]
+}

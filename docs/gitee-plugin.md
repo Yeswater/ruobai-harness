@@ -37,6 +37,8 @@ harness 没有任何代码托管平台集成。发布到 Gitee 需要建库、�
 
 写工具没有 `approvalSubject`（现有 subject 只有 command/path），因此每次写操作都会弹审批；`gitee_publish` 的预览会先跑一遍无副作用的计划。
 
+Gitee 加载时还会向 `ctx.git` 注册自己作为一个**托管平台**（`id: gitee`、匹配 `gitee.com` 的 remote、状态取令牌配置 + 账号接口），供「更改」面板的推送下拉使用；没有加载 Gitee 插件时该条目不会出现。见 [`changes-panel.md`](changes-panel.md)。
+
 ## 发布流程
 
 1. 预检（`/api/gitee/publish/preview` 或工具 preview）：账号、仓库是否存在、本地分支/HEAD/脏文件、remote 与 tag。

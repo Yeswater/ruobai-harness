@@ -1763,14 +1763,13 @@ body.resizing .sidebar-resizer::after {
   background: var(--panel);
 }
 
-.details-head {
+/* Expand/close sit at the end of whichever row the panel puts first. */
+.panel-row-actions {
   display: flex;
   flex: none;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  margin-left: auto;
 }
 
 .tabs {
@@ -3038,10 +3037,6 @@ body {
   border-radius: 10px;
 }
 
-.details-head {
-  padding: 6px 8px;
-}
-
 .tab {
   padding: 7px 2px 8px;
   font-size: 11.5px;
@@ -3900,10 +3895,6 @@ body {
 
 .details {
   background: transparent;
-}
-
-.details-head {
-  padding: 6px 8px;
 }
 
 .details-scroll {
@@ -7625,12 +7616,6 @@ body.resizing .file-side-resizer::after {
 }
 
 /* ===== Expanded right-hand panels ===== */
-
-.details-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
 
 .app.app.file-expanded {
   grid-template-columns: var(--sidebar-col) 0px 1fr;

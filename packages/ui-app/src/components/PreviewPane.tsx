@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type BrowserCastEvent, type PreviewSnapshot, type PreviewState } from '../api.ts'
 import { browserBus, previewBus } from '../panel-events.ts'
-import { ExternalLinkIcon } from './Icons.tsx'
+import { CopyIcon, ListIcon, PlayIcon, StopIcon } from './Icons.tsx'
 import { Select } from './Select.tsx'
 
 const LOG_LIMIT = 400
@@ -65,7 +65,7 @@ browserBus.subscribe((event) => {
  * When the agent opens a page with `browser_open`, its screencast appears here
  * instead: the user watches the same page the model is driving.
  */
-export function PreviewPane({ sessionId }: { sessionId?: string }) {
+export function PreviewPane({ sessionId, actions }: { sessionId?: string; actions?: ReactNode }) {
   const [snapshot, setSnapshot] = useState<PreviewSnapshot | null>(null)
   const [active, setActive] = useState('')
   const [logs, setLogs] = useState<string[]>([])
@@ -75,7 +75,9 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
   const [reloadKey, setReloadKey] = useState(0)
   const [cast, setCast] = useState<CastState | null>(null)
   const [showCast, setShowCast] = useState(true)
+  const [copiedUrl, setCopiedUrl] = useState(false)
   const activeRef = useRef('')
+  const autoTried = useRef<Set<string>>(new Set())
   const sessionRef = useRef(sessionId)
   const lastFrame = useRef(0)
   const pendingFrame = useRef<BrowserCastEvent | null>(null)
@@ -136,7 +138,7 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await api.previewSnapshot()
+      const next = await api.previewSnapshot(sessionId)
       setSnapshot(next)
       setError(next.error ?? null)
       setActive(current =>
@@ -147,7 +149,7 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     }
-  }, [])
+  }, [sessionId])
 
   useEffect(() => {
     void refresh()
@@ -177,7 +179,7 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
       return
     }
     let cancelled = false
-    void api.previewLogs(active)
+    void api.previewLogs(active, sessionId)
       .then(({ logs: next }) => {
         if (!cancelled) setLogs(next.slice(-LOG_LIMIT))
       })
@@ -185,19 +187,23 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
     return () => {
       cancelled = true
     }
-  }, [active])
+  }, [active, sessionId])
 
   const state: PreviewState | undefined = snapshot?.states.find(item => item.name === active)
 
   const act = async (action: 'start' | 'stop' | 'restart') => {
     if (!active || busy) return
+    // Stopping is a decision: the auto-start below must not undo it.
+    if (action === 'stop') {
+      autoTried.current.add(`${sessionId ?? ''}|${snapshot?.root ?? ''}|${active}`)
+    }
     setBusy(true)
     setError(null)
     // The server resets its log buffer on launch; clear the mirror here too so
     // a previous failed run does not sit above the new one.
     if (action !== 'stop') setLogs([])
     try {
-      const next = await api.previewAction(active, action)
+      const next = await api.previewAction(active, action, sessionId)
       setSnapshot(previous => previous
         ? { ...previous, states: [...previous.states.filter(item => item.name !== next.name), next] }
         : previous)
@@ -206,6 +212,29 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Opening the panel (or picking another configuration) starts the server:
+  // a preview nobody started just shows an empty frame. A server the user
+  // stopped stays stopped — the key is remembered until this mount ends.
+  useEffect(() => {
+    if (!active || busy) return
+    const current = snapshot?.states.find(item => item.name === active)
+    if (!current || current.status !== 'stopped') return
+    const key = `${sessionId ?? ''}|${snapshot?.root ?? ''}|${active}`
+    if (autoTried.current.has(key)) return
+    autoTried.current.add(key)
+    void act('start')
+  }, [active, busy, snapshot, sessionId])
+
+  const copyUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiedUrl(true)
+      setTimeout(() => setCopiedUrl(false), 1_200)
+    } catch {
+      // clipboard denied: the link itself is still usable
     }
   }
 
@@ -227,6 +256,7 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
             >
               {showCast ? '开发服务器' : '模型页面'}
             </button>
+            {actions}
           </div>
         )
         : null}
@@ -247,62 +277,90 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
         )
         : (
           <>
-            {configurations.length
-              ? (
-                <div className="preview-toolbar">
-                  <Select
-                    value={active}
-                    options={configurations.map(item => ({ value: item.name, label: item.name }))}
-                    onChange={setActive}
-                    ariaLabel="预览配置"
-                  />
-                  <span className={`preview-status is-${state?.status ?? 'stopped'}`}>
-                    {statusLabel(state?.status)}
-                  </span>
-                  <div className="preview-actions">
-                    {state?.status === 'running' || state?.status === 'starting'
-                      ? (
-                        <button className="btn ghost compact" disabled={busy} onClick={() => void act('stop')}>
-                          停止
-                        </button>
-                      )
-                      : (
-                        <button className="btn primary compact" disabled={busy} onClick={() => void act('start')}>
-                          {state?.status === 'failed' ? '重启' : '启动'}
-                        </button>
-                      )}
-                    <button
-                      className="icon-btn subtle"
-                      onClick={() => setReloadKey(key => key + 1)}
-                      aria-label="重新加载页面"
-                      title="重新加载页面"
-                    >
-                      ↻
-                    </button>
+            <div className="preview-toolbar">
+              {configurations.length
+                ? (
+                  <>
+                    <Select
+                      value={active}
+                      options={configurations.map(item => ({ value: item.name, label: item.name }))}
+                      onChange={setActive}
+                      ariaLabel="预览配置"
+                    />
+                    <span
+                      className={`preview-dot is-${state?.status ?? 'stopped'}`}
+                      title={statusLabel(state?.status)}
+                      aria-label={statusLabel(state?.status)}
+                    />
                     {state?.url
                       ? (
-                        <a
-                          className="icon-btn subtle"
-                          href={state.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          aria-label="在新标签打开"
-                          title="在新标签打开"
-                        >
-                          <ExternalLinkIcon size={14} />
-                        </a>
+                        <span className="preview-url-wrap">
+                          <a
+                            className="preview-url"
+                            href={state.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={state.url}
+                          >
+                            {state.url}
+                          </a>
+                          <button
+                            className="icon-btn subtle preview-url-copy"
+                            onClick={() => void copyUrl(state.url!)}
+                            aria-label="复制地址"
+                            title={copiedUrl ? '已复制' : '复制地址'}
+                          >
+                            <CopyIcon size={12} />
+                          </button>
+                        </span>
                       )
-                      : null}
-                    <button
-                      className={`btn ghost compact ${showLogs ? 'active' : ''}`}
-                      onClick={() => setShowLogs(value => !value)}
-                    >
-                      日志
-                    </button>
-                  </div>
-                </div>
-              )
-              : null}
+                      : <span className="preview-url-wrap" />}
+                    <div className="preview-actions">
+                      {state?.status === 'running' || state?.status === 'starting'
+                        ? (
+                          <button
+                            className="icon-btn subtle"
+                            disabled={busy}
+                            onClick={() => void act('stop')}
+                            aria-label="停止"
+                            title="停止"
+                          >
+                            <StopIcon size={13} />
+                          </button>
+                        )
+                        : (
+                          <button
+                            className="icon-btn subtle"
+                            disabled={busy}
+                            onClick={() => void act('start')}
+                            aria-label={state?.status === 'failed' ? '重启' : '启动'}
+                            title={state?.status === 'failed' ? '重启' : '启动'}
+                          >
+                            <PlayIcon size={13} />
+                          </button>
+                        )}
+                      <button
+                        className="icon-btn subtle"
+                        onClick={() => setReloadKey(key => key + 1)}
+                        aria-label="重新加载页面"
+                        title="重新加载页面"
+                      >
+                        ↻
+                      </button>
+                      <button
+                        className={`icon-btn subtle ${showLogs ? 'active' : ''}`}
+                        onClick={() => setShowLogs(value => !value)}
+                        aria-label="日志"
+                        title="日志"
+                      >
+                        <ListIcon size={14} />
+                      </button>
+                    </div>
+                  </>
+                )
+                : null}
+              {actions}
+            </div>
 
             {error ? <div className="preview-error">{error}</div> : null}
             {!error && state?.status === 'failed' && state.error
@@ -328,14 +386,15 @@ export function PreviewPane({ sessionId }: { sessionId?: string }) {
                           : state?.status === 'failed'
                             ? '启动失败，查看日志'
                             : '服务器未运行'}
-                        {state?.url ? <code>{state.url}</code> : null}
                       </div>
                     )}
                 </div>
               )
               : (
                 <div className="preview-empty">
-                  <p>在 <code>{snapshot?.path ?? '.ruobai/launch.json'}</code> 里声明开发服务器。</p>
+                  <p>
+                    在 <code>{snapshot ? joinPath(snapshot.root, snapshot.path) : '.ruobai/launch.json'}</code> 里声明开发服务器。
+                  </p>
                   <pre>{EXAMPLE}</pre>
                   <button className="btn ghost compact" onClick={() => void refresh()}>重新读取</button>
                 </div>
@@ -357,4 +416,8 @@ function statusLabel(status: PreviewState['status'] | undefined) {
   if (status === 'starting') return '启动中'
   if (status === 'failed') return '失败'
   return '已停止'
+}
+
+function joinPath(root: string, path: string) {
+  return root.endsWith('/') ? `${root}${path}` : `${root}/${path}`
 }

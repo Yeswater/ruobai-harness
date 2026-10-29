@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
@@ -8,6 +8,8 @@ import { CloseIcon, PlusIcon, TrashIcon } from './Icons.tsx'
 
 interface TerminalPanelProps {
   workspace?: string
+  /** Panel-level controls (expand/close) that ride on this row. */
+  actions?: ReactNode
 }
 
 interface Instance {
@@ -31,7 +33,7 @@ const FONT = '"SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, 
  * height and the width follows the panel, so there is no separate "expand"
  * state any more — the panel is already the tall form.
  */
-export function TerminalPanel({ workspace }: TerminalPanelProps) {
+export function TerminalPanel({ workspace, actions }: TerminalPanelProps) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -249,6 +251,7 @@ export function TerminalPanel({ workspace }: TerminalPanelProps) {
           <button className="icon-btn subtle" onClick={clearActive} aria-label="清屏" title="清屏">
             <TrashIcon size={14} />
           </button>
+          {actions}
         </div>
       </div>
 
@@ -309,7 +312,11 @@ export function merge(current: TerminalInfo[], snapshot: TerminalInfo[]): Termin
 
 function themeOf() {
   const dark = document.documentElement.dataset.theme === 'dark'
+  // The terminal sits in a panel card: its background must be the card's, not
+  // the page's, or the block reads as a different surface.
+  const background = getComputedStyle(document.documentElement).getPropertyValue('--panel').trim()
+    || (dark ? '#1f1f1e' : '#ffffff')
   return dark
-    ? { background: '#191918', foreground: '#e8e6e1', cursor: '#d97757', selectionBackground: '#33231d' }
-    : { background: '#f7f7f5', foreground: '#2b2a26', cursor: '#c96442', selectionBackground: '#f5e7e0' }
+    ? { background, foreground: '#e8e6e1', cursor: '#d97757', selectionBackground: '#33231d' }
+    : { background, foreground: '#2b2a26', cursor: '#c96442', selectionBackground: '#f5e7e0' }
 }

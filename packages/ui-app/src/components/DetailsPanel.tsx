@@ -45,6 +45,22 @@ export function DetailsPanel({
     window.addEventListener('pointerup', finish)
   }
 
+  const actions = (
+    <div className="panel-row-actions">
+      <button
+        className={`icon-btn subtle ${expanded ? 'active' : ''}`}
+        onClick={onToggleExpand}
+        aria-label={expanded ? '收起面板' : '展开面板'}
+        title={`${expanded ? '收起' : '展开'} (${modKeyLabel()}\\)`}
+      >
+        {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
+      </button>
+      <button className="icon-btn subtle" onClick={onClose} aria-label={`关闭${TITLES[view]}栏`}>
+        <CloseIcon />
+      </button>
+    </div>
+  )
+
   return (
     <aside className={`details view-${view}`} style={expanded ? undefined : { width }}>
       {expanded
@@ -63,31 +79,15 @@ export function DetailsPanel({
           column and hosts the resizer, so insetting the card does not change the
           width the grid and the drag handle work with. */}
       <div className="details-surface">
-      <div className="details-head">
-        <div className="details-head-actions">
-          <button
-            className={`icon-btn subtle ${expanded ? 'active' : ''}`}
-            onClick={onToggleExpand}
-            aria-label={expanded ? '收起面板' : '展开面板'}
-            title={`${expanded ? '收起' : '展开'} (${modKeyLabel()}\\)`}
-          >
-            {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
-          </button>
-          <button className="icon-btn subtle" onClick={onClose} aria-label={`关闭${TITLES[view]}栏`}>
-            <CloseIcon />
-          </button>
-        </div>
-      </div>
-
       <div className={`details-scroll bare ${view === 'git' ? 'git-scroll' : ''} ${view === 'preview' ? 'preview-scroll' : ''}`}>
         {view === 'terminal'
-          ? <TerminalPanel workspace={session?.workspace} />
+          ? <TerminalPanel workspace={session?.workspace} actions={actions} />
           : view === 'preview'
-          ? <PreviewPane sessionId={session?.id} />
+          ? <PreviewPane sessionId={session?.id} actions={actions} />
           : session
             ? view === 'files'
-              ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} openPath={openPath} />
-              : <GitPanel sessionId={session.id} expanded={expanded} />
+              ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} openPath={openPath} actions={actions} />
+              : <GitPanel sessionId={session.id} expanded={expanded} actions={actions} />
             : <div className="loading">no session</div>}
       </div>
       </div>

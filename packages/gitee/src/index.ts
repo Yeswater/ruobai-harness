@@ -60,6 +60,21 @@ export class GiteeService extends Service {
         for (const dispose of disposers) dispose()
       }
     }, 'gitee.tools')
+    // The Changes panel lists hosts through the git registry; Gitee adds itself.
+    ctx.effect(() => ctx.git.registerHost({
+      id: 'gitee',
+      label: 'Gitee',
+      matches: url => /gitee\.com[/:]/i.test(url),
+      status: async () => {
+        if (!this.configured()) return { configured: false, detail: '未配置 Gitee 令牌' }
+        try {
+          const account = await this.account()
+          return { configured: true, account: account.login }
+        } catch (error) {
+          return { configured: true, error: error instanceof Error ? error.message : String(error) }
+        }
+      },
+    }), 'gitee.host')
   }
 
   private clientWith(token?: string) {

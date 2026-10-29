@@ -37,10 +37,13 @@ export default { name, inject, apply }
 async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, url: URL) {
   const parts = url.pathname.split('/').filter(Boolean) // api, preview, name?, action?
   const method = req.method ?? 'GET'
+  // Configurations belong to the session's workspace, not the harness cwd: a
+  // session in another folder must not list or start this one's servers.
+  const root = workspaceOf(ctx, url)
 
   if (parts.length === 2) {
     if (method !== 'GET') throw new HttpError(405, 'method not allowed')
-    sendJson(res, 200, await ctx.preview.snapshot())
+    sendJson(res, 200, await ctx.preview.snapshot(root))
     return true
   }
 
@@ -49,7 +52,7 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
 
   if (parts.length === 3) {
     if (method === 'GET') {
-      sendJson(res, 200, await ctx.preview.logs(name))
+      sendJson(res, 200, await ctx.preview.logs(name, root))
       return true
     }
     throw new HttpError(405, 'method not allowed')
@@ -60,19 +63,28 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
   if (method !== 'POST') throw new HttpError(405, 'method not allowed')
 
   if (action === 'start') {
-    sendJson(res, 200, { state: await ctx.preview.start(name) })
+    sendJson(res, 200, { state: await ctx.preview.start(name, root) })
     return true
   }
   if (action === 'stop') {
-    sendJson(res, 200, { state: await ctx.preview.stop(name) })
+    sendJson(res, 200, { state: await ctx.preview.stop(name, root) })
     return true
   }
   if (action === 'restart') {
-    sendJson(res, 200, { state: await ctx.preview.restart(name) })
+    sendJson(res, 200, { state: await ctx.preview.restart(name, root) })
     return true
   }
 
   throw new HttpError(404, 'not found')
+}
+
+function workspaceOf(ctx: Context, url: URL): string | undefined {
+  const sessionId = url.searchParams.get('sessionId')
+  if (!sessionId) return undefined
+  const sessions = ctx.get('sessions', false) as
+    | { get?(id: string): { meta?: { workspace?: string } } | undefined }
+    | undefined
+  return sessions?.get?.(sessionId)?.meta?.workspace
 }
 
 export const meta = {

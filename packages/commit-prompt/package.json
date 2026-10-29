@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./message": "./src/message.ts"
   },
   "dependencies": {
     "@ruobai/agent": "workspace:*",

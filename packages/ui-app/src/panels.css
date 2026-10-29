@@ -11,7 +11,7 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg);
+  background: var(--panel);
 }
 
 .terminal-head {
@@ -140,6 +140,12 @@
   height: 100%;
 }
 
+/* xterm paints its viewport black until the theme lands; the card behind it
+   must show through, otherwise the strip below the last row is a black bar. */
+.terminal-screen .xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+
 .terminal-screen .xterm-viewport {
   scrollbar-width: thin;
 }
@@ -177,36 +183,35 @@
 .preview-toolbar {
   display: flex;
   flex: none;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
-.preview-status {
+.preview-dot {
   flex: none;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--border);
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
 }
 
-.preview-status.is-running {
-  background: rgba(74, 157, 111, 0.16);
-  color: #2f7a52;
+.preview-dot.is-running {
+  background: #2ea043;
+  box-shadow: 0 0 0 3px rgba(46, 160, 67, .16);
 }
 
-.preview-status.is-starting {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+.preview-dot.is-starting {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.preview-status.is-failed {
-  background: rgba(180, 67, 47, 0.13);
-  color: #b4432f;
+.preview-dot.is-failed {
+  background: #b4432f;
+  box-shadow: 0 0 0 3px rgba(180, 67, 47, .16);
 }
 
 .preview-actions {
@@ -219,6 +224,36 @@
 .preview-actions .btn.active {
   background: var(--accent-soft);
   color: var(--accent-strong);
+}
+
+.preview-url-wrap {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.preview-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-decoration: none;
+}
+
+.preview-url:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.preview-url-copy {
+  flex: none;
+  width: 20px;
+  height: 20px;
 }
 
 .preview-cast-bar {
@@ -874,6 +909,102 @@ button.session-row:hover {
   color: #b4432f;
 }
 
+.changes-note.success {
+  color: #2f7a52;
+}
+
+/* Commit box of the changes panel: message, smart commit, push by host. */
+.commit-bar {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.commit-bar .commit-message {
+  min-height: 50px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+}
+
+.commit-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.commit-push {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.commit-push-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 12;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+}
+
+.commit-push-head {
+  padding: 4px 8px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.commit-push-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.commit-push-menu button:hover:not(:disabled) {
+  background: var(--tool-bg);
+}
+
+.commit-push-menu button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.commit-host-state {
+  color: var(--faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.commit-host-state.is-ok {
+  color: #2f7a52;
+}
+
+.commit-host-state.is-error {
+  color: #b4432f;
+}
+
+.commit-push-empty {
+  padding: 6px 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
 /* PR dialog */
 
 .pr-modal {
@@ -997,44 +1128,6 @@ button.session-row:hover {
 
 .session-dock.open {
   width: 300px;
-}
-
-.session-dock.collapsed {
-  width: 34px;
-  background: var(--tool-bg);
-}
-
-.session-dock-toggle {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-}
-
-.session-dock.open .session-dock-toggle {
-  justify-content: flex-start;
-  padding: 0 10px;
-}
-
-.session-dock-toggle:hover {
-  background: var(--tool-bg);
-  color: var(--text);
-}
-
-.session-dock.collapsed .session-dock-toggle {
-  height: 100%;
-  border-bottom: 0;
-}
-
-.session-dock.collapsed .session-dock-body {
-  display: none;
 }
 
 .session-dock-body {

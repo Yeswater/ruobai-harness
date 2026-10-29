@@ -44,6 +44,8 @@ export interface PreviewState {
 export interface PreviewSnapshot {
   /** Launch file used, or the two paths that were checked. */
   path: string
+  /** Workspace the configurations were read from. */
+  root: string
   configurations: PreviewConfiguration[]
   states: PreviewState[]
   error?: string
@@ -101,53 +103,79 @@ export class PreviewService extends Service {
     ctx.effect(() => () => this.disposeAll(), 'preview.dispose')
   }
 
-  async snapshot(): Promise<PreviewSnapshot> {
-    const loaded = await this.load()
+  /** Every method takes the workspace to read `launch.json` from: a session in
+   *  another folder must not see (or start) this one's servers. */
+  async snapshot(root?: string): Promise<PreviewSnapshot> {
+    const base = this.storeRoot(root)
+    const loaded = await this.load(base)
     return {
       path: loaded.path,
+      root: base,
       configurations: loaded.configurations,
-      states: loaded.configurations.map(item => this.stateOf(item.name)),
+      states: loaded.configurations.map(item => this.stateOf(base, item.name)),
       ...(loaded.error ? { error: loaded.error } : {}),
     }
   }
 
-  async logs(name: string): Promise<{ state: PreviewState; logs: string[] }> {
-    await this.load()
-    return { state: this.stateOf(name), logs: [...(this.entries.get(name)?.logs ?? [])] }
+  async logs(name: string, root?: string): Promise<{ state: PreviewState; logs: string[] }> {
+    const base = this.storeRoot(root)
+    await this.load(base)
+    return { state: this.stateOf(base, name), logs: [...(this.entries.get(this.keyOf(base, name))?.logs ?? [])] }
   }
 
-  async start(name: string): Promise<PreviewState> {
-    const loaded = await this.load()
+  async start(name: string, root?: string): Promise<PreviewState> {
+    const base = this.storeRoot(root)
+    const loaded = await this.load(base)
     if (loaded.error) throw new Error(loaded.error)
     const configuration = loaded.configurations.find(item => item.name === name)
     if (!configuration) throw new Error(`unknown preview configuration: ${name}`)
 
-    const entry = this.entryOf(name)
+    const entry = this.entryOf(base, name)
+    // Two quick starts (a click plus the panel's auto-start) must not spawn
+    // two servers: the first in-flight launch owns the entry.
+    if (entry.starting) return entry.starting
     if (entry.state.status === 'running' || entry.state.status === 'starting') return entry.state
-    entry.starting = this.launch(configuration, entry)
+    entry.starting = this.launch(configuration, entry, base).finally(() => {
+      entry.starting = undefined
+    })
     return entry.starting
   }
 
-  async stop(name: string): Promise<PreviewState> {
-    const entry = this.entries.get(name)
+  async stop(name: string, root?: string): Promise<PreviewState> {
+    const base = this.storeRoot(root)
+    const entry = this.entries.get(this.keyOf(base, name))
     if (!entry?.child) {
-      this.setState(name, { name, status: 'stopped' })
-      return this.stateOf(name)
+      this.setState(base, name, { name, status: 'stopped' })
+      return this.stateOf(base, name)
     }
     const child = entry.child
     await terminate(child)
-    this.setState(name, { name, status: 'stopped', ...(entry.state.port ? { port: entry.state.port } : {}) })
-    return this.stateOf(name)
+    this.setState(base, name, {
+      name,
+      status: 'stopped',
+      ...(entry.state.port ? { port: entry.state.port } : {}),
+      // The address stays on screen after stopping: it is what the panel shows.
+      ...(entry.state.url ? { url: entry.state.url } : {}),
+    })
+    return this.stateOf(base, name)
   }
 
-  async restart(name: string): Promise<PreviewState> {
-    await this.stop(name)
-    return this.start(name)
+  async restart(name: string, root?: string): Promise<PreviewState> {
+    await this.stop(name, root)
+    return this.start(name, root)
   }
 
-  private async launch(configuration: PreviewConfiguration, entry: Entry): Promise<PreviewState> {
-    const cwd = resolve(this.root, configuration.cwd ?? '.')
-    if (!inside(this.root, cwd)) throw new Error(`preview cwd escapes the workspace: ${configuration.cwd}`)
+  private storeRoot(root?: string) {
+    return resolve(root ?? this.root)
+  }
+
+  private keyOf(root: string, name: string) {
+    return `${root}\n${name}`
+  }
+
+  private async launch(configuration: PreviewConfiguration, entry: Entry, root: string): Promise<PreviewState> {
+    const cwd = resolve(root, configuration.cwd ?? '.')
+    if (!inside(root, cwd)) throw new Error(`preview cwd escapes the workspace: ${configuration.cwd}`)
 
     const configuredPort = configuration.port ?? portOf(configuration.url)
     const auto = configuration.autoPort ?? this.autoPort
@@ -158,31 +186,31 @@ export class PreviewService extends Service {
     if (port !== undefined) {
       if (port === 0 || await portInUse(port)) {
         if (port !== 0 && !auto) {
-          this.setState(configuration.name, {
+          this.setState(root, configuration.name, {
             name: configuration.name,
             status: 'failed',
             port,
             ...(url ? { url } : {}),
             error: `port ${port} is already in use (set autoPort to pick another)`,
           })
-          return this.stateOf(configuration.name)
+          return this.stateOf(root, configuration.name)
         }
         const next = await freePort()
-        this.appendLog(configuration.name, `port ${port === 0 ? '(auto)' : port} is in use; using ${next}`)
+        this.appendLog(root, configuration.name, `port ${port === 0 ? '(auto)' : port} is in use; using ${next}`)
         port = next
         if (url && configuredPort !== undefined) url = withPort(url, next)
         else if (!url) url = `http://127.0.0.1:${port}`
       }
     }
 
-    this.setState(configuration.name, {
+    this.setState(root, configuration.name, {
       name: configuration.name,
       status: 'starting',
       ...(port ? { port } : {}),
       ...(url ? { url } : {}),
       startedAt: Date.now(),
     })
-    this.appendLog(configuration.name, `$ ${configuration.runtimeExecutable} ${(configuration.runtimeArgs ?? []).join(' ')}`)
+    this.appendLog(root, configuration.name, `$ ${configuration.runtimeExecutable} ${(configuration.runtimeArgs ?? []).join(' ')}`)
 
     const child = spawn(configuration.runtimeExecutable, (configuration.runtimeArgs ?? []).map(arg =>
       port !== undefined ? arg.replaceAll('{port}', String(port)) : arg,
@@ -199,7 +227,7 @@ export class PreviewService extends Service {
     const forward = (chunk: Buffer | string) => {
       const text = String(chunk)
       for (const line of text.split(/\r?\n/)) {
-        if (line.trim()) this.appendLog(configuration.name, line.replace(ANSI, ''))
+        if (line.trim()) this.appendLog(root, configuration.name, line.replace(ANSI, ''))
       }
     }
     child.stdout?.on('data', forward)
@@ -208,7 +236,7 @@ export class PreviewService extends Service {
     const exited = new Promise<number | null>((resolveExit) => {
       child.once('exit', (code) => resolveExit(code))
       child.once('error', (error) => {
-        this.appendLog(configuration.name, `[spawn error] ${error.message}`)
+        this.appendLog(root, configuration.name, `[spawn error] ${error.message}`)
         resolveExit(-1)
       })
     })
@@ -220,7 +248,7 @@ export class PreviewService extends Service {
       ])
       if (ready !== 'ready') {
         const code = typeof ready === 'object' ? ready.code : null
-        this.setState(configuration.name, {
+        this.setState(root, configuration.name, {
           name: configuration.name,
           status: 'failed',
           error: `process exited before port ${port} was ready${code !== null ? ` (code ${code})` : ''}`,
@@ -230,7 +258,7 @@ export class PreviewService extends Service {
           exitCode: code,
         })
         entry.child = undefined
-        return this.stateOf(configuration.name)
+        return this.stateOf(root, configuration.name)
       }
     }
 
@@ -238,7 +266,7 @@ export class PreviewService extends Service {
       // A server that stops on its own must not stay "running" in the UI.
       if (!entry.child) return
       entry.child = undefined
-      this.setState(configuration.name, {
+      this.setState(root, configuration.name, {
         name: configuration.name,
         status: 'stopped',
         ...(url ? { url } : {}),
@@ -247,7 +275,7 @@ export class PreviewService extends Service {
       })
     })
 
-    this.setState(configuration.name, {
+    this.setState(root, configuration.name, {
       name: configuration.name,
       status: 'running',
       pid: child.pid,
@@ -255,37 +283,38 @@ export class PreviewService extends Service {
       ...(url ? { url } : {}),
       startedAt: entry.state.startedAt,
     })
-    return this.stateOf(configuration.name)
+    return this.stateOf(root, configuration.name)
   }
 
-  private stateOf(name: string): PreviewState {
-    return this.entries.get(name)?.state ?? { name, status: 'stopped' }
+  private stateOf(root: string, name: string): PreviewState {
+    return this.entries.get(this.keyOf(root, name))?.state ?? { name, status: 'stopped' }
   }
 
-  private entryOf(name: string): Entry {
-    const existing = this.entries.get(name)
+  private entryOf(root: string, name: string): Entry {
+    const key = this.keyOf(root, name)
+    const existing = this.entries.get(key)
     if (existing) return existing
     const entry: Entry = { state: { name, status: 'stopped' }, logs: [] }
-    this.entries.set(name, entry)
+    this.entries.set(key, entry)
     return entry
   }
 
-  private setState(name: string, state: PreviewState) {
-    this.entryOf(name).state = state
+  private setState(root: string, name: string, state: PreviewState) {
+    this.entryOf(root, name).state = state
     this.ctx.emit('preview/state', state)
     this.ctx.emit('preview/changed')
   }
 
-  private appendLog(name: string, line: string) {
-    const entry = this.entryOf(name)
+  private appendLog(root: string, name: string, line: string) {
+    const entry = this.entryOf(root, name)
     entry.logs.push(line.slice(0, 2_000))
     if (entry.logs.length > this.logLines) entry.logs.splice(0, entry.logs.length - this.logLines)
     this.ctx.emit('preview/log', name, line.slice(0, 2_000))
   }
 
-  private async load(): Promise<{ path: string; configurations: PreviewConfiguration[]; error?: string }> {
+  private async load(root: string): Promise<{ path: string; root: string; configurations: PreviewConfiguration[]; error?: string }> {
     for (const dir of LAUNCH_DIRS) {
-      const path = resolve(this.root, dir, 'launch.json')
+      const path = resolve(root, dir, 'launch.json')
       let raw: string
       try {
         raw = await readFile(path, 'utf8')
@@ -295,26 +324,29 @@ export class PreviewService extends Service {
       try {
         const parsed = JSON.parse(raw) as { configurations?: unknown }
         const configurations = normalizeConfigurations(parsed?.configurations)
-        const shown = relative(this.root, path) || path
-        this.pruneStates(configurations)
-        return { path: shown, configurations }
+        const shown = relative(root, path) || path
+        this.pruneStates(configurations, root)
+        return { path: shown, root, configurations }
       } catch (error) {
-        const shown = relative(this.root, path) || path
+        const shown = relative(root, path) || path
         return {
           path: shown,
+          root,
           configurations: [],
           error: `${shown}: ${error instanceof Error ? error.message : String(error)}`,
         }
       }
     }
-    return { path: `${LAUNCH_DIRS[0]}/launch.json`, configurations: [] }
+    return { path: `${LAUNCH_DIRS[0]}/launch.json`, root, configurations: [] }
   }
 
-  private pruneStates(configurations: PreviewConfiguration[]) {
+  private pruneStates(configurations: PreviewConfiguration[], root: string) {
+    const prefix = this.keyOf(root, '')
     const names = new Set(configurations.map(item => item.name))
-    for (const [name, entry] of this.entries) {
-      if (names.has(name) || entry.child) continue
-      this.entries.delete(name)
+    for (const [key, entry] of this.entries) {
+      if (!key.startsWith(prefix) || entry.child) continue
+      if (names.has(key.slice(prefix.length))) continue
+      this.entries.delete(key)
     }
   }
 

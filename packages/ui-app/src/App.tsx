@@ -745,7 +745,6 @@ export function App() {
                   <SessionDock
                     session={harness.session}
                     open={sessionDockOpen}
-                    onToggle={() => setSessionDockOpen(value => !value)}
                     onOpenContext={() => {
                       setFunctionView(null)
                       setMainView('context')

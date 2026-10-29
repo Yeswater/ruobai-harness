@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
+import { ignoredPath, proposeMessage } from '@ruobai/commit-prompt'
 import { GitError, type GitLogQuery } from '@ruobai/git'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 import { WorkspaceError } from '@ruobai/workspace'
@@ -95,6 +96,16 @@ async function read(
     sendJson(res, 200, { branches: await ctx.git.branches(root) })
     return
   }
+  if (route === '/hosts') {
+    sendJson(res, 200, { hosts: await ctx.git.hostInfo(root) })
+    return
+  }
+  if (route === '/suggestion') {
+    const status = await ctx.git.status(root)
+    const title = sessionId ? ctx.sessions.get(sessionId)?.meta.title : undefined
+    sendJson(res, 200, proposeMessage({ ...(title ? { title } : {}), changes: status.changes }))
+    return
+  }
   throw new HttpError(404, 'not found')
 }
 
@@ -115,7 +126,13 @@ async function mutate(ctx: Context, req: IncomingMessage, res: ServerResponse, r
   if (route === '/commit') {
     const message = typeof body.message === 'string' ? body.message : ''
     if (!message.trim()) throw new HttpError(400, 'message is required')
-    const paths = Array.isArray(body.paths) ? pathsOf(ctx, root, body.paths) : []
+    const requested = Array.isArray(body.paths) ? pathsOf(ctx, root, body.paths) : []
+    // AGENTS §9: secrets, session logs and build output never ride along, even
+    // when a client asks for them.
+    const paths = requested.filter(path => !ignoredPath(path))
+    if (requested.length && !paths.length) {
+      throw new HttpError(400, '这些路径不会被提交（.env、.sessions、.ruobai、dist 等）')
+    }
     sendJson(res, 200, await ctx.git.commit(root, {
       message,
       amend: body.amend === true,
@@ -155,7 +172,8 @@ async function mutate(ctx: Context, req: IncomingMessage, res: ServerResponse, r
     return
   }
   if (route === '/push') {
-    sendJson(res, 200, await ctx.git.push(root))
+    const remote = typeof body.remote === 'string' && body.remote.trim() ? body.remote.trim() : undefined
+    sendJson(res, 200, await ctx.git.push(root, remote ? { remote } : {}))
     return
   }
   if (route === '/checkout') {

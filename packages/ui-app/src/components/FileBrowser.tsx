@@ -1,6 +1,7 @@
 import {
   useEffect, useMemo, useRef, useState,
   type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react'
 import {
   api, type WorkspaceEntry, type WorkspaceMatch, type WorkspaceTextMatch,
@@ -76,9 +77,12 @@ interface FileBrowserProps {
   onReference?: (path: string) => void
   /** Open this file once per token; used by the session panel. */
   openPath?: { path: string; token: number }
+  /** Panel-level controls (expand/close); they ride on the top row of whichever
+   *  column is at the panel's right edge. */
+  actions?: ReactNode
 }
 
-export function FileBrowser({ sessionId, onReference, openPath }: FileBrowserProps) {
+export function FileBrowser({ sessionId, onReference, openPath, actions }: FileBrowserProps) {
   const contextMenu = useContextMenu()
   const [root, setRoot] = useState<WorkspaceEntry | null>(null)
   const [children, setChildren] = useState<Record<string, WorkspaceEntry[]>>({})
@@ -525,6 +529,7 @@ export function FileBrowser({ sessionId, onReference, openPath }: FileBrowserPro
           >
             <FolderTreeIcon size={13} />
           </button>
+          {tabs.length ? null : actions}
         </div>
 
         {query.trim()
@@ -632,6 +637,7 @@ export function FileBrowser({ sessionId, onReference, openPath }: FileBrowserPro
                   </button>
                 </div>
               ))}
+              {actions}
             </div>
           )
           : null}

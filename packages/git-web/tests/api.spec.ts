@@ -387,4 +387,56 @@ describe('git web', () => {
       .then(response => response.json() as Promise<{ output: string }>)
     expect(fetched.output).toBeTruthy()
   })
+
+  it('lists registered hosting services with their remotes', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const { dir, git } = await repo()
+    git('remote', 'add', 'origin', 'https://github.com/acme/app.git')
+    git('remote', 'add', 'gitee', 'git@gitee.com:acme/app.git')
+    const active = await session(harness, dir)
+    const base = harness.ctx.web.url
+
+    const { hosts } = await get<{
+      hosts: Array<{
+        id: string
+        label: string
+        configured: boolean
+        remotes: Array<{ name: string; url: string }>
+      }>
+    }>(base, `/hosts?sessionId=${active.id}`)
+
+    const github = hosts.find(host => host.id === 'github')!
+    expect(github.label).toBe('GitHub')
+    expect(github.remotes).toEqual([{ name: 'origin', url: 'https://github.com/acme/app.git' }])
+    const gitee = hosts.find(host => host.id === 'gitee')!
+    expect(gitee.remotes.map(remote => remote.name)).toEqual(['gitee'])
+    expect(typeof gitee.configured).toBe('boolean')
+  })
+
+  it('proposes a message from the changes and pushes to a named remote', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const { dir, git } = await repo()
+    const active = await harness.ctx.sessions.create({ title: '修复 输入框问题', workspace: dir })
+    const base = harness.ctx.web.url
+
+    await writeFile(join(dir, 'a.txt'), 'two\n')
+    const suggestion = await get<{ message: string; candidates: string[] }>(
+      base, `/suggestion?sessionId=${active.id}`,
+    )
+    expect(suggestion.message).toMatch(/^fix:/)
+    expect(Array.isArray(suggestion.candidates)).toBe(true)
+
+    const remote = await mkdtemp(join(tmpdir(), 'rbh-bare-'))
+    dirs.push(remote)
+    execFileSync('git', ['init', '-q', '--bare'], { cwd: remote })
+    git('remote', 'add', 'origin', remote)
+
+    await post(base, '/commit', { sessionId: active.id, message: 'fix: 测试推送', paths: ['a.txt'] })
+    const pushed = await post(base, '/push', { sessionId: active.id, remote: 'origin' })
+    expect(pushed.status).toBe(200)
+    expect(execFileSync('git', ['--git-dir', remote, 'show-ref'], { encoding: 'utf8' }))
+      .toContain('refs/heads/')
+  })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, type GitBranch, type GitChange, type GitInfo } from '../../api.ts'
 import { AlertIcon, ArrowDownIcon, ArrowUpIcon, BranchIcon, RefreshIcon, SyncIcon } from '../Icons.tsx'
 import { BranchTree, type HistoryFilter } from './BranchTree.tsx'
@@ -35,10 +35,12 @@ const OPERATIONS: Record<string, string> = {
 interface GitPanelProps {
   sessionId: string
   expanded: boolean
+  /** Panel-level controls (expand/close) that ride on this row. */
+  actions?: ReactNode
 }
 
 /** Git workbench: branches, changes and history on the left, details on the right. */
-export function GitPanel({ sessionId, expanded }: GitPanelProps) {
+export function GitPanel({ sessionId, expanded, actions }: GitPanelProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [wide, setWide] = useState(false)
   const [info, setInfo] = useState<GitInfo | null>(null)
@@ -289,6 +291,7 @@ export function GitPanel({ sessionId, expanded }: GitPanelProps) {
         >
           <RefreshIcon size={14} />
         </button>
+        {actions}
       </div>
 
       {operation ? (

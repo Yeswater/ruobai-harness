@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
+import { ignoredPath } from '@ruobai/commit-prompt/message'
 import {
   api,
   type CheckpointChange,
@@ -8,6 +9,7 @@ import {
   type GitInfo,
 } from '../api.ts'
 import { CreatePrDialog } from './CreatePrDialog.tsx'
+import { CommitBar } from './git/CommitBar.tsx'
 import { DiffPane } from './git/DiffPane.tsx'
 import { countDiff } from './git/model.ts'
 import { FolderIcon } from './Icons.tsx'
@@ -43,6 +45,7 @@ export function ChangesView({ session }: { session: ChatSession | null }) {
   const [selected, setSelected] = useState<{ path: string; kind: Filter } | null>(null)
   const [diff, setDiff] = useState<DiffState | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [prOpen, setPrOpen] = useState(false)
   const request = useRef(0)
 
@@ -133,9 +136,15 @@ export function ChangesView({ session }: { session: ChatSession | null }) {
   }, [filter, rows.length, session?.id])
 
   const workingSet = useMemo(() => new Set(workingRows.map(row => row.path)), [workingRows])
+  // AGENTS §9: secrets, session logs and build output are never committed.
+  const commitPaths = useMemo(
+    () => workingRows.map(row => row.path).filter(path => !ignoredPath(path)),
+    [workingRows],
+  )
+  const skippedCount = workingRows.length - commitPaths.length
   const prFiles = (filter === 'working' ? workingRows : sessionRows.map(row => row.path))
     .map(row => typeof row === 'string' ? row : row.path)
-    .filter(path => workingSet.has(path))
+    .filter(path => workingSet.has(path) && !ignoredPath(path))
 
   if (!session) return <div className="changes-view"><div className="loading">no session</div></div>
 
@@ -158,7 +167,23 @@ export function ChangesView({ session }: { session: ChatSession | null }) {
           </button>
         </div>
 
+        <CommitBar
+          sessionId={session.id}
+          paths={commitPaths}
+          onChanged={load}
+          onNotice={setNotice}
+          onError={setError}
+        />
+
         <div className="changes-files">
+          {notice ? <div className="changes-note success">{notice}</div> : null}
+          {skippedCount
+            ? (
+              <div className="changes-note">
+                已排除 {skippedCount} 个不提交的文件（.env、.sessions、.ruobai、dist 等）
+              </div>
+            )
+            : null}
           {error ? <div className="changes-note error">{error}</div> : null}
           {!error && !rows.length
             ? <div className="changes-note">{filter === 'working' ? '没有未提交的改动' : '本次会话还没有文件改动'}</div>

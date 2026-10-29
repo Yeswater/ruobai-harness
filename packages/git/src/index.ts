@@ -12,8 +12,8 @@ import {
 } from './parse.ts'
 import type {
   CreatePullInput, GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitFileStat,
-  GitInfo, GitLogQuery, GitLogResult, GitOperation, GitPushOptions, GitRemote, GitSyncResult,
-  PullResult,
+  GitHostInfo, GitHostProvider, GitHostStatus, GitInfo, GitLogQuery, GitLogResult, GitOperation,
+  GitPushOptions, GitRemote, GitSyncResult, PullResult,
 } from './types.ts'
 
 export * from './types.ts'
@@ -48,6 +48,61 @@ export class GitService extends Service {
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'git')
+    // GitHub is detected through the gh CLI, which is also what push/PR use.
+    this.registerHost({
+      id: 'github',
+      label: 'GitHub',
+      matches: url => /github\.com[/:]/i.test(url),
+      status: async () => {
+        try {
+          const { stdout, stderr } = await exec('gh', ['auth', 'status'], { timeout: 5_000, windowsHide: true })
+          const account = /account\s+(\S+)/i.exec(`${stdout}\n${stderr}`)?.[1]
+          return { configured: true, ...(account ? { account } : {}) }
+        } catch {
+          return { configured: false, detail: '未检测到 gh 登录' }
+        }
+      },
+    })
+  }
+
+  private readonly hostProviders = new Map<string, GitHostProvider>()
+  private readonly hostStatus = new Map<string, { at: number; status: GitHostStatus }>()
+
+  /** Hosting services register here; unloading a plugin unregisters its host. */
+  registerHost(provider: GitHostProvider): () => void {
+    this.hostProviders.set(provider.id, provider)
+    return () => {
+      if (this.hostProviders.get(provider.id) === provider) this.hostProviders.delete(provider.id)
+    }
+  }
+
+  hosts(): GitHostProvider[] {
+    return [...this.hostProviders.values()]
+  }
+
+  /** Every registered host with its connection state and matching remotes. */
+  async hostInfo(root: string): Promise<GitHostInfo[]> {
+    const remotes = await this.remotes(root)
+    return Promise.all(this.hosts().map(async (provider) => {
+      const cached = this.hostStatus.get(provider.id)
+      const usable = cached && Date.now() - cached.at < (cached.status.configured ? 60_000 : 5_000)
+      const status = usable
+        ? cached!.status
+        : await withTimeout(
+            provider.status(),
+            4_000,
+            error => ({ configured: false, error: error instanceof Error ? error.message : '状态检查失败' }),
+          )
+      if (!usable) {
+        this.hostStatus.set(provider.id, { at: Date.now(), status })
+      }
+      return {
+        id: provider.id,
+        label: provider.label,
+        ...status,
+        remotes: remotes.filter(remote => provider.matches(remote.url)),
+      }
+    }))
   }
 
   private async run(
@@ -660,6 +715,24 @@ function assertHash(hash: string) {
 function summarize(output: string, fallback: string) {
   const lines = output.split('\n').map(line => line.trim()).filter(Boolean)
   return lines.at(-1) ?? fallback
+}
+
+/** A host probe must never hold the Changes panel hostage. */
+function withTimeout<T>(task: Promise<T>, ms: number, fallback: (error?: unknown) => T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback()), ms)
+    timer.unref?.()
+    task.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        resolve(fallback(error))
+      },
+    )
+  })
 }
 
 async function untrackedStat(target: string): Promise<GitFileStat | undefined> {

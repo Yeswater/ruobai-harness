@@ -147,6 +147,31 @@ describe('preview servers', () => {
     await expect(ctx.preview.start('dup')).rejects.toThrow(/duplicate/)
   })
 
+  it('reads configurations from the workspace it is asked for', async () => {
+    harness = await createHarness()
+    const { ctx, dir } = harness
+    await writeLaunch(dir, [{ name: 'here', runtimeExecutable: 'node' }])
+    const other = join(dir, 'other-workspace')
+    await mkdir(other, { recursive: true })
+    await writeLaunch(other, [{ name: 'there', runtimeExecutable: 'node' }])
+
+    const local = await ctx.preview.snapshot()
+    expect(local.configurations.map(item => item.name)).toEqual(['here'])
+
+    const remote = await ctx.preview.snapshot(other)
+    expect(remote.root).toBe(other)
+    expect(remote.configurations.map(item => item.name)).toEqual(['there'])
+
+    // A session in the other folder lists the other folder's servers over HTTP.
+    const session = ctx.chat.create('other', undefined, other)
+    const listed = await (await fetch(`${ctx.web.url}/api/preview?sessionId=${encodeURIComponent(session.id)}`)).json() as {
+      root: string
+      configurations: Array<{ name: string }>
+    }
+    expect(listed.root).toBe(other)
+    expect(listed.configurations.map(item => item.name)).toEqual(['there'])
+  })
+
   it('serves the snapshot and actions over HTTP', async () => {
     harness = await createHarness()
     const { ctx, dir } = harness

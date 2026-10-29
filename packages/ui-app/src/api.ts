@@ -2,7 +2,8 @@ import type {
   AttachmentMeta, ChatEvent, ChatMessage, ChatSession, QueuedMessage, SessionSummary, TurnStats,
 } from '@ruobai/chat-protocol'
 import type {
-  GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitInfo, GitLogResult,
+  GitBranch, GitChange, GitCommitDetail, GitCommitResult, GitDiffResult, GitHostInfo, GitInfo,
+  GitLogResult,
 } from '@ruobai/git/types'
 import type { TrajectoryFrame, TrajectorySnapshot } from '@ruobai/trajectory/types'
 
@@ -425,6 +426,8 @@ export interface PreviewState {
 
 export interface PreviewSnapshot {
   path: string
+  /** Workspace the launch file was read from. */
+  root: string
   configurations: PreviewConfiguration[]
   states: PreviewState[]
   error?: string
@@ -617,7 +620,7 @@ export interface ActivitySummary {
 
 export type {
   GitBranch, GitChange, GitCommit, GitCommitDetail, GitCommitFile, GitCommitResult, GitDiffResult,
-  GitInfo, GitLogResult,
+  GitHostInfo, GitHostStatus, GitInfo, GitLogResult, GitRemote,
 } from '@ruobai/git/types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -710,15 +713,19 @@ export const api = {
   terminalBuffer: async (id: string) =>
     (await request<{ buffer: string }>(`/api/terminal/${encodeURIComponent(id)}/buffer`)).buffer,
 
-  previewSnapshot: async () => request<PreviewSnapshot>('/api/preview'),
+  previewSnapshot: async (sessionId?: string) =>
+    request<PreviewSnapshot>(`/api/preview${sessionQuery(sessionId)}`),
 
-  previewAction: async (name: string, action: 'start' | 'stop' | 'restart') =>
-    (await request<{ state: PreviewState }>(`/api/preview/${encodeURIComponent(name)}/${action}`, {
-      method: 'POST',
-    })).state,
+  previewAction: async (name: string, action: 'start' | 'stop' | 'restart', sessionId?: string) =>
+    (await request<{ state: PreviewState }>(
+      `/api/preview/${encodeURIComponent(name)}/${action}${sessionQuery(sessionId)}`,
+      { method: 'POST' },
+    )).state,
 
-  previewLogs: async (name: string) =>
-    request<{ state: PreviewState; logs: string[] }>(`/api/preview/${encodeURIComponent(name)}`),
+  previewLogs: async (name: string, sessionId?: string) =>
+    request<{ state: PreviewState; logs: string[] }>(
+      `/api/preview/${encodeURIComponent(name)}${sessionQuery(sessionId)}`,
+    ),
 
   todo: async (id: string) =>
     request<TodoSnapshot>(`/api/todo?sessionId=${encodeURIComponent(id)}`),
@@ -1013,11 +1020,23 @@ export const api = {
       body: JSON.stringify({ sessionId: id }),
     }),
 
-  gitPush: async (id: string) =>
+  gitPush: async (id: string, remote?: string) =>
     request<{ output: string }>('/api/git/push', {
       method: 'POST',
-      body: JSON.stringify({ sessionId: id }),
+      body: JSON.stringify({ sessionId: id, ...(remote ? { remote } : {}) }),
     }),
+
+  /** Registered hosting services (Gitee, GitHub, …) with their connection state. */
+  getGitHosts: async (id: string) =>
+    (await request<{ hosts: GitHostInfo[] }>(
+      `/api/git/hosts?sessionId=${encodeURIComponent(id)}`,
+    )).hosts,
+
+  /** A commit message proposed from the current changes. */
+  getCommitSuggestion: async (id: string) =>
+    request<{ message: string; candidates: string[] }>(
+      `/api/git/suggestion?sessionId=${encodeURIComponent(id)}`,
+    ),
 
   getWorkspaceTree: async (path = '.', sessionId?: string, depth?: number, compact?: boolean) => {
     const params = new URLSearchParams({ path })
@@ -1477,8 +1496,11 @@ export function connectEvents(handlers: EventHandlers) {
   }
 }
 
-export function summarize(session: ChatSession): SessionSummary {
-  return {
+function sessionQuery(sessionId?: string) {
+  return sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
+}
+
+export function summarize(session: ChatSession): SessionSummary {  return {
     id: session.id,
     title: session.title,
     model: session.model,
