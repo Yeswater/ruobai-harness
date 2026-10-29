@@ -12,5 +12,12 @@
     "@ruobai/schemastery": "workspace:*",
     "@ruobai/session": "workspace:*",
     "@ruobai/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "@ruobai/web-server": "workspace:*",
+    "@ruobai/web-ws": "workspace:*",
+    "ws": "^8.18.0",
+    "@ruobai/ui-app": "workspace:*"
   }
 }

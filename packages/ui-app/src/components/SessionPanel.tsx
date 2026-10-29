@@ -7,7 +7,9 @@ import {
   type GitChange,
   type GitInfo,
 } from '../api.ts'
+import { selectOutputs } from '../output-files.ts'
 import { CreatePrDialog } from './CreatePrDialog.tsx'
+import { FileTypeIcon } from './FileTypeIcon.tsx'
 import {
   BranchIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, GearIcon, ListIcon,
 } from './Icons.tsx'
@@ -83,10 +85,15 @@ export function SessionPanel({
     }
   }, [session?.id, session?.streaming, session?.messages.length])
 
-  const outputs = useMemo(() => {
+  // The panel lists what the run produced — filtered the way a transcript lists
+  // files: build output, dependencies, locks and runtime state stay out, because
+  // they are not what the user opened this session to look at.
+  const { outputs, hiddenOutputs } = useMemo(() => {
     const byPath = new Map<string, CheckpointChange>()
     for (const change of checkpoints) byPath.set(change.path, change)
-    return [...byPath.values()].sort((left, right) => right.seq - left.seq)
+    const sorted = [...byPath.values()].sort((left, right) => right.seq - left.seq)
+    const { kept, hidden } = selectOutputs(sorted)
+    return { outputs: kept, hiddenOutputs: hidden }
   }, [checkpoints])
 
   if (!session) {
@@ -142,11 +149,17 @@ export function SessionPanel({
         <ContextBody context={context} />
       </Section>
 
-      <Section title="输出" count={outputs.length}>
+      <Section
+        title="输出"
+        count={outputs.length}
+        action={hiddenOutputs
+          ? <span className="session-link muted" title="构建产物、依赖与运行时状态不在列表中">已过滤 {hiddenOutputs}</span>
+          : null}
+      >
         {outputs.length
           ? (allOutputs ? outputs : outputs.slice(0, 8)).map(change => (
             <button key={change.path} className="session-row" onClick={() => onOpenFile(change.path)} title={change.path}>
-              <FileGlyph name={change.path} />
+              <FileTypeIcon path={change.path} />
               <span className="session-row-main">
                 <span className="session-row-label">{basename(change.path)}</span>
                 <span className="session-row-sub">{dirname(change.path) || '.'} · {change.tool}</span>
@@ -173,32 +186,21 @@ export function SessionPanel({
         {git?.info.available
           ? (
             <>
-              <div className="session-change-summary">
-                <span className="session-add">+{git.info.added}</span>
-                <span className="session-del">−{git.info.removed}</span>
-                <span className="session-muted">{git.info.files} 个文件</span>
-              </div>
-              {changed.slice(0, 8).map(change => {
-                const stats = changeStats(change)
-                return (
-                  <button key={change.path} className="session-row" onClick={onOpenGit} title={change.path}>
-                    <FileGlyph name={change.path} />
-                    <span className="session-row-main">
-                      <span className="session-row-label">{basename(change.path)}</span>
-                      <span className="session-row-sub">
-                        {change.untracked ? '未跟踪' : change.staged && change.unstaged ? '已暂存 + 未暂存' : change.staged ? '已暂存' : '未暂存'}
-                      </span>
-                    </span>
-                    <span className="session-row-stats">
-                      <span className="session-add">+{stats.added}</span>
-                      <span className="session-del">−{stats.removed}</span>
-                    </span>
-                  </button>
-                )
-              })}
-              {changed.length > 8
-                ? <button className="session-link more" onClick={onOpenChanges}>还有 {changed.length - 8} 个文件</button>
-                : null}
+              {/* A diff summary, not a file list: the panel is a glance, and the
+                  change page is where the files and hunks belong. */}
+              <button
+                type="button"
+                className="session-change-card"
+                onClick={onOpenChanges}
+                title="打开更改页"
+              >
+                <span className="session-change-line">
+                  <span className="session-add">+{git.info.added}</span>
+                  <span className="session-del">−{git.info.removed}</span>
+                  <span className="session-muted">{git.info.files} 个文件</span>
+                </span>
+                <span className="session-change-open">查看更改 ›</span>
+              </button>
               {git.info.files === 0 ? <div className="session-empty">工作区没有未提交改动</div> : null}
               <div className="session-actions">
                 <button className="btn ghost compact" onClick={onOpenGit}>Git 面板</button>
@@ -331,17 +333,6 @@ function GaugeIcon() {
       <path d="m12 15 4-4" />
     </svg>
   )
-}
-
-function FileGlyph({ name }: { name: string }) {
-  return <span className="session-file-glyph">{name.split('.').pop()?.slice(0, 2).toUpperCase() ?? 'FILE'}</span>
-}
-
-function changeStats(change: GitChange) {
-  return {
-    added: (change.stagedStat?.added ?? 0) + (change.worktreeStat?.added ?? 0),
-    removed: (change.stagedStat?.removed ?? 0) + (change.worktreeStat?.removed ?? 0),
-  }
 }
 
 function basename(path: string) {

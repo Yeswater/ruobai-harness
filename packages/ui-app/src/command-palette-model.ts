@@ -76,7 +76,7 @@ export const PALETTE_COMMANDS: PaletteCommand[] = [
   },
   {
     id: 'session-info',
-    label: '会话信息',
+    label: '切换会话栏',
     description: '环境、上下文占用、输出文件与工作区改动',
     keywords: 'session info environment context changes 会话 环境 上下文 改动 输出',
   },

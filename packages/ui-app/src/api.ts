@@ -1252,6 +1252,34 @@ function liveUrl(path: string) {
 }
 
 /**
+ * Read an `ask` frame off the WebSocket downlink.
+ *
+ * `ask-web` fans the question out through `ui.broadcast`, so web-ws wraps it as
+ * `{ type: 'ask', data: { kind, request } }` — unlike `approval`, which web-ws
+ * relays with `kind`/`request` at the top level. Reading only the top level meant
+ * the card never appeared over the socket (SSE worked) and the resolved branch
+ * then dereferenced an undefined resolution. Both shapes are accepted, so a
+ * future top-level relay keeps working.
+ */
+export function parseAskFrame(payload: unknown): AskEvent | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  const frame = payload as { data?: unknown; kind?: string; request?: unknown; resolution?: unknown }
+  const body = (frame.data ?? frame) as {
+    kind?: string
+    request?: unknown
+    resolution?: unknown
+  }
+  const kind = body.kind ?? frame.kind
+  const request = body.request ?? frame.request
+  const resolution = body.resolution ?? frame.resolution
+  if (kind === 'requested' && request) return { kind: 'requested', request: request as AskRequest }
+  if (kind === 'resolved' && resolution) {
+    return { kind: 'resolved', resolution: resolution as { id: string; via: string; answer: string | null } }
+  }
+  return undefined
+}
+
+/**
  * Live events prefer the WebSocket downlink and fall back to SSE once if the
  * upgrade fails or the socket drops.
  */
@@ -1349,9 +1377,8 @@ export function connectEvents(handlers: EventHandlers) {
             ? { kind: 'requested', request: payload.request as ApprovalRequest }
             : { kind: 'resolved', resolution: payload.resolution as { id: string; decision: ApprovalDecision } })
         } else if (payload.type === 'ask') {
-          handlers.onAsk?.(payload.kind === 'requested'
-            ? { kind: 'requested', request: payload.request as AskRequest }
-            : { kind: 'resolved', resolution: payload.resolution as { id: string; via: string; answer: string | null } })
+          const ask = parseAskFrame(payload)
+          if (ask) handlers.onAsk?.(ask)
         }
       } catch {
         // ignore malformed frames

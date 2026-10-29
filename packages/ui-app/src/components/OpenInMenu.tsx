@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, type EditorChoice } from '../api.ts'
-import { ChevronDownIcon, ExternalLinkIcon } from './Icons.tsx'
+import { ChevronDownIcon } from './Icons.tsx'
+import { EditorIcon } from './EditorIcon.tsx'
 
 interface OpenInMenuProps {
   sessionId?: string
@@ -8,8 +9,12 @@ interface OpenInMenuProps {
 }
 
 /**
- * "Open in editor": detects local IDE/editor CLIs and gives the user a choice.
- * The first detected editor is the default action.
+ * "Open in editor" as a split button: the tile is the editor's own mark, so the
+ * action reads as an icon in the toolbar instead of a sentence, and the arrow
+ * opens the full list.
+ *
+ * The default is the first detected editor — the one the user actually has —
+ * and the menu labels it, because a tile alone cannot say which app it is.
  */
 export function OpenInMenu({ sessionId, workspace }: OpenInMenuProps) {
   const [open, setOpen] = useState(false)
@@ -43,7 +48,8 @@ export function OpenInMenu({ sessionId, workspace }: OpenInMenuProps) {
     }
   }, [open])
 
-  const primary = editors.find(item => item.kind === 'editor')
+  const primary = editors.find(item => item.kind === 'editor') ?? editors[0]
+  const disabled = !sessionId || busy
 
   const launch = (editor?: string) => {
     if (!sessionId || busy) return
@@ -55,21 +61,35 @@ export function OpenInMenu({ sessionId, workspace }: OpenInMenuProps) {
       .finally(() => setBusy(false))
   }
 
+  const title = primary
+    ? `在 ${primary.name} 中打开${workspace ? `：${workspace}` : ''}`
+    : '在编辑器中打开工作区'
+
   return (
     <div className="open-in" ref={boxRef}>
       <button
         type="button"
-        className={`open-in-btn ${open ? 'active' : ''}`}
+        className="open-in-go"
+        disabled={disabled || !primary}
+        title={title}
+        aria-label={title}
+        onClick={() => launch(primary?.id)}
+      >
+        <EditorIcon id={primary?.id ?? 'fallback'} name={primary?.name} size={17} />
+      </button>
+      <button
+        type="button"
+        className={`open-in-more ${open ? 'active' : ''}`}
         disabled={!sessionId}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={workspace ? `在编辑器中打开 ${workspace}` : '在编辑器中打开工作区'}
+        aria-label="选择打开方式"
+        title="选择打开方式"
         onClick={() => setOpen(current => !current)}
       >
-        <ExternalLinkIcon size={14} />
-        <span className="open-in-label">{primary ? `在 ${primary.name} 中打开` : '在编辑器中打开'}</span>
         <ChevronDownIcon size={11} />
       </button>
+
       {open
         ? (
           <div className="open-in-menu" role="menu">
@@ -82,8 +102,11 @@ export function OpenInMenu({ sessionId, workspace }: OpenInMenuProps) {
                   disabled={busy}
                   onClick={() => launch(editor.id)}
                 >
-                  <span>{editor.id === 'system' ? '在文件管理器中显示' : `在 ${editor.name} 中打开`}</span>
-                  {editor.kind === 'editor' ? <span className="open-in-kind">编辑器</span> : null}
+                  <EditorIcon id={editor.id} name={editor.name} size={18} />
+                  <span className="open-in-name">{editor.name}</span>
+                  {/* The reference marks the default inline; a tile alone cannot
+                      say which app the left half will launch. */}
+                  {editor.id === primary?.id ? <span className="open-in-default">（默认）</span> : null}
                 </button>
               ))
               : <div className="open-in-empty">正在检测本机编辑器…</div>}

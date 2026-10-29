@@ -30,6 +30,9 @@ interface SidebarProps {
   onOpenSettings: () => void
   functionView: FunctionView | null
   onOpenFunction: (view: FunctionView) => void
+  /** Current width in px; the resizer reports a new one while dragging. */
+  width?: number
+  onResize?: (width: number) => void
 }
 
 interface DragState {
@@ -367,6 +370,32 @@ export function Sidebar(props: SidebarProps) {
   return (
     <>
       <aside className={`sidebar ${props.open ? 'open' : ''}`}>
+        {props.onResize
+          ? (
+            <div
+              className="sidebar-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整侧栏宽度"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                const startX = event.clientX
+                const startWidth = props.width ?? 272
+                document.body.classList.add('resizing')
+                const move = (moveEvent: PointerEvent) =>
+                  props.onResize?.(startWidth + (moveEvent.clientX - startX))
+                const finish = () => {
+                  document.body.classList.remove('resizing')
+                  window.removeEventListener('pointermove', move)
+                  window.removeEventListener('pointerup', finish)
+                }
+                window.addEventListener('pointermove', move)
+                window.addEventListener('pointerup', finish)
+              }}
+              onDoubleClick={() => props.onResize?.(272)}
+            />
+          )
+          : null}
         <div className="sidebar-head">
           <div className="sidebar-brand-row">
             <div className="brand" title="RuoBai Harness">

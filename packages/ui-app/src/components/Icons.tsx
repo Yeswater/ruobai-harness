@@ -183,6 +183,10 @@ export function ChevronRightIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="m9 6 6 6-6 6" /></svg>
 }
 
+export function ChevronLeftIcon({ size }: IconProps) {
+  return <svg {...base(size)}><path d="m15 6-6 6 6 6" /></svg>
+}
+
 export function ChevronDownIcon({ size }: IconProps) {
   return <svg {...base(size)}><path d="m6 9 6 6 6-6" /></svg>
 }

@@ -425,10 +425,13 @@ export function useHarness() {
           const request = payload.request
           if (request.sessionId !== activeRef.current) return
           setAsks(previous => previous.some(item => item.id === request.id) ? previous : [...previous, request])
-        } else {
-          const id = payload.resolution.id
-          setAsks(previous => previous.filter(item => item.id !== id))
+          return
         }
+        // A frame without a resolution must not throw inside the socket handler:
+        // it would take down every later `onChat` for this connection.
+        const id = payload.resolution?.id
+        if (!id) return
+        setAsks(previous => previous.filter(item => item.id !== id))
       },
     })
     return () => events.close()

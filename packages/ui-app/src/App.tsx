@@ -19,6 +19,7 @@ import { ContextView } from './components/ContextView.tsx'
 import { FastTooltips } from './components/FastTooltips.tsx'
 import { OpenInMenu } from './components/OpenInMenu.tsx'
 import { ChangesView } from './components/ChangesView.tsx'
+import { SessionDock } from './components/SessionDock.tsx'
 import { TerminalPanel } from './components/TerminalPanel.tsx'
 import { TodoPanel } from './components/TodoPanel.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
@@ -54,6 +55,10 @@ function initialPreference(): ThemePreference {
 }
 
 const SIDEBAR_KEY = 'rbh-sidebar-collapsed'
+const SIDEBAR_WIDTH_KEY = 'rbh-sidebar-width'
+const SIDEBAR_DEFAULT_WIDTH = 272
+const SIDEBAR_MIN_WIDTH = 208
+const SIDEBAR_MAX_WIDTH = 420
 const DETAILS_WIDTH_KEY = 'rbh-details-width'
 const DETAILS_DEFAULT_WIDTH = 344
 
@@ -64,6 +69,12 @@ function loadCollapsed() {
 function maxDetailsWidth(collapsed: boolean) {
   const reserved = collapsed || matchMedia('(max-width: 760px)').matches ? 0 : 272
   return Math.max(320, window.innerWidth - reserved)
+}
+
+function loadSidebarWidth() {
+  const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
+  if (!Number.isFinite(saved) || !saved) return SIDEBAR_DEFAULT_WIDTH
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(saved)))
 }
 
 function loadDetailsWidth() {
@@ -87,6 +98,8 @@ export function App() {
   const [detailsWidth, setDetailsWidth] = useState(loadDetailsWidth)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadCollapsed)
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth)
+  const [sessionDockOpen, setSessionDockOpen] = useState(true)
   const [reference, setReference] = useState<{ path: string; token: number } | null>(null)
   const [restoredDrop, setRestoredDrop] = useState<{
     text: string
@@ -163,6 +176,16 @@ export function App() {
     localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0')
   }, [sidebarCollapsed])
 
+  /**
+   * The session list is the user's own column: dragging it reports a width, which
+   * is clamped and persisted like the file panel's.
+   */
+  const resizeSidebar = useCallback((next: number) => {
+    const clamped = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(next)))
+    setSidebarWidth(clamped)
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped))
+  }, [])
+
   const resizeDetails = useCallback((next: number) => {
     const clamped = Math.min(maxDetailsWidth(sidebarCollapsed), Math.max(280, Math.round(next)))
     setDetailsWidth(clamped)
@@ -194,6 +217,17 @@ export function App() {
       document.removeEventListener('keydown', onKey)
     }
   }, [toolsMenuOpen])
+
+  // Opening the file panel squeezes the transcript enough that the dock has to
+  // give way; it stays collapsed until the user opens it again, and closing the
+  // panel restores it.
+  const previousFileOpen = useRef(fileOpen)
+  useEffect(() => {
+    if (fileOpen !== previousFileOpen.current) {
+      setSessionDockOpen(!fileOpen)
+      previousFileOpen.current = fileOpen
+    }
+  }, [fileOpen])
 
   const showFilePanel = useCallback((view: FileView) => {
     if (fileOpen && panelView === view) {
@@ -314,8 +348,7 @@ export function App() {
         showFilePanel('preview')
         break
       case 'session-info':
-        setPanelView('session')
-        setFileOpen(true)
+        setSessionDockOpen(value => !value)
         break
       case 'changes':
         setFunctionView(null)
@@ -352,7 +385,10 @@ export function App() {
         expandedPanel === 'file' ? 'file-expanded' : '',
         sidebarCollapsed ? 'sidebar-collapsed' : '',
       ].filter(Boolean).join(' ')}
-      style={{ '--details-width': `${detailsWidth}px` } as CSSProperties}
+      style={{
+        '--details-width': `${detailsWidth}px`,
+        '--sidebar-width': `${sidebarWidth}px`,
+      } as CSSProperties}
       onContextMenu={(event) => {
         event.preventDefault()
         const target = event.target as HTMLElement
@@ -403,6 +439,8 @@ export function App() {
           setFunctionView(view)
           setSidebarOpen(false)
         }}
+        width={sidebarWidth}
+        onResize={resizeSidebar}
       />
 
       <main className={`main ${emptySession ? 'empty-session' : ''}`}>
@@ -474,14 +512,16 @@ export function App() {
             ? null
             : (
               <div className="main-head-right">
-                <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
                 <Slot name="header.actions" props={{ sessionId: harness.session?.id }} />
                 <div className="main-tools" role="toolbar" aria-label="面板">
+                  <OpenInMenu sessionId={harness.session?.id} workspace={harness.session?.workspace} />
+                  <span className="main-tools-sep" />
                   <button
-                    className={`icon-btn ${fileOpen && panelView === 'session' ? 'active' : ''}`}
-                    onClick={() => showFilePanel('session')}
+                    className={`icon-btn ${sessionDockOpen ? 'active' : ''}`}
+                    onClick={() => setSessionDockOpen(value => !value)}
                     aria-label="会话信息"
-                    title="会话信息"
+                    aria-expanded={sessionDockOpen}
+                    title={sessionDockOpen ? '收起会话栏' : '展开会话栏'}
                   >
                     <ListIcon size={16} />
                   </button>
@@ -585,10 +625,13 @@ export function App() {
           )
           : mainView === 'chat'
           ? (
-            <>
+            <div className="main-body">
+              <div className="main-content">
               <Transcript
                 session={harness.session}
                 activity={activity}
+                asks={harness.asks}
+                onAnswerAsk={harness.answerAsk}
                 onEditQueued={(queuedId) => {
                   const session = harness.session
                   if (!session) return
@@ -677,7 +720,31 @@ export function App() {
                 }}
                 reference={reference}
               />
-            </>
+              </div>
+              <SessionDock
+                session={harness.session}
+                open={sessionDockOpen}
+                onToggle={() => setSessionDockOpen(value => !value)}
+                onOpenContext={() => {
+                  setFunctionView(null)
+                  setMainView('context')
+                }}
+                onOpenGit={() => {
+                  setPanelView('git')
+                  setFileOpen(true)
+                }}
+                onOpenFile={(path) => {
+                  setFileRequest({ path, token: Date.now() })
+                  setPanelView('files')
+                  setFileOpen(true)
+                }}
+                onOpenSettings={() => openSettings('behavior')}
+                onOpenChanges={() => {
+                  setFunctionView(null)
+                  setMainView('changes')
+                }}
+              />
+            </div>
           )
           : mainView === 'changes'
             ? <ChangesView session={harness.session} />
@@ -715,23 +782,9 @@ export function App() {
             }}
             onReferenceFile={(path) => setReference({ path, token: Date.now() })}
             openPath={fileRequest ?? undefined}
-            onOpenContext={() => {
-              setFunctionView(null)
-              setMainView('context')
-            }}
             onOpenGit={() => {
               setPanelView('git')
               setFileOpen(true)
-            }}
-            onOpenFile={(path) => {
-              setFileRequest({ path, token: Date.now() })
-              setPanelView('files')
-              setFileOpen(true)
-            }}
-            onOpenSettings={() => openSettings('behavior')}
-            onOpenChanges={() => {
-              setFunctionView(null)
-              setMainView('changes')
             }}
           />
         )

@@ -61,3 +61,36 @@ describe('ask_user in the transcript', () => {
     expect(html).not.toContain('等待回答')
   })
 })
+
+describe('answering from the step', () => {
+  const request = {
+    id: 'r1',
+    sessionId: 's1',
+    question: '要用哪套部署？',
+    options: ['复用本地', '重装'],
+    allowFreeText: true,
+    createdAt: 1,
+    expiresAt: 2,
+  }
+
+  it('turns the options into real choices while the question waits', () => {
+    const html = renderToStaticMarkup(
+      <Transcript
+        session={sessionWithAsk('')}
+        activity={null}
+        asks={[request as never]}
+        onAnswerAsk={() => undefined}
+      />,
+    )
+    expect(html).toContain('<button type="button">复用本地</button>')
+    expect(html).toContain('<button type="button">重装</button>')
+  })
+
+  it('keeps them as plain text once no request is waiting', () => {
+    const html = renderToStaticMarkup(
+      <Transcript session={sessionWithAsk('')} activity={null} asks={[]} />,
+    )
+    expect(html).not.toContain('<button type="button">复用本地</button>')
+    expect(html).toContain('复用本地')
+  })
+})

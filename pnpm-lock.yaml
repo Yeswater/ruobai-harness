@@ -405,6 +405,22 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:../tools
+    devDependencies:
+      '@ruobai/ui-app':
+        specifier: workspace:*
+        version: link:../ui-app
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+      '@ruobai/web-ws':
+        specifier: workspace:*
+        version: link:../web-ws
+      '@types/ws':
+        specifier: ^8.5.12
+        version: 8.18.2
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.0
 
   packages/ask-web:
     dependencies:

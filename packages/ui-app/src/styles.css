@@ -116,11 +116,36 @@ button {
 /* Sidebar */
 
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
+}
+
+/* Drag handle on the sidebar's right edge, mirroring the file panel's. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  z-index: 12;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background .12s;
+}
+
+.sidebar-resizer:hover::after,
+body.resizing .sidebar-resizer::after {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .sidebar-head {
@@ -1043,6 +1068,25 @@ button {
   line-height: 1.5;
 }
 
+/* A waiting option is a real choice, not a transcript excerpt. */
+.process-row-body .tool-ask-options button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.process-row-body .tool-ask-options li:has(button):hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 /* Tool output primitives (reused by process rows) */
 
 .tool-path {
@@ -1230,24 +1274,41 @@ button {
   color: var(--faint);
 }
 
+/* The chip row and the send cluster share one line. The chips may scroll
+   sideways when the panel is narrow; the send button must never be pushed out
+   (a squeezed model picker used to leave 发送 half off the card). */
 .composer-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 6px 10px 9px 15px;
+  min-width: 0;
 }
 
 .composer-actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
 }
 
 .composer-left {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.composer-left::-webkit-scrollbar {
+  display: none;
+}
+
+.composer-left > * {
+  flex: none;
 }
 
 .mode-select {
@@ -2679,11 +2740,11 @@ body {
 }
 
 .app {
-  grid-template-columns: 272px minmax(0, 1fr) var(--details-width, 344px);
+  grid-template-columns: var(--sidebar-width, 272px) minmax(0, 1fr) var(--details-width, 344px);
 }
 
 .app.details-closed {
-  grid-template-columns: 272px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 272px) minmax(0, 1fr);
 }
 
 .app.sidebar-collapsed {
@@ -3346,14 +3407,23 @@ body {
 
 /* Turn markers and hover preview */
 
+/* Reserve the lane the markers sit in, but only when there are any. */
+.transcript-wrap:has(.turn-nav) .transcript {
+  padding-left: 44px;
+}
+
+
+/* Turn markers hug the left rail — the conversation column starts right after
+   them — instead of floating over the last column of prose on the right. The
+   hover card opens to the right, over the transcript. */
 .turn-nav {
   position: absolute;
   top: 50%;
-  right: 18px;
+  left: 4px;
   z-index: 6;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   width: 34px;
   transform: translateY(-50%);
 }
@@ -3362,7 +3432,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   width: 34px;
   height: 18px;
   flex: none;
@@ -3405,7 +3475,7 @@ body {
 .turn-nav-card {
   position: absolute;
   top: 50%;
-  right: 38px;
+  left: 38px;
   z-index: 20;
   width: min(420px, 46vw);
   padding: 12px 14px;
@@ -6938,8 +7008,12 @@ body.resizing .file-side-resizer::after {
   gap: 12px;
 }
 
+/* The header has three zones fighting for one row: the title block, the search
+   trigger and the tool rail. Only the first may shrink, and it never wraps its
+   own tabs — a squeezed tab used to break 「会话」 into two stacked lines. */
 .main-head-left {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 12px;
   min-width: 0;
@@ -6952,16 +7026,17 @@ body.resizing .file-side-resizer::after {
 
 .main-head-center {
   display: flex;
+  flex: 0 1 auto;
   justify-content: center;
   min-width: 0;
 }
 
 .main-head-right {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  min-width: 0;
 }
 
 .main-tools {
@@ -7026,7 +7101,7 @@ body.resizing .file-side-resizer::after {
 /* ===== Independent file panel ===== */
 
 .app {
-  --sidebar-col: 272px;
+  --sidebar-col: var(--sidebar-width, 272px);
   --file-col: 0px;
   grid-template-columns: var(--sidebar-col) minmax(0, 1fr) var(--file-col);
 }
@@ -7054,6 +7129,10 @@ body.resizing .file-side-resizer::after {
     --sidebar-col: 248px;
     --file-col: 0px;
     grid-template-columns: var(--sidebar-col) minmax(0, 1fr);
+  }
+
+  .sidebar-resizer {
+    display: none;
   }
 
   .app.sidebar-collapsed {
@@ -7574,11 +7653,14 @@ body.resizing .file-side-resizer::after {
 
 .main-tabs {
   display: flex;
+  flex-wrap: nowrap;
   gap: 20px;
   margin-top: 7px;
+  overflow: hidden;
 }
 
 .main-tabs button {
+  flex: none;
   padding: 2px 1px 6px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -7586,6 +7668,7 @@ body.resizing .file-side-resizer::after {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 2;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -7599,60 +7682,78 @@ body.resizing .file-side-resizer::after {
   font-weight: 600;
 }
 
+/* Split button: the tile of the default editor, then an arrow that lists all of
+   them. Bordered as one control so it reads as a single toolbar item. */
 .open-in {
   position: relative;
+  display: flex;
   flex: none;
-}
-
-.open-in-btn {
-  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
-  color: var(--muted);
-  font-size: 11.5px;
-  white-space: nowrap;
+  overflow: visible;
 }
 
-.open-in-btn:hover:not(:disabled),
-.open-in-btn.active {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+.open-in-go,
+.open-in-more {
+  display: grid;
+  place-items: center;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  transition: background .15s, color .15s;
+}
+
+.open-in-go {
+  width: 28px;
+  border-radius: 7px 0 0 7px;
+}
+
+.open-in-more {
+  width: 18px;
+  border-left: 1px solid var(--border);
+  border-radius: 0 7px 7px 0;
+}
+
+.open-in-go:hover:not(:disabled),
+.open-in-more:hover:not(:disabled),
+.open-in-more.active {
+  background: var(--tool-bg);
   color: var(--text);
 }
 
-.open-in-btn:disabled {
-  opacity: .55;
+.open-in-go:disabled,
+.open-in-more:disabled {
+  opacity: .5;
 }
 
 .open-in-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   right: 0;
   z-index: 80;
-  min-width: 210px;
-  padding: 4px;
+  min-width: 208px;
+  padding: 5px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .18), 0 2px 6px rgba(0, 0, 0, .06);
 }
 
 .open-in-menu button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   padding: 7px 9px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   white-space: nowrap;
 }
@@ -7661,9 +7762,16 @@ body.resizing .file-side-resizer::after {
   background: var(--tool-bg);
 }
 
-.open-in-kind {
+.open-in-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.open-in-default {
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11.5px;
 }
 
 .open-in-empty,
@@ -8248,12 +8356,6 @@ body.resizing .file-side-resizer::after {
 .context-memory + .context-details,
 .context-entries + .context-details {
   margin-top: 10px;
-}
-
-@media (max-width: 900px) {
-  .open-in-label {
-    display: none;
-  }
 }
 
 /* Context page: session facts and prompt sources */

@@ -1,8 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, ChatSession, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
-import type { ActivitySummary } from '../api.ts'
+import type { ActivitySummary, AskRequest } from '../api.ts'
 import { BrainIcon, CheckIcon, ChevronDownIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { ContributionGraph } from './ContributionGraph.tsx'
@@ -24,12 +27,30 @@ interface TranscriptProps {
   onEditQueued?: (queuedId: string) => void
   /** Discard a queued message. */
   onWithdrawQueued?: (queuedId: string) => void
+  /** Questions still waiting for the human, so their options can be answered. */
+  asks?: AskRequest[]
+  /** Answer a pending question straight from the step that asked it. */
+  onAnswerAsk?: (id: string, answer: string) => void
 }
 
 const FOLLOW_THRESHOLD = 24
 
+/**
+ * The waiting question behind a step, if this session still has one.
+ *
+ * A step and its card are two views of the same request: the card lives above
+ * the composer, the step is where the model asked. Both need the request id to
+ * answer it, and the log only carries the call — so the row looks itself up by
+ * the question text, which is unique while it waits.
+ */
+const PendingAskContext = createContext<{
+  /** The request this call is blocked on, when one is still open. */
+  find: (question: string) => AskRequest | undefined
+  answer: (id: string, answer: string) => void
+} | null>(null)
+
 export function Transcript({
-  session, activity, onEditQueued, onWithdrawQueued,
+  session, activity, onEditQueued, onWithdrawQueued, asks = [], onAnswerAsk,
 }: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -89,6 +110,15 @@ export function Transcript({
     return () => observer.disconnect()
   }, [])
 
+  const pendingAsk = useMemo(() => {
+    const byQuestion = new Map<string, AskRequest>()
+    for (const request of asks) byQuestion.set(request.question.trim(), request)
+    return {
+      find: (question: string) => byQuestion.get(question.trim()),
+      answer: (id: string, answer: string) => onAnswerAsk?.(id, answer),
+    }
+  }, [asks, onAnswerAsk])
+
   return (
     <div className="transcript-wrap">
       <div
@@ -102,6 +132,7 @@ export function Transcript({
         }}
       >
         <div className="transcript-inner" ref={innerRef}>
+          <PendingAskContext.Provider value={pendingAsk}>
           {!session ? (
             <div className="loading">loading session…</div>
           ) : messages.length === 0 ? (
@@ -168,6 +199,7 @@ export function Transcript({
               }}
             />
           ))}
+          </PendingAskContext.Provider>
         </div>
 
         {!atBottom && messages.length
@@ -249,6 +281,20 @@ function UserMessage({ message, queued, onEdit, onWithdraw }: {
       {text ? <div className="bubble">{text}</div> : null}
     </div>
   )
+}
+
+/**
+ * The waiting request for a question, or nothing when it is already settled.
+ *
+ * Returns undefined outside the transcript (queued bubbles and cards do not need
+ * it), so the row degrades to plain text instead of throwing.
+ */
+function usePendingAsk(question: string | undefined) {
+  const context = useContext(PendingAskContext)
+  if (!context || !question) return undefined
+  const request = context.find(question)
+  if (!request) return undefined
+  return { id: request.id, answer: (text: string) => context.answer(request.id, text) }
 }
 
 /**
@@ -445,6 +491,7 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
   const auto = pending && Boolean(detail.ask)
   const [pinned, setPinned] = useState<boolean | null>(null)
   const open = pinned ?? auto
+  const askRequest = usePendingAsk(detail.ask?.question)
   useEffect(() => {
     if (auto) setPinned(null)
   }, [auto])
@@ -497,7 +544,21 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
                       ? (
                         <ul className="tool-ask-options">
                           {detail.ask.options.map((option, index) => (
-                            <li key={index}>{option}</li>
+                            // The waiting request makes the option a real choice;
+                            // an already-answered or interrupted one is history and
+                            // must not look clickable.
+                            pending && askRequest
+                              ? (
+                                <li key={index}>
+                                  <button
+                                    type="button"
+                                    onClick={() => askRequest.answer(option)}
+                                  >
+                                    {option}
+                                  </button>
+                                </li>
+                              )
+                              : <li key={index}>{option}</li>
                           ))}
                         </ul>
                       )
