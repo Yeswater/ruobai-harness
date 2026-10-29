@@ -96,6 +96,47 @@ export interface ToolDetail {
   command?: string
   /** File or directory the call touched. */
   path?: string
+  /** A question put to the human: the row is the question, not a tool name. */
+  ask?: AskDetail
+}
+
+/**
+ * Tools that block on a human instead of on the workspace.
+ *
+ * Their input *is* the content the reader cares about, so the row shows the
+ * question and the body shows the options — rendering them like a file or a
+ * shell call left the row saying `ask_user` and the body "无输出".
+ */
+const ASK_TOOLS = new Set(['ask_user', 'ask', 'ask_question'])
+
+export interface AskDetail {
+  question: string
+  options: string[]
+}
+
+/** The question inside an ask call, when the input can be read. */
+export function askDetail(block: ToolBlock): AskDetail | undefined {
+  if (!ASK_TOOLS.has(block.name.toLowerCase())) return undefined
+  const input = parseInput(block.input)
+  const question = typeof input?.question === 'string' ? input.question.trim() : ''
+  if (!question) return undefined
+  const raw = Array.isArray(input?.options) ? input.options : []
+  const options = raw
+    .map(option => (typeof option === 'string' ? option.trim() : ''))
+    .filter(Boolean)
+  return { question, options }
+}
+
+/**
+ * A question that is still waiting for the human.
+ *
+ * The assistant step that carried the call is already logged as settled, so
+ * `buildPlan` would read the empty output as "finished with no output"; only the
+ * call's own timestamps tell the two apart.
+ */
+export function awaitingAnswer(block: ToolBlock): boolean {
+  if (block.finishedAt !== undefined || block.output) return false
+  return askDetail(block) !== undefined
 }
 
 /** One folded row for a single call: verb + the thing it acted on. */
@@ -104,6 +145,11 @@ export function toolDetail(block: ToolBlock): ToolDetail {
   const path = pathOf(input)
   const name = block.name.toLowerCase()
   const row = bucketOf(name).row
+
+  const ask = askDetail(block)
+  if (ask) {
+    return { row: '向你提问', title: firstLine(ask.question, 48), summary: ask.question, ask }
+  }
 
   if (name === 'bash' || name === 'run_command' || name === 'shell') {
     const raw = input?.command ?? input?.cmd

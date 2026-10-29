@@ -179,11 +179,10 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasNew, setHasNew] = useState(false)
-  const [follow, setFollow] = useState(false)
+  // 轨迹默认跟随尾部：新步骤到达时滚到最新一条，读者自己上滚才停止跟随。
+  const [follow, setFollow] = useState(true)
   const ledgerRef = useRef<HTMLDivElement>(null)
-  const anchorApplied = useRef(false)
   const anchorPending = useRef<{ id?: string; turn?: number; offset: number } | null>(null)
-  const followPending = useRef(false)
   const followRef = useRef(follow)
   const lastTurnRef = useRef(-1)
   followRef.current = follow
@@ -197,9 +196,8 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
     setQuery('')
     setFilter('all')
     setHasNew(false)
-    setFollow(false)
+    setFollow(true)
     setError(null)
-    anchorApplied.current = false
     anchorPending.current = null
     if (!sessionId) return
     let cancelled = false
@@ -232,12 +230,8 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
         setCollapsed((current) => new Set(current).add(previousLast))
       }
       setSnapshot((current) => current ? mergeFrame(current, frame) : current)
-      if (followRef.current) {
-        followPending.current = true
-        setHasNew(false)
-      } else {
-        setHasNew(true)
-      }
+      if (followRef.current) setHasNew(false)
+      else setHasNew(true)
     }
     source.addEventListener('trajectory', onFrame as EventListener)
     return () => source.close()
@@ -245,25 +239,17 @@ export function TrajectoryView({ session }: { session: ChatSession | null }) {
 
   useLayoutEffect(() => {
     const container = ledgerRef.current
-    if (!container || !snapshot || anchorApplied.current) return
-    const last = snapshot.turns.at(-1)
-    if (!last) {
-      anchorApplied.current = true
-      return
-    }
-    const target = container.querySelector<HTMLElement>(`[data-turn="${last.index}"]`)
-    if (target) container.scrollTop += target.getBoundingClientRect().top - container.getBoundingClientRect().top
-    anchorApplied.current = true
-    // Short histories fit the viewport: the turn-top anchor is also the tail,
-    // so live records may follow from the start. A long turn keeps it off
-    // until the reader scrolls down, otherwise the anchor would be fought.
-    if (container.scrollHeight - container.scrollTop - container.clientHeight < 48) setFollow(true)
-  }, [snapshot])
-
-  useLayoutEffect(() => {
-    const container = ledgerRef.current
-    if (container && follow) container.scrollTop = container.scrollHeight
-    followPending.current = false
+    if (!container || !follow) return
+    // Following the newest step is the default: the first load lands at the
+    // tail instead of the top of the last turn, so a long turn opens on the
+    // record currently being written.
+    container.scrollTop = container.scrollHeight
+    // Rows settle after paint (wrapping, fonts); scroll once more so the tail
+    // stays the tail instead of stopping one row short.
+    const frame = requestAnimationFrame(() => {
+      if (followRef.current) container.scrollTop = container.scrollHeight
+    })
+    return () => cancelAnimationFrame(frame)
   }, [snapshot, follow])
 
   useLayoutEffect(() => {

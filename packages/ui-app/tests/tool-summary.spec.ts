@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolBlock } from '@ruobai/chat-protocol'
-import { describeTool, isRunning, toolDetail } from '../src/tool-summary.ts'
+import { awaitingAnswer, describeTool, isRunning, toolDetail } from '../src/tool-summary.ts'
 
 function tool(name: string, input: Record<string, unknown> = {}, extra: Partial<ToolBlock> = {}): ToolBlock {
   return {
@@ -43,5 +43,28 @@ describe('tool detail', () => {
     expect(isRunning(tool('bash', {}, { output: '' }))).toBe(true)
     expect(isRunning(tool('bash'))).toBe(false)
     expect(isRunning(tool('bash', {}, { output: '', isError: true }))).toBe(false)
+  })
+})
+
+describe('questions to the human', () => {
+  it('titles the row with the question instead of the tool name', () => {
+    const detail = toolDetail(tool('ask_user', {
+      question: '面板与后端一致，问题出在清单只写了一次。你想按哪种方式收口？',
+      options: ['兜底', '只改提示'],
+    }))
+    expect(detail.row).toBe('向你提问')
+    expect(detail.title).toContain('面板与后端一致')
+    expect(detail.ask).toEqual({
+      question: '面板与后端一致，问题出在清单只写了一次。你想按哪种方式收口？',
+      options: ['兜底', '只改提示'],
+    })
+  })
+
+  it('reads a pending question as waiting, not as output-less', () => {
+    const pending = tool('ask_user', { question: '选哪个？' }, { output: '', finishedAt: undefined })
+    expect(awaitingAnswer(pending)).toBe(true)
+    expect(isRunning(pending)).toBe(true)
+    expect(awaitingAnswer({ ...pending, output: '用户回答：第一个' })).toBe(false)
+    expect(awaitingAnswer(tool('bash', {}, { output: '', finishedAt: undefined }))).toBe(false)
   })
 })

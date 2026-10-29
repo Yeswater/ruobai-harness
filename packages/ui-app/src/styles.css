@@ -1013,6 +1013,36 @@ button {
   border-top: 1px dashed var(--border);
 }
 
+/* A question put to the human: the body is prose plus its choices, not output. */
+
+.process-row-body .tool-ask-question {
+  margin: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.process-row-body .tool-ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  white-space: normal;
+}
+
+.process-row-body .tool-ask-options li {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* Tool output primitives (reused by process rows) */
 
 .tool-path {

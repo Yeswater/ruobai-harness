@@ -209,10 +209,10 @@ function TrajectoryPanel({ sessionId }) {
 |---|---|---|
 | 快照 / 帧缓存 | Client model（数据缓存） | 切会话时丢弃旧快照；Host projection 不随之清理 |
 | `turns[].summary` | Host projection | 随日志增长 |
-| 默认锚点（最新轮次顶部） | Client model：`anchorTurn` + `anchorApplied` | 初次快照就绪时应用一次；切会话重置 |
+| 默认锚点 | Client model | 无需单独锚点：初次快照与切会话都落到 `scrollHeight`，跟随尾部即是最新一步 |
 | 历史轮次折叠集合 | Client model：`collapsedTurns: Set<number>` | 会话内保持；**切会话重置为"仅最新轮展开"** |
 | 选中记录 / 检查器标签页 | Client model：`selectedRecordId`, `inspectorTab` | 会话内保持；切会话清空（空态显示最新轮摘要） |
-| 跟随尾部 | Client model：`followTail: boolean` | 默认 `true`；向上滚动置 `false`，回到底部恢复 |
+| 跟随尾部 | Client model：`followTail: boolean` | 默认 `true`（打开即落在最新一步）；向上滚动置 `false`，回到底部或点「跟随尾部」恢复 |
 | 时间线模式 / 缩放 / 选区 | Client model；**模式**写 `localStorage` | 缩放/选区随会话；模式跨会话保留 |
 | 搜索词、筛选（工具/上下文） | Client model | 会话内保持 |
 | 进行中 assistant 文本 | Client model：`pendingByMessageId` | settle 后删除 |
@@ -284,9 +284,10 @@ slots.register('conversation.views', { id: 'context', title: '上下文', order:
 
 三条契约的验收点与实现位置：
 
-1. **默认定位最新轮次顶部**
-   - 快照就绪（`turns.length > 0`）后应用一次：`scrollTop = offsetTop(turns.at(-1))`，不是 `scrollHeight`。
-   - `anchorApplied` 标记防重复；切会话重置。
+1. **默认跟随最新一条记录**
+   - 快照就绪（`turns.length > 0`）后 `scrollTop = scrollHeight`，并置 `followTail = true`：长轮次打开时直接落在正在写入的记录上，而不是轮次顶部还要再滚一次。
+   - 截图中那条"打开就停在半天前、新步骤要靠手动滚"的体验，就是这个契约没落实时的样子：`followTail` 默认 `true` 但初次加载锚在最新轮顶部，且只在"内容不足一屏"时才开启跟随。
+   - 绘制后（换行、字体就绪）再滚一次，避免停在倒数第二行；用户上滚即关闭跟随，底部出现「有新记录 · 跟随尾部」。
    - 加载骨架屏直到快照就绪（§8.1）。
 
 2. **历史折叠、仅最新展开**
@@ -443,7 +444,7 @@ Slot props 只放**收窄后的 plain data + callbacks**：不传 store、不传
 | HTTP 路由 | `trajectory-web`（Host） | 同上 | `ctx.web.register()` disposer |
 | SSE `trajectory` 通道 | `trajectory-web`（Host） | 同上 | 监听 disposer；UiApi 的 SseHub 连接由请求生命周期回收 |
 | 客户端快照缓存 | `trajectory-view` client model | 切会话 | `model = createTrajectoryModel(sessionId)`；旧 model `dispose()`（取消订阅、清 pending、丢弃快照） |
-| `collapsedTurns / anchorApplied / selection / followTail` | 同上 | 切会话 | 新 model 以默认契约初始化：`collapsed = 除最后一轮外全部`、`anchor = 最新轮`、`followTail = true` |
+| `collapsedTurns / selection / followTail` | 同上 | 切会话 | 新 model 以默认契约初始化：`collapsed = 除最后一轮外全部`、`followTail = true`（落在最新一步） |
 | 图片 object URL | Conversation 级插件 | 会话关闭 | 不在 trajectory 插件内释放；轨迹只消费 URL |
 
 Host 注册模式（热重载安全）：
@@ -488,7 +489,7 @@ function createTrajectoryModel(sessionId) {
 
 - 初始请求只取**最近 25 轮**（宿主按 `turns` 索引切片，不扫全部事件）。
 - 快照未就绪：`state = 'loading'`，渲染固定高度骨架（与真实行高接近，避免跳动）。
-- 首次就绪：渲染后 `requestAnimationFrame` 内一次性设置 `scrollTop = latestTurn.offsetTop`；`anchorApplied = true`。
+- 首次就绪：`scrollTop = scrollHeight`，并在 `requestAnimationFrame` 内再设一次（换行/字体就绪后才确定高度）；`followTail = true`。
 - 加载更早：`?before=firstTurnIndex`；渲染前记录 `anchor = { key: topmostRecordId, delta: topmostRowRect.top - viewport.top }`，插入后按同一 key 的 `offsetTop` 回填 `scrollTop += newOffset - oldOffset`；React 用 `flushSync` 或 `useLayoutEffect` 保证测量在绘制前。
 
 ### 6.2 虚拟化
@@ -556,7 +557,7 @@ Client：`trajectory-timing`（三通道概览、拖选/缩放/悬停）、`traj
 
 | # | 场景 | 缓解 |
 |---|---|---|
-| 1 | 快照未就绪先渲染空列表 | 状态机 `loading → ready`；骨架屏固定高度；首次 `ready` 才应用锚点，`anchorApplied` 防重复 |
+| 1 | 快照未就绪先渲染空列表 | 状态机 `loading → ready`；骨架屏固定高度；首次 `ready` 才滚到底（`followTail` 默认开启） |
 | 2 | 最新轮展开且流式中，用户手动折叠 | 尊重用户：折叠立即生效并关闭 `followTail`；轮标题显示"运行中"标记；新帧只更新摘要不展开 |
 | 3 | SSE 帧丢失/乱序 | 帧带 `rev/lastSeq`；客户端 `rev <= current` 丢弃；检测到 `lastSeq` 跳号则重新拉一次 tail 快照 |
 | 4 | 热重载残留 projection | `registerProjection` 返回 disposer，注册在 `ctx.effect` 中；同名 key 已存在时抛错，旧 fiber 卸载后新 fiber 才能注册成功；帧缓冲定时器也挂在 effect 上 |

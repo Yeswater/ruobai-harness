@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     include: [
       'packages/*/tests/**/*.spec.ts',
+      'packages/*/tests/**/*.spec.tsx',
       'apps/*/tests/**/*.spec.ts',
     ],
     testTimeout: 10_000,

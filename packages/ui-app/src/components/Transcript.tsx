@@ -435,10 +435,19 @@ function ThoughtRow({ block, pending }: { block: ReasoningBlock; pending: boolea
 }
 
 function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
-  const [open, setOpen] = useState(false)
   const detail = toolDetail(block)
   const edit = toolEdit(block)
   const elapsed = durationLabel(itemDuration({ kind: 'tool', key: '', block, pending }))
+  // A question the model is waiting on opens itself: the content the reader
+  // needs (the question and its choices) only exists in the body, so a folded
+  // row would show a title with no way to read it. The pin is dropped as soon
+  // as the answer lands, which collapses it back to a summary.
+  const auto = pending && Boolean(detail.ask)
+  const [pinned, setPinned] = useState<boolean | null>(null)
+  const open = pinned ?? auto
+  useEffect(() => {
+    if (auto) setPinned(null)
+  }, [auto])
 
   return (
     <div className={`process-row ${open ? 'expanded' : ''} ${block.isError ? 'failed' : ''}`}>
@@ -446,15 +455,23 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
         type="button"
         className="process-row-head"
         aria-expanded={open}
-        onClick={() => setOpen(current => !current)}
+        onClick={() => setPinned(!open)}
       >
         <ToolIcon size={12} />
         <span className="process-row-label">{detail.title}</span>
         {detail.summary && detail.title === '运行命令'
           ? <span className="process-row-text">{detail.summary}</span>
           : null}
+        {/* The question is the title, so the row's gist is the answer. */}
+        {detail.ask
+          ? (
+            <span className="process-row-text">
+              {firstLine(block.output) || (pending ? '等待回答…' : '未回答')}
+            </span>
+          )
+          : null}
         {pending
-          ? <span className="process-row-state">运行中</span>
+          ? <span className="process-row-state">{detail.ask ? '等待回答' : '运行中'}</span>
           : block.isError
             ? <span className="process-row-state failed">失败</span>
             : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
@@ -472,14 +489,32 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
                     : null}
                 </>
               )
-              : (
-                <>
-                  {detail.command
-                    ? <pre className="tool-command">$ {detail.command}</pre>
-                    : detail.path ? <div className="tool-path">{detail.path}</div> : null}
-                  <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
-                </>
-              )}
+              : detail.ask
+                ? (
+                  <>
+                    <p className="tool-ask-question">{detail.ask.question}</p>
+                    {detail.ask.options.length
+                      ? (
+                        <ul className="tool-ask-options">
+                          {detail.ask.options.map((option, index) => (
+                            <li key={index}>{option}</li>
+                          ))}
+                        </ul>
+                      )
+                      : null}
+                    <pre className="tool-output">
+                      {block.output || (block.isError ? 'failed' : pending ? '等待回答…' : '未回答')}
+                    </pre>
+                  </>
+                )
+                : (
+                  <>
+                    {detail.command
+                      ? <pre className="tool-command">$ {detail.command}</pre>
+                      : detail.path ? <div className="tool-path">{detail.path}</div> : null}
+                    <pre className="tool-output">{block.output || (block.isError ? 'failed' : pending ? 'running…' : '无输出')}</pre>
+                  </>
+                )}
             {block.images?.length
               ? (
                 <div className="tool-images">

@@ -239,3 +239,51 @@ describe('process group open state', () => {
     expect(shouldGroupRun({ streaming: true, active: false, running: false })).toBe(false)
   })
 })
+
+describe('questions to the human', () => {
+  // The reported bug: `ask_user` sits in an already-settled step while it waits
+  // for the answer, so the empty output rendered as "无输出" instead of waiting.
+  it('keeps a call that waits for the human pending inside a settled step', () => {
+    const plan = buildPlan([
+      message('assistant', [call('ask_user', {
+        input: JSON.stringify({ question: '要用哪个目录？', options: ['a', 'b'] }),
+        output: '',
+        finishedAt: undefined,
+      })]),
+    ])
+    const group = plan[0]
+    expect(group?.kind === 'process' && processSteps(group.items).map(item => item.kind !== 'text' && item.pending))
+      .toEqual([true])
+  })
+
+  it('stops waiting once the answer is logged', () => {
+    const plan = buildPlan([
+      message('assistant', [call('ask_user', {
+        input: JSON.stringify({ question: '要用哪个目录？' }),
+        output: '用户回答：a',
+      })]),
+    ])
+    const group = plan[0]
+    expect(group?.kind === 'process' && processSteps(group.items).map(item => item.kind !== 'text' && item.pending))
+      .toEqual([false])
+  })
+})
+
+describe('interrupted questions', () => {
+  it('does not keep an unanswered question from an old turn open', () => {
+    // Only the last step can still be waiting; anything earlier is a turn that
+    // was interrupted, and pinning it would leave that group running forever.
+    const plan = buildPlan([
+      message('user', [text('go')]),
+      message('assistant', [call('ask_user', {
+        input: JSON.stringify({ question: '要用哪个目录？' }),
+        output: '',
+        finishedAt: undefined,
+      })]),
+      message('user', [text('算了')]),
+    ])
+    const groups = plan.filter(item => item.kind === 'process')
+    const steps = groups.flatMap(group => group.kind === 'process' ? processSteps(group.items) : [])
+    expect(steps.map(item => item.kind !== 'text' && item.pending)).toEqual([false])
+  })
+})

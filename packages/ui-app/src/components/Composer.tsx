@@ -576,15 +576,6 @@ export function Composer({
               onOpenChange={open => setOpenMenu(open ? 'model' : null)}
               onChange={onModelChange}
             />
-            <button
-              type="submit"
-              className="send"
-              disabled={disabled || (!text.trim() && !attachments.attachments.length)}
-              aria-label={streaming ? '排队发送' : 'Send'}
-              title={streaming ? '当前回合结束后发送' : '发送'}
-            >
-              <SendIcon size={14} />
-            </button>
             {streaming
               ? (
                 <button
@@ -592,12 +583,22 @@ export function Composer({
                   className="send stop"
                   onClick={onStop}
                   aria-label="Stop"
-                  title="停止当前回合；排队的消息会接着发送"
+                  title="停止当前回合；回车排队的消息会接着发送"
                 >
                   <StopIcon size={13} />
                 </button>
               )
-              : null}
+              : (
+                <button
+                  type="submit"
+                  className="send"
+                  disabled={disabled || (!text.trim() && !attachments.attachments.length)}
+                  aria-label="Send"
+                  title="发送"
+                >
+                  <SendIcon size={14} />
+                </button>
+              )}
           </div>
         </div>
 

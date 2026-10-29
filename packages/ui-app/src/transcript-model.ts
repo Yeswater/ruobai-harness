@@ -1,5 +1,5 @@
 import type { ChatMessage, ReasoningBlock, ToolBlock } from '@ruobai/chat-protocol'
-import { isRunning } from './tool-summary.ts'
+import { awaitingAnswer, isRunning } from './tool-summary.ts'
 
 /**
  * One line inside a folded process group.
@@ -68,13 +68,15 @@ export function buildPlan(messages: ChatMessage[], turnStreaming = false): PlanI
     waiting = false
   }
 
-  for (const message of messages) {
+  for (const [position, message] of messages.entries()) {
     if (message.role === 'user') {
       flush()
       plan.push({ kind: 'user', key: message.id, message })
       continue
     }
     if (message.role !== 'assistant') continue
+    // A question can only be waiting if nothing came after the step that asked.
+    const isLast = position === messages.length - 1
     if (message.blocks.length === 0) {
       if (message.status === 'streaming') {
         open(`${message.id}-pending`)
@@ -103,9 +105,13 @@ export function buildPlan(messages: ChatMessage[], turnStreaming = false): PlanI
       // (sessions written before timing was recorded). Reading `finishedAt`
       // alone left every old thought row stuck on "思考中".
       const settled = message.status !== 'streaming'
-      const pending = settled
-        ? false
-        : block.type === 'reasoning' ? block.finishedAt === undefined : isRunning(block)
+      const pending = block.type === 'tool'
+        // An ask call is logged inside an already-settled step but still waits
+        // for the human. Only the conversation's last step can still be waiting:
+        // an unanswered call further back is a turn that was interrupted, and
+        // treating it as live would pin that old group open forever.
+        ? (awaitingAnswer(block) && isLast) || (!settled && isRunning(block))
+        : settled ? false : block.finishedAt === undefined
       group.push(block.type === 'reasoning'
         ? { kind: 'reasoning', key, block, pending }
         : { kind: 'tool', key, block, pending })
