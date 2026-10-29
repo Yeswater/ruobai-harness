@@ -66,6 +66,15 @@ export function apply(ctx: Context) {
   ctx.effect(() => ctx.sessions.registerProjection(TODO_PROJECTION, todoProjection), 'todo.projection')
   ctx.effect(() => ctx.tools.register(todoTool(ctx)), 'todo.tool')
 
+  // The tool description alone was not enough: models described the plan in
+  // prose and the panel stayed empty. The rule has to be in the cached prefix,
+  // before the first step, or it is not read at all.
+  const guide = {
+    id: 'todo.guide',
+    order: 88,
+    stability: 'static' as const,
+    render: () => TODO_GUIDE,
+  }
   const section = {
     id: 'todo',
     // Volatile: the list changes inside a turn, so it must never be treated as
@@ -76,9 +85,23 @@ export function apply(ctx: Context) {
     render: ({ sessionId }: { sessionId: string }) => renderSection(todoOf(ctx, sessionId).items),
   }
   ctx.inject(['context'], (sectionCtx) => {
+    sectionCtx.effect(() => sectionCtx.context.registerSection(guide), 'todo.guide')
     sectionCtx.effect(() => sectionCtx.context.registerSection(section), 'todo.section')
   })
 }
+
+/**
+ * Why the list is not optional for multi-step work: without it a long task
+ * has no place to keep "done / next", compaction drops the plan, and the user
+ * cannot see progress. Kept short so it does not become another document.
+ */
+const TODO_GUIDE = [
+  '## 多步任务维护任务清单',
+  '- 开始需要 3 步以上、或会跨越多次工具调用的任务前，先调用 todo_write 建一份清单；一次只把一项标为 in_progress，完成后标 completed。',
+  '- 单步的小改动不要建清单，也不要建空清单来占位。',
+  '- 清单是给用户看进度的：每项一句话写清动作，不要写成需求文档或复述计划。',
+].join('\n')
+
 
 export default { name, inject, apply }
 

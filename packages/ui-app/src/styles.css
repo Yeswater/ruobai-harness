@@ -1453,28 +1453,6 @@ body.resizing .sidebar-resizer::after {
   white-space: pre-wrap;
 }
 
-.ask-question.clamped {
-  max-height: 5.6em;
-  overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 72%, transparent);
-}
-
-.ask-toggle {
-  display: block;
-  margin: -4px 12px 10px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-
-.ask-toggle:hover {
-  text-decoration: underline;
-}
-
 .ask-options {
   display: flex;
   flex-direction: column;
@@ -1512,6 +1490,29 @@ body.resizing .sidebar-resizer::after {
   border-color: var(--border-strong);
 }
 
+/* A waiting question stands in the transcript, not inside the process group. */
+.approval.ask.ask-inline {
+  margin: 10px auto;
+}
+
+.ask-option-plain {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.ask-options .btn.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.ask-pager {
+  flex-wrap: wrap;
+}
+
 /* The commit card: a prepared message, one click to accept. */
 
 .approval.commit {
@@ -1521,6 +1522,57 @@ body.resizing .sidebar-resizer::after {
 
 .approval.commit .approval-title {
   color: var(--ok);
+}
+
+/* The plan card: the model's implementation plan, with accept / revise. */
+
+.approval.plan {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel));
+}
+
+.approval.plan .approval-title {
+  color: var(--accent);
+}
+
+.plan-body .file-markdown {
+  max-height: 300px;
+  padding: 0 12px 10px;
+  overflow: auto;
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.plan-revise {
+  padding: 0 12px;
+}
+
+.plan-revise textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.plan-revise textarea:focus {
+  border-color: var(--border-strong);
+}
+
+.plan-revise .approval-actions {
+  padding: 9px 0;
+}
+
+/* The same plan, read back inside its transcript row. */
+.tool-plan .file-markdown {
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 
 .commit-files {

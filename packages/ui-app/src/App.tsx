@@ -9,8 +9,8 @@ import {
   isTerminalShortcut, modKeyLabel,
 } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
-import { AskCard } from './components/AskCard.tsx'
 import { CommitCard } from './components/CommitCard.tsx'
+import { PlanCard } from './components/PlanCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
@@ -650,6 +650,18 @@ export function App() {
 
               <TodoPanel todo={harness.todo} />
 
+              {harness.planProposal
+                ? (
+                  <div className="approval-stack">
+                    <PlanCard
+                      proposal={harness.planProposal}
+                      onAccept={() => harness.decidePlan(harness.planProposal!.id, 'accept')}
+                      onRevise={feedback => harness.decidePlan(harness.planProposal!.id, 'revise', feedback)}
+                    />
+                  </div>
+                )
+                : null}
+
               {harness.commitProposal
                 ? (
                   <div className="approval-stack">
@@ -658,20 +670,6 @@ export function App() {
                       onCommit={message => harness.commitChanges(harness.commitProposal!.id, message)}
                       onDismiss={() => harness.dismissCommit(harness.commitProposal!.id)}
                     />
-                  </div>
-                )
-                : null}
-
-              {harness.asks.length
-                ? (
-                  <div className="approval-stack">
-                    {harness.asks.map(request => (
-                      <AskCard
-                        key={request.id}
-                        request={request}
-                        onAnswer={answer => harness.answerAsk(request.id, answer)}
-                      />
-                    ))}
                   </div>
                 )
                 : null}

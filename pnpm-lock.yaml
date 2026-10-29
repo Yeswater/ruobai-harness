@@ -155,6 +155,12 @@ importers:
       '@ruobai/permissions':
         specifier: workspace:*
         version: link:packages/permissions
+      '@ruobai/plan':
+        specifier: workspace:*
+        version: link:packages/plan
+      '@ruobai/plan-web':
+        specifier: workspace:*
+        version: link:packages/plan-web
       '@ruobai/preview':
         specifier: workspace:*
         version: link:packages/preview
@@ -924,6 +930,42 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:../tools
+
+  packages/plan:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/plan-web:
+    dependencies:
+      '@ruobai/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@ruobai/chat':
+        specifier: workspace:*
+        version: link:../chat
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/modes':
+        specifier: workspace:*
+        version: link:../modes
+      '@ruobai/plan':
+        specifier: workspace:*
+        version: link:../plan
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/preview:
     dependencies:

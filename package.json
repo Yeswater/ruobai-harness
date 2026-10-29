@@ -67,6 +67,8 @@
     "@ruobai/mode-plan": "workspace:*",
     "@ruobai/modes": "workspace:*",
     "@ruobai/permissions": "workspace:*",
+    "@ruobai/plan": "workspace:*",
+    "@ruobai/plan-web": "workspace:*",
     "@ruobai/preview": "workspace:*",
     "@ruobai/preview-web": "workspace:*",
     "@ruobai/sandbox": "workspace:*",

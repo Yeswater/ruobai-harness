@@ -39,6 +39,8 @@ import ModeGoal from '@ruobai/mode-goal'
 import ModePlan from '@ruobai/mode-plan'
 import ModeService from '@ruobai/modes'
 import PermissionService from '@ruobai/permissions'
+import PlanService from '@ruobai/plan'
+import PlanWeb from '@ruobai/plan-web'
 import PreviewService from '@ruobai/preview'
 import PreviewWeb from '@ruobai/preview-web'
 import SessionService from '@ruobai/session'
@@ -198,6 +200,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(Todo))
+  await mount(ctx.plugin(PlanService))
   await mount(ctx.plugin(BrowserPreview, { waitMs: 50 }))
   await mount(ctx.plugin(TerminalService, { root: dir }))
   await mount(ctx.plugin(TerminalWeb))
@@ -211,6 +214,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(TrajectoryWeb))
   await mount(ctx.plugin(UiApi))
   await mount(ctx.plugin(AskWeb))
+  await mount(ctx.plugin(PlanWeb))
   await mount(ctx.plugin(HooksWeb))
   await mount(ctx.plugin(WorkspaceWeb))
   await mount(ctx.plugin(GitWeb))

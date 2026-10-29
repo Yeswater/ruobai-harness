@@ -241,31 +241,34 @@ describe('process group open state', () => {
 })
 
 describe('questions to the human', () => {
-  // The reported bug: `ask_user` sits in an already-settled step while it waits
-  // for the answer, so the empty output rendered as "无输出" instead of waiting.
-  it('keeps a call that waits for the human pending inside a settled step', () => {
+  // A waiting question is the next thing the user has to act on; a row inside
+  // the open "执行中…" group buried it among the steps that led there.
+  it('stands a waiting question outside the process group', () => {
     const plan = buildPlan([
+      message('assistant', [call('bash')]),
       message('assistant', [call('ask_user', {
         input: JSON.stringify({ question: '要用哪个目录？', options: ['a', 'b'] }),
         output: '',
         finishedAt: undefined,
       })]),
-    ])
-    const group = plan[0]
-    expect(group?.kind === 'process' && processSteps(group.items).map(item => item.kind !== 'text' && item.pending))
-      .toEqual([true])
+    ], true)
+    expect(plan.map(item => item.kind)).toEqual(['process', 'ask'])
+    const ask = plan[1]
+    expect(ask?.kind === 'ask' && ask.block.name).toBe('ask_user')
   })
 
-  it('stops waiting once the answer is logged', () => {
+  it('folds the question back into the turn once the answer is logged', () => {
     const plan = buildPlan([
+      message('assistant', [call('bash')]),
       message('assistant', [call('ask_user', {
         input: JSON.stringify({ question: '要用哪个目录？' }),
         output: '用户回答：a',
       })]),
     ])
-    const group = plan[0]
-    expect(group?.kind === 'process' && processSteps(group.items).map(item => item.kind !== 'text' && item.pending))
-      .toEqual([false])
+    expect(plan.every(item => item.kind !== 'ask')).toBe(true)
+    const groups = plan.filter(item => item.kind === 'process')
+    const steps = groups.flatMap(group => group.kind === 'process' ? processSteps(group.items) : [])
+    expect(steps.map(item => item.kind !== 'text' && item.pending)).toEqual([false, false])
   })
 })
 

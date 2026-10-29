@@ -98,6 +98,8 @@ export interface ToolDetail {
   path?: string
   /** A question put to the human: the row is the question, not a tool name. */
   ask?: AskDetail
+  /** A plan submitted for approval: the row is the title, the body the plan. */
+  plan?: PlanDetail
 }
 
 /**
@@ -109,22 +111,43 @@ export interface ToolDetail {
  */
 const ASK_TOOLS = new Set(['ask_user', 'ask', 'ask_question'])
 
-export interface AskDetail {
+export interface AskPage {
   question: string
   options: string[]
+  allowFreeText: boolean
 }
 
-/** The question inside an ask call, when the input can be read. */
+export interface AskDetail {
+  /** First question; also the key the waiting request is looked up by. */
+  question: string
+  options: string[]
+  /** Every question in order; a single-question call has one page. */
+  pages: AskPage[]
+}
+
+function askPage(raw: unknown): AskPage | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const input = raw as Record<string, unknown>
+  const question = typeof input.question === 'string' ? input.question.trim() : ''
+  if (!question) return undefined
+  const options = (Array.isArray(input.options) ? input.options : [])
+    .map(option => (typeof option === 'string' ? option.trim() : ''))
+    .filter(Boolean)
+  return { question, options, allowFreeText: input.allowFreeText !== false }
+}
+
+/** The questions inside an ask call, when the input can be read. */
 export function askDetail(block: ToolBlock): AskDetail | undefined {
   if (!ASK_TOOLS.has(block.name.toLowerCase())) return undefined
   const input = parseInput(block.input)
-  const question = typeof input?.question === 'string' ? input.question.trim() : ''
-  if (!question) return undefined
-  const raw = Array.isArray(input?.options) ? input.options : []
-  const options = raw
-    .map(option => (typeof option === 'string' ? option.trim() : ''))
-    .filter(Boolean)
-  return { question, options }
+  // A multi-question call answers them one page at a time; the first page is
+  // the title of the row (and the question the pending card is found by).
+  const pages = Array.isArray(input?.questions) && input.questions.length
+    ? input.questions.map(askPage).filter((page): page is AskPage => page !== undefined)
+    : [askPage(input ?? {})].filter((page): page is AskPage => page !== undefined)
+  const first = pages[0]
+  if (!first) return undefined
+  return { question: first.question, options: first.options, pages }
 }
 
 /**
@@ -139,6 +162,27 @@ export function awaitingAnswer(block: ToolBlock): boolean {
   return askDetail(block) !== undefined
 }
 
+const PLAN_TOOLS = new Set(['plan_submit', 'submit_plan', 'propose_plan'])
+
+export interface PlanDetail {
+  title: string
+  /** Markdown plan, rendered in the expanded row and in the approval card. */
+  plan: string
+}
+
+/** The plan inside a `plan_submit` call, when the input can be read. */
+export function planDetail(block: ToolBlock): PlanDetail | undefined {
+  if (!PLAN_TOOLS.has(block.name.toLowerCase())) return undefined
+  const input = parseInput(block.input)
+  const raw = input?.plan ?? input?.content ?? input?.body
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  const plan = raw.trim()
+  const title = typeof input?.title === 'string' && input.title.trim()
+    ? input.title.trim()
+    : /^#{1,3}\s+(.+)$/m.exec(plan)?.[1]?.trim() || '实施计划'
+  return { title, plan }
+}
+
 /** One folded row for a single call: verb + the thing it acted on. */
 export function toolDetail(block: ToolBlock): ToolDetail {
   const input = parseInput(block.input)
@@ -149,6 +193,11 @@ export function toolDetail(block: ToolBlock): ToolDetail {
   const ask = askDetail(block)
   if (ask) {
     return { row: '向你提问', title: firstLine(ask.question, 48), summary: ask.question, ask }
+  }
+
+  const plan = planDetail(block)
+  if (plan) {
+    return { row: '提交计划', title: plan.title, summary: firstLine(plan.plan, 80), plan }
   }
 
   if (name === 'bash' || name === 'run_command' || name === 'shell') {

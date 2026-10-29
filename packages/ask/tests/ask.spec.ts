@@ -88,6 +88,60 @@ describe('ask', () => {
     await pending
   })
 
+  it('collects several questions as ordered pages and returns every answer', async () => {
+    const { ctx, sessionId } = await setup()
+    const pending = ctx.tools.invoke('ask_user', {
+      questions: [
+        { question: '部署到哪台机器？', options: ['本机', 'VPS'] },
+        { question: '用哪个端口？', options: ['4310', '4400'] },
+        { question: '开鉴权吗？', options: ['开', '不开'] },
+      ],
+    }, { sessionId })
+
+    await waitFor(() => ctx.ask.list(sessionId).length === 1)
+    const [request] = ctx.ask.list(sessionId)
+    expect(request.question).toBe('部署到哪台机器？')
+    expect(request.questions.map(page => page.question)).toEqual([
+      '部署到哪台机器？',
+      '用哪个端口？',
+      '开鉴权吗？',
+    ])
+
+    // A page cannot be skipped: one answer is only valid for a one-page ask.
+    expect(() => ctx.ask.answer(request.id, ['本机'])).toThrow(/expects 3 answers/)
+    expect(ctx.ask.list(sessionId)).toHaveLength(1)
+
+    const resolution = ctx.ask.answer(request.id, ['本机', '4310', '不开'])
+    expect(resolution?.via).toBe('option')
+    expect(resolution?.answers).toEqual(['本机', '4310', '不开'])
+
+    const result = await pending
+    expect(result.content).toContain('用户逐题回答：')
+    expect(result.content).toContain('1. 部署到哪台机器？')
+    expect(result.content).toContain('→ 不开')
+  })
+
+  it('accepts the paged answers over HTTP', async () => {
+    const { ctx, sessionId } = await setup()
+    const base = ctx.web.url
+    const pending = ctx.tools.invoke('ask_user', {
+      questions: [
+        { question: '部署到哪台机器？', options: ['本机', 'VPS'] },
+        { question: '开鉴权吗？', options: ['开', '不开'] },
+      ],
+    }, { sessionId })
+
+    await waitFor(() => ctx.ask.list(sessionId).length === 1)
+    const [request] = ctx.ask.list(sessionId)
+    const answered = await fetch(`${base}/api/asks/${request!.id}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: ['VPS', '开'] }),
+    })
+    expect(answered.status).toBe(200)
+    expect((await pending).content).toContain('用户逐题回答：')
+  })
+
   it('answers over the HTTP surface and pushes the pending question', async () => {
     const { ctx, sessionId } = await setup()
     const base = ctx.web.url

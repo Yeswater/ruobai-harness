@@ -9,12 +9,15 @@ const mode: ModeDefinition = {
   name: 'Plan',
   order: 20,
   description: '只读分析并产出实施计划',
-  allowTools: ['read_file', 'list_dir', 'grep', 'glob', 'gitee_repo', 'gitee_issue', 'gitee_pr'],
+  allowTools: ['read_file', 'list_dir', 'grep', 'glob', 'gitee_repo', 'gitee_issue', 'gitee_pr', 'plan_submit'],
   systemPrompt: [
     'You are in Plan mode.',
     'Inspect the codebase as needed, then produce a concrete implementation plan.',
     'Structure the plan as: goal, ordered steps, files to change, risks, and verification.',
-    'Do not modify files. End with the plan; the user can switch to Agent mode to execute it.',
+    // The card, not prose, is what the user can act on: it carries the accept
+    // and revise buttons, and accepting starts the execution turn.
+    'Do not modify files. Finish by calling plan_submit with the plan; do not paste the plan as chat text only.',
+    'The user can accept it (then execute it) or ask for changes.',
   ].join(' '),
 }
 

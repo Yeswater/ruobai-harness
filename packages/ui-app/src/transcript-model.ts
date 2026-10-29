@@ -22,6 +22,14 @@ export type ProcessItem =
 export type PlanItem =
   | { kind: 'user'; key: string; message: ChatMessage }
   | { kind: 'text'; key: string; messageId: string; text: string; streaming: boolean }
+  /**
+   * A question waiting for the human.
+   *
+   * It is not a process row: the user has to act on it, and folding it into the
+   * open "执行中…" group buried it among the steps that came before. It becomes
+   * a normal step again once the answer is logged.
+   */
+  | { kind: 'ask'; key: string; block: ToolBlock }
   | {
     kind: 'process'
     key: string
@@ -99,18 +107,20 @@ export function buildPlan(messages: ChatMessage[], turnStreaming = false): PlanI
         return
       }
       if (block.type !== 'reasoning' && block.type !== 'tool') return
-      open(message.id + (block.type === 'tool' ? `-${block.callId ?? index}` : `-${index}`))
       const key = `${message.id}-${index}`
-      // A settled step is finished even when the log has no timestamps for it
-      // (sessions written before timing was recorded). Reading `finishedAt`
-      // alone left every old thought row stuck on "思考中".
       const settled = message.status !== 'streaming'
+      // A question the human has not answered yet stands on its own, between
+      // the steps that led to it and whatever follows the answer. Only the last
+      // step can still be waiting: an unanswered call further back belongs to
+      // an interrupted turn and stays in its history group.
+      if (block.type === 'tool' && awaitingAnswer(block) && isLast) {
+        flush()
+        plan.push({ kind: 'ask', key, block })
+        return
+      }
+      open(message.id + (block.type === 'tool' ? `-${block.callId ?? index}` : `-${index}`))
       const pending = block.type === 'tool'
-        // An ask call is logged inside an already-settled step but still waits
-        // for the human. Only the conversation's last step can still be waiting:
-        // an unanswered call further back is a turn that was interrupted, and
-        // treating it as live would pin that old group open forever.
-        ? (awaitingAnswer(block) && isLast) || (!settled && isRunning(block))
+        ? (!settled && isRunning(block))
         : settled ? false : block.finishedAt === undefined
       group.push(block.type === 'reasoning'
         ? { kind: 'reasoning', key, block, pending }
@@ -177,7 +187,13 @@ function mergeFinishedTurns(plan: PlanItem[], streaming: boolean): PlanItem[] {
       if (item === finalText) continue
       const steps: StepItem[] = item.kind === 'process'
         ? item.items.filter((step): step is StepItem => step.kind !== 'segment')
-        : item.kind === 'text' ? [item] : []
+        : item.kind === 'text'
+          ? [item]
+          : item.kind === 'ask'
+            // A waiting question in a finished turn is no longer live (the page
+            // was reloaded after the host lost it); it reads as a normal step.
+            ? [{ kind: 'tool', key: item.key, block: item.block, pending: false }]
+            : []
       for (const step of steps) {
         if (step.kind === 'text') {
           segmentFor(step.text)

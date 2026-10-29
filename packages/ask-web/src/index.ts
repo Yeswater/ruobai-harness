@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
-import type {} from '@ruobai/ask'
+import type { AskResolution } from '@ruobai/ask'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'ask-web'
@@ -50,7 +50,16 @@ async function handle(ctx: Context, req: IncomingMessage, res: ServerResponse, u
   if (answer) {
     if (method !== 'POST') throw new HttpError(405, 'method not allowed')
     const body = await readJson(req)
-    const resolution = ctx.ask.answer(decodeURIComponent(answer[1]!), body?.answer)
+    // The paged card submits every answer at once; older callers send one.
+    let resolution: AskResolution | undefined
+    try {
+      resolution = ctx.ask.answer(
+        decodeURIComponent(answer[1]!),
+        Array.isArray(body?.answers) ? body.answers : body?.answer,
+      )
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : 'invalid answer')
+    }
     if (!resolution) throw new HttpError(404, 'question is no longer waiting for an answer')
     sendJson(res, 200, { ok: true, via: resolution.via })
     return true

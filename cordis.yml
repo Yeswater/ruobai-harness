@@ -194,6 +194,15 @@
 - id: ask-web
   name: '@ruobai/ask-web'
 
+# Implementation plans: the model submits one card, the user accepts it (the
+# session switches to a writable mode and starts executing) or asks for
+# changes (the model revises and submits again).
+- id: plan
+  name: '@ruobai/plan'
+
+- id: plan-web
+  name: '@ruobai/plan-web'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'

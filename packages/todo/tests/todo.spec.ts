@@ -47,6 +47,15 @@ describe('todo', () => {
     expect(built.system).toContain('[>] 改投影')
   })
 
+  it('tells the model to keep a list before any list exists', async () => {
+    const { ctx, sessionId } = await setup()
+    const built = await ctx.context.build(sessionId, { basePrompt: 'base' })
+    // The panel can only appear if the model calls the tool; the rule has to
+    // be in the prompt before the first step, not only in the tool description.
+    expect(built.system).toContain('多步任务维护任务清单')
+    expect(built.system).toContain('todo_write')
+  })
+
   it('replaces rather than merges, and clears with an empty list', async () => {
     const { ctx, sessionId } = await setup()
     await ctx.tools.invoke('todo_write', {

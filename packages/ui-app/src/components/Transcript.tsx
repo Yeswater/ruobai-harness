@@ -9,6 +9,7 @@ import type { ActivitySummary, AskRequest } from '../api.ts'
 import { BrainIcon, CheckIcon, ChevronDownIcon, ToolIcon } from './Icons.tsx'
 import { AttachmentRail } from './AttachmentRail.tsx'
 import { ContributionGraph } from './ContributionGraph.tsx'
+import { MarkdownPreview } from './MarkdownPreview.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
 import { toolDetail, toolEdit, type ToolEdit } from '../tool-summary.ts'
@@ -30,7 +31,7 @@ interface TranscriptProps {
   /** Questions still waiting for the human, so their options can be answered. */
   asks?: AskRequest[]
   /** Answer a pending question straight from the step that asked it. */
-  onAnswerAsk?: (id: string, answer: string) => void
+  onAnswerAsk?: (id: string, answers: string[]) => void
 }
 
 const FOLLOW_THRESHOLD = 24
@@ -46,7 +47,7 @@ const FOLLOW_THRESHOLD = 24
 const PendingAskContext = createContext<{
   /** The request this call is blocked on, when one is still open. */
   find: (question: string) => AskRequest | undefined
-  answer: (id: string, answer: string) => void
+  answer: (id: string, answers: string[]) => void
 } | null>(null)
 
 export function Transcript({
@@ -115,7 +116,7 @@ export function Transcript({
     for (const request of asks) byQuestion.set(request.question.trim(), request)
     return {
       find: (question: string) => byQuestion.get(question.trim()),
-      answer: (id: string, answer: string) => onAnswerAsk?.(id, answer),
+      answer: (id: string, answers: string[]) => onAnswerAsk?.(id, answers),
     }
   }, [asks, onAnswerAsk])
 
@@ -158,6 +159,9 @@ export function Transcript({
                   {item.streaming ? <span className="caret" /> : null}
                 </div>
               )
+            }
+            if (item.kind === 'ask') {
+              return <AskBlock key={item.key} block={item.block} />
             }
             return (
               <ProcessGroup
@@ -294,7 +298,7 @@ function usePendingAsk(question: string | undefined) {
   if (!context || !question) return undefined
   const request = context.find(question)
   if (!request) return undefined
-  return { id: request.id, answer: (text: string) => context.answer(request.id, text) }
+  return { id: request.id, answer: (answers: string[]) => context.answer(request.id, answers) }
 }
 
 /**
@@ -480,15 +484,130 @@ function ThoughtRow({ block, pending }: { block: ReasoningBlock; pending: boolea
   )
 }
 
-function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
-  const detail = toolDetail(block)
+/**
+ * A question that is still waiting for the human.
+ *
+ * It is rendered where it was asked, outside the process group: the answer is
+ * the next thing the turn does, and burying the question in a collapsed run
+ * made the reader hunt for it. Several questions are answered one page at a
+ * time, in order — stacking every question on screen was the reported problem.
+ * Once answered the whole call returns to the group and folds into history.
+ */
+function AskBlock({ block }: { block: ToolBlock }) {
+  const ask = toolDetail(block).ask
+  const request = usePendingAsk(ask?.question)
+  const pages = ask?.pages ?? []
+  const [page, setPage] = useState(0)
+  const [answers, setAnswers] = useState<string[]>(() => pages.map(() => ''))
+  if (!ask || !pages.length) return null
+
+  const index = Math.min(page, pages.length - 1)
+  const current = pages[index]!
+  const value = answers[index] ?? ''
+  const setValue = (next: string) =>
+    setAnswers(previous => previous.map((item, position) => position === index ? next : item))
+  const last = index === pages.length - 1
+  const editing = value.trim().length > 0
+  const complete = answers.every(answer => answer.trim())
+  const submit = () => {
+    if (!request || !complete) return
+    request.answer(answers.map(answer => answer.trim()))
+  }
+  const pick = (option: string) => {
+    setValue(option)
+    if (!request) return
+    // One page stays one click; a wizard advances and leaves the last page for
+    // an explicit submit, so a wrong last click is still correctable.
+    if (pages.length === 1) request.answer([option])
+    else if (!last) setPage(index + 1)
+  }
+
+  return (
+    <div className="approval ask ask-inline">
+      <div className="approval-head">
+        <span className="approval-title">向你提问</span>
+        <span className="approval-summary">
+          {pages.length > 1 ? `${index + 1}/${pages.length}` : request ? '等待回答' : '未回答'}
+        </span>
+      </div>
+      <p className="ask-question">{current.question}</p>
+
+      {current.options.length
+        ? (
+          <div className="ask-options">
+            {current.options.map((option, optionIndex) => request
+              ? (
+                <button
+                  key={optionIndex}
+                  type="button"
+                  className={value === option ? 'btn ghost active' : 'btn ghost'}
+                  onClick={() => pick(option)}
+                >
+                  {option}
+                </button>
+              )
+              : <span key={optionIndex} className="ask-option-plain">{option}</span>)}
+          </div>
+        )
+        : null}
+
+      {current.allowFreeText && request
+        ? (
+          <div className="ask-input">
+            <input
+              value={value}
+              aria-label={pages.length > 1 ? `第 ${index + 1} 题的回答` : '回答'}
+              placeholder={pages.length > 1 ? `第 ${index + 1} 题的答案` : '或者直接输入回答…'}
+              onChange={event => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                if (pages.length === 1) {
+                  if (editing) request.answer([value.trim()])
+                } else if (!editing) return
+                else if (last) submit()
+                else setPage(index + 1)
+              }}
+            />
+          </div>
+        )
+        : null}
+
+      {request && (pages.length > 1 || !current.options.length)
+        ? (
+          <div className="approval-actions ask-pager">
+            {pages.length > 1 && index > 0
+              ? (
+                <button type="button" className="btn ghost" onClick={() => setPage(index - 1)}>
+                  上一页
+                </button>
+              )
+              : null}
+            {last
+              ? (
+                <button type="button" className="btn" disabled={!complete} onClick={submit}>
+                  提交
+                </button>
+              )
+              : (
+                <button type="button" className="btn" disabled={!editing} onClick={() => setPage(index + 1)}>
+                  下一页
+                </button>
+              )}
+          </div>
+        )
+        : null}
+    </div>
+  )
+}
+
+function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {  const detail = toolDetail(block)
   const edit = toolEdit(block)
   const elapsed = durationLabel(itemDuration({ kind: 'tool', key: '', block, pending }))
-  // A question the model is waiting on opens itself: the content the reader
-  // needs (the question and its choices) only exists in the body, so a folded
-  // row would show a title with no way to read it. The pin is dropped as soon
-  // as the answer lands, which collapses it back to a summary.
-  const auto = pending && Boolean(detail.ask)
+  // The content the reader needs (the question and its choices, the plan) only
+  // exists in the body, so a folded row would show a title with no way to read
+  // it. The pin is dropped as soon as the call settles.
+  const auto = pending && Boolean(detail.ask || detail.plan)
   const [pinned, setPinned] = useState<boolean | null>(null)
   const open = pinned ?? auto
   const askRequest = usePendingAsk(detail.ask?.question)
@@ -510,15 +629,15 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
           ? <span className="process-row-text">{detail.summary}</span>
           : null}
         {/* The question is the title, so the row's gist is the answer. */}
-        {detail.ask
+        {detail.ask || detail.plan
           ? (
             <span className="process-row-text">
-              {firstLine(block.output) || (pending ? '等待回答…' : '未回答')}
+              {firstLine(block.output) || (pending ? (detail.ask ? '等待回答…' : '等待确认…') : '未回答')}
             </span>
           )
           : null}
         {pending
-          ? <span className="process-row-state">{detail.ask ? '等待回答' : '运行中'}</span>
+          ? <span className="process-row-state">{detail.ask ? '等待回答' : detail.plan ? '等待确认' : '运行中'}</span>
           : block.isError
             ? <span className="process-row-state failed">失败</span>
             : elapsed ? <span className="process-row-meta">{elapsed}</span> : null}
@@ -552,7 +671,7 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
                                 <li key={index}>
                                   <button
                                     type="button"
-                                    onClick={() => askRequest.answer(option)}
+                                    onClick={() => askRequest.answer([option])}
                                   >
                                     {option}
                                   </button>
@@ -566,6 +685,17 @@ function ToolRow({ block, pending }: { block: ToolBlock; pending: boolean }) {
                     <pre className="tool-output">
                       {block.output || (block.isError ? 'failed' : pending ? '等待回答…' : '未回答')}
                     </pre>
+                  </>
+                )
+              : detail.plan
+                ? (
+                  <>
+                    <div className="tool-plan">
+                      <MarkdownPreview content={detail.plan.plan} />
+                    </div>
+                    {block.isError
+                      ? <pre className="tool-output">{block.output || 'failed'}</pre>
+                      : null}
                   </>
                 )
                 : (

@@ -14,6 +14,8 @@ import {
   type ModeInfo,
   type ModelProvider,
   type PermissionMode,
+  type PlanAction,
+  type PlanProposal,
   type TodoSnapshot,
 } from './api.ts'
 
@@ -114,6 +116,7 @@ export function useHarness() {
   const [asks, setAsks] = useState<AskRequest[]>([])
   const [todo, setTodo] = useState<TodoSnapshot | null>(null)
   const [commitProposal, setCommitProposal] = useState<CommitProposal | null>(null)
+  const [planProposal, setPlanProposal] = useState<PlanProposal | null>(null)
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
 
@@ -243,6 +246,7 @@ export function useHarness() {
     setSession(null)
     setTodo(null)
     setCommitProposal(null)
+    setPlanProposal(null)
     void api.getSession(activeId)
       .then(next => {
         if (!cancelled) setSession(next)
@@ -260,6 +264,12 @@ export function useHarness() {
     void api.getCommits(activeId)
       .then((list) => {
         if (!cancelled) setCommitProposal(list.at(-1) ?? null)
+      })
+      .catch(() => undefined)
+    // Optional card: a host without `plan-web` simply has no pending plan.
+    void api.getPlan(activeId)
+      .then((plan) => {
+        if (!cancelled) setPlanProposal(plan)
       })
       .catch(() => undefined)
     return () => {
@@ -410,6 +420,14 @@ export function useHarness() {
           setCommitProposal(payload.proposal)
         } else if (payload.resolution.sessionId === activeRef.current) {
           setCommitProposal(previous => previous?.id === payload.resolution.id ? null : previous)
+        }
+      },
+      onPlan: (payload) => {
+        if (payload.kind === 'requested') {
+          if (payload.proposal.sessionId !== activeRef.current) return
+          setPlanProposal(payload.proposal)
+        } else if (payload.resolution.sessionId === activeRef.current) {
+          setPlanProposal(previous => previous?.id === payload.resolution.id ? null : previous)
         }
       },
       onApproval: (payload) => {
@@ -575,9 +593,26 @@ export function useHarness() {
     })
   }, [fail])
 
-  const answerAsk = useCallback((id: string, answer: string) => {
+  /**
+   * Answer the plan card: `accept` starts the execution turn, `revise` sends
+   * the feedback back so the model submits an updated plan.
+   *
+   * The card is cleared optimistically; a failure re-reads the server's answer
+   * so the decision can be retried.
+   */
+  const decidePlan = useCallback((id: string, action: PlanAction, feedback?: string) => {
+    const sessionId = activeRef.current
+    if (!sessionId) return
+    setPlanProposal(previous => previous?.id === id ? null : previous)
+    void api.resolvePlan(id, sessionId, action, feedback).catch((caught) => {
+      fail(caught)
+      void api.getPlan(sessionId).then(setPlanProposal).catch(() => undefined)
+    })
+  }, [fail])
+
+  const answerAsk = useCallback((id: string, answers: string[]) => {
     setAsks(previous => previous.filter(item => item.id !== id))
-    void api.answerAsk(id, answer).catch((caught) => {
+    void api.answerAsk(id, answers).catch((caught) => {
       fail(caught)
       const sessionId = activeRef.current
       if (sessionId) void api.getAsks(sessionId).then(setAsks).catch(() => undefined)
@@ -601,6 +636,8 @@ export function useHarness() {
     asks,
     todo,
     commitProposal,
+    planProposal,
+    decidePlan,
     recentWorkspaces,
     select,
     send,

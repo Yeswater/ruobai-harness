@@ -652,6 +652,22 @@ export type CommitEvent =
     resolution: { id: string; sessionId: string; via: 'commit' | 'dismiss'; commit?: string; message?: string }
   }
 
+/** A plan the model submitted and the user has not decided on yet. */
+export interface PlanProposal {
+  id: string
+  sessionId: string
+  title: string
+  /** Markdown: goal, ordered steps, files, risks, verification. */
+  plan: string
+  createdAt: number
+}
+
+export type PlanAction = 'accept' | 'revise'
+
+export type PlanEvent =
+  | { kind: 'requested'; proposal: PlanProposal }
+  | { kind: 'resolved'; resolution: { id: string; sessionId: string; action: PlanAction } }
+
 export const api = {
   listTerminals: async () =>
     (await request<{ terminals: TerminalInfo[] }>('/api/terminal')).terminals,
@@ -697,6 +713,17 @@ export const api = {
     (await request<{ proposals: CommitProposal[] }>(
       `/api/commits?sessionId=${encodeURIComponent(id)}`,
     )).proposals,
+
+  getPlan: async (id: string) =>
+    (await request<{ plan: PlanProposal | null }>(
+      `/api/plans?sessionId=${encodeURIComponent(id)}`,
+    )).plan,
+
+  resolvePlan: async (id: string, sessionId: string, action: PlanAction, feedback?: string) =>
+    request<{ ok: true }>(`/api/plans/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, action, ...(feedback ? { feedback } : {}) }),
+    }),
 
   resolveCommit: async (id: string, input: { action: 'commit' | 'dismiss'; message?: string }) =>
     (await request<{ resolution: { id: string; via: string; commit?: string } }>(
@@ -800,10 +827,10 @@ export const api = {
       `/api/asks${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`,
     )).asks,
 
-  answerAsk: async (id: string, answer: string) =>
+  answerAsk: async (id: string, answers: string[]) =>
     request<{ ok: true; via: string }>(`/api/asks/${encodeURIComponent(id)}/answer`, {
       method: 'POST',
-      body: JSON.stringify({ answer }),
+      body: JSON.stringify({ answers }),
     }),
 
   getApprovalRules: async () =>
@@ -1218,6 +1245,7 @@ export interface EventHandlers {
   onAsk?: (payload: AskEvent) => void
   onTodo?: (payload: TodoSnapshot) => void
   onCommit?: (payload: CommitEvent) => void
+  onPlan?: (payload: PlanEvent) => void
   onTerminal?: (payload: TerminalEvent) => void
   onPreview?: (payload: PreviewEvent) => void
 }
@@ -1226,12 +1254,21 @@ export type ApprovalEvent =
   | { kind: 'requested'; request: ApprovalRequest }
   | { kind: 'resolved'; resolution: { id: string; decision: ApprovalDecision } }
 
-export interface AskRequest {
-  id: string
-  sessionId: string
+export interface AskQuestion {
   question: string
   options?: string[]
   allowFreeText: boolean
+}
+
+export interface AskRequest {
+  id: string
+  sessionId: string
+  /** First question, kept for hosts that predate `questions`. */
+  question: string
+  options?: string[]
+  allowFreeText: boolean
+  /** Every question in order; the card answers them one page at a time. */
+  questions?: AskQuestion[]
   createdAt: number
   expiresAt: number
 }
@@ -1333,6 +1370,13 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('plan', (event) => {
+      try {
+        handlers.onPlan?.(JSON.parse((event as MessageEvent<string>).data) as PlanEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
     source.addEventListener('terminal', (event) => {
       try {
         handlers.onTerminal?.(JSON.parse((event as MessageEvent<string>).data) as TerminalEvent)
@@ -1369,6 +1413,7 @@ export function connectEvents(handlers: EventHandlers) {
           handlers.onOpen?.()
         } else if (payload.type === 'todo') handlers.onTodo?.(payload.data as TodoSnapshot)
         else if (payload.type === 'commit') handlers.onCommit?.(payload.data as CommitEvent)
+        else if (payload.type === 'plan') handlers.onPlan?.(payload.data as PlanEvent)
         else if (payload.type === 'terminal') handlers.onTerminal?.(payload.data as TerminalEvent)
         else if (payload.type === 'preview') handlers.onPreview?.(payload.data as PreviewEvent)
         else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)

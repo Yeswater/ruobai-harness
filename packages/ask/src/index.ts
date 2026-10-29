@@ -10,12 +10,22 @@ export interface Config {
   timeoutMs?: number
 }
 
-export interface AskRequest {
-  id: string
-  sessionId: string
+/** One question in an ask, as the card answers it (one page at a time). */
+export interface AskQuestion {
   question: string
   options?: string[]
   allowFreeText: boolean
+}
+
+export interface AskRequest {
+  id: string
+  sessionId: string
+  /** First question, kept for cards built before `questions` existed. */
+  question: string
+  options?: string[]
+  allowFreeText: boolean
+  /** Every question in order; a single-question ask has one entry. */
+  questions: AskQuestion[]
   createdAt: number
   expiresAt: number
 }
@@ -25,21 +35,28 @@ export type AskVia = 'option' | 'text' | 'timeout' | 'cancelled'
 export interface AskResolution {
   id: string
   via: AskVia
+  /** All answers joined for the transcript; see `answers` for the pages. */
   answer: string | null
+  /** Per-question answers, aligned with `request.questions`. */
+  answers?: string[]
   request: AskRequest
 }
 
 export interface AskInput {
   sessionId: string
-  question: string
+  question?: string
   options?: string[]
   allowFreeText?: boolean
+  /** Several questions asked in one call; the user answers them in order. */
+  questions?: Array<{ question?: string; options?: string[]; allowFreeText?: boolean }>
   timeoutMs?: number
 }
 
 export interface AskOutcome {
   via: AskVia
   answer: string | null
+  /** Per-question answers, aligned with the submitted questions. */
+  answers?: string[]
 }
 
 declare module '@ruobai/cordis' {
@@ -56,6 +73,7 @@ declare module '@ruobai/cordis' {
 const MIN_TIMEOUT = 5_000
 const MAX_TIMEOUT = 30 * 60_000
 const MAX_OPTIONS = 4
+const MAX_QUESTIONS = 8
 
 /**
  * Asks the human a question mid-turn and blocks the calling tool until it is
@@ -116,12 +134,8 @@ export class AskService extends Service {
   ask(input: AskInput, run: { signal?: AbortSignal } = {}): Promise<AskOutcome> {
     if (run.signal?.aborted) return Promise.resolve({ via: 'cancelled', answer: null })
 
-    const question = input.question.trim()
-    if (!question) throw new Error('ask_user requires a non-empty question')
-    const options = (input.options ?? [])
-      .map(option => String(option).trim())
-      .filter(Boolean)
-      .slice(0, MAX_OPTIONS)
+    const questions = normalizeQuestions(input)
+    const first = questions[0]!
     const timeoutMs = Math.min(
       Math.max(Math.floor(input.timeoutMs ?? this.config.timeoutMs ?? 5 * 60_000), MIN_TIMEOUT),
       MAX_TIMEOUT,
@@ -129,9 +143,10 @@ export class AskService extends Service {
     const request: AskRequest = {
       id: randomUUID(),
       sessionId: input.sessionId,
-      question,
-      ...(options.length ? { options } : {}),
-      allowFreeText: input.allowFreeText !== false,
+      question: first.question,
+      ...(first.options ? { options: first.options } : {}),
+      allowFreeText: first.allowFreeText,
+      questions,
       createdAt: Date.now(),
       expiresAt: Date.now() + timeoutMs,
     }
@@ -147,15 +162,30 @@ export class AskService extends Service {
     })
   }
 
-  /** Answers a pending question; unknown or already-settled ids are ignored. */
+  /**
+   * Answers a pending question; unknown or already-settled ids are ignored.
+   *
+   * `value` is one answer per question, either an array (the paged card) or a
+   * bare string for a single-question ask.
+   */
   answer(id: string, value: unknown): AskResolution | undefined {
     const entry = this.pending.get(id)
     if (!entry) return undefined
-    const text = String(value ?? '').trim()
-    if (!text) throw new Error('an answer cannot be empty')
-    const via: AskVia = entry.request.options?.includes(text) ? 'option' : 'text'
-    const resolution = this.finish(id, { via, answer: text })
-    return resolution
+    const questions = entry.request.questions
+    const raw = Array.isArray(value) ? value : [value]
+    if (raw.length !== questions.length) {
+      throw new Error(`this question expects ${questions.length} answer${questions.length === 1 ? '' : 's'}`)
+    }
+    const answers = raw.map(item => String(item ?? '').trim())
+    if (answers.some(answer => !answer)) throw new Error('an answer cannot be empty')
+    // `option` only when every page picked one of its own options.
+    const via: AskVia = answers.every((answer, index) => questions[index]?.options?.includes(answer))
+      ? 'option'
+      : 'text'
+    const answer = questions.length === 1
+      ? answers[0]!
+      : questions.map((question, index) => `${index + 1}. ${question.question}\n→ ${answers[index]}`).join('\n')
+    return this.finish(id, { via, answer, answers })
   }
 
   private finish(id: string, outcome: AskOutcome): AskResolution | undefined {
@@ -182,8 +212,41 @@ const PREFLIGHT = [
   '- 请求隐含的前提与查到的事实不一致（例如包并不自带某个能力、端口已被占用、目录并非空）；',
   '- 同一句话有多种合理解读，且不同解读会写入不同位置或产生不同副作用。',
   '不要替用户默认选择，也不要为了省事直接覆盖或重装。能自己查证的事情不要问；提问时写清楚你查到了什么、为什么要问。',
+  '要一次收集多个决定时，把问题放进 questions 数组一次问清：界面会按 1、2、3 逐页让用户回答，不要拆成多次调用。',
   '提问本身要短（两三行）：把关键事实压成一句话，细节放进选项，不要把整份检查报告粘进问题里。',
 ].join('\n')
+
+/**
+ * One page per question; a plain `question` call is a one-page ask.
+ *
+ * Validated up front: a blank page would reach the card as an empty body with
+ * no way to continue the wizard.
+ */
+function normalizeQuestions(input: AskInput): AskQuestion[] {
+  const raw = Array.isArray(input.questions) && input.questions.length
+    ? input.questions
+    : [{ question: input.question, options: input.options, allowFreeText: input.allowFreeText }]
+  if (raw.length > MAX_QUESTIONS) throw new Error(`ask_user is limited to ${MAX_QUESTIONS} questions`)
+  return raw.map((entry, index) => {
+    const question = String(entry?.question ?? '').trim()
+    if (!question) throw new Error(`question ${index + 1} is empty`)
+    const options = (Array.isArray(entry?.options) ? entry.options : [])
+      .map(option => String(option).trim())
+      .filter(Boolean)
+      .slice(0, MAX_OPTIONS)
+    const allowFreeText = entry?.allowFreeText !== false
+    // A page must be answerable: no options and no free text leaves the user
+    // stuck on it with no way to reach the next question.
+    if (!options.length && !allowFreeText) {
+      throw new Error(`question ${index + 1} needs options or free text`)
+    }
+    return {
+      question,
+      ...(options.length ? { options } : {}),
+      allowFreeText,
+    }
+  })
+}
 
 function askTool(service: AskService): ToolDefinition {
   return {
@@ -193,42 +256,56 @@ function askTool(service: AskService): ToolDefinition {
     // before (and without) its siblings.
     blocksBatch: true,
     description: [
-      'Ask the user a direct question and wait for their answer.',
-      'Use it when the request is ambiguous or when the state you found contradicts the premise of the request,',
-      'for example an installation or data directory that already exists.',
-      'Keep the question short: one or two sentences on what you verified and why you are asking;',
-      'the options carry the choice, so do not paste a full report into the question.',
+      'Ask the user one or more direct questions and wait for the answers.',
+      'Use `question` for a single decision; use `questions` to collect several decisions at once —',
+      'the card asks them one page at a time, in order. Prefer one call with `questions` over asking twice.',
+      'Keep each question short: one or two sentences on what you verified and why you are asking;',
+      'the options carry the choice, so do not paste a full report into a question.',
       'Do not use it for anything you can check yourself.',
     ].join(' '),
     parameters: {
       type: 'object',
       properties: {
-        question: { type: 'string', description: 'The question, including the facts you verified that made you ask.' },
+        question: { type: 'string', description: 'A single question, including the facts you verified that made you ask.' },
         options: {
           type: 'array',
           items: { type: 'string' },
           description: 'Up to 4 short choices shown as buttons. The user can still answer in their own words.',
         },
         allowFreeText: { type: 'boolean', description: 'Whether the user may type an answer instead of picking an option. Default true.' },
+        questions: {
+          type: 'array',
+          description: 'Several questions answered one page at a time. Use instead of calling ask_user again.',
+          items: {
+            type: 'object',
+            properties: {
+              question: { type: 'string' },
+              options: { type: 'array', items: { type: 'string' } },
+              allowFreeText: { type: 'boolean' },
+            },
+            required: ['question'],
+          },
+        },
         timeoutMs: { type: 'number', description: `How long to wait before reporting the question as unanswered (max ${MAX_TIMEOUT}).` },
       },
-      required: ['question'],
     },
     async execute(args, run) {
       if (!run?.sessionId) throw new Error('ask_user requires a session')
       const outcome = await service.ask({
         sessionId: run.sessionId,
-        question: String(args?.question ?? ''),
-        options: Array.isArray(args?.options) ? args.options : undefined,
-        allowFreeText: args?.allowFreeText !== false,
-        timeoutMs: typeof args?.timeoutMs === 'number' ? args.timeoutMs : undefined,
+        ...(typeof args?.question === 'string' ? { question: args.question } : {}),
+        ...(Array.isArray(args?.options) ? { options: args.options } : {}),
+        ...(args?.allowFreeText === false ? { allowFreeText: false } : {}),
+        ...(Array.isArray(args?.questions) ? { questions: args.questions } : {}),
+        ...(typeof args?.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
       }, { signal: run.signal })
 
       if (outcome.via === 'timeout') {
         return '用户没有在等待时间内回答。把你的假设和下一步写清楚并停下来等用户确认；不要继续执行写文件、重装或其它不可逆操作。'
       }
       if (outcome.via === 'cancelled') return '用户中止了本轮，问题没有回答。'
-      return `用户回答：${outcome.answer}`
+      const pages = outcome.answers?.length ?? 0
+      return pages > 1 ? `用户逐题回答：\n${outcome.answer}` : `用户回答：${outcome.answer}`
     },
   }
 }

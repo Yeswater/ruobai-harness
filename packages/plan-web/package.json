@@ -1,0 +1,18 @@
+{
+  "name": "@ruobai/plan-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/agent": "workspace:*",
+    "@ruobai/chat": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/modes": "workspace:*",
+    "@ruobai/plan": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/web-server": "workspace:*"
+  }
+}

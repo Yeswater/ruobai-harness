@@ -57,7 +57,25 @@ describe('questions to the human', () => {
     expect(detail.ask).toEqual({
       question: '面板与后端一致，问题出在清单只写了一次。你想按哪种方式收口？',
       options: ['兜底', '只改提示'],
+      pages: [{
+        question: '面板与后端一致，问题出在清单只写了一次。你想按哪种方式收口？',
+        options: ['兜底', '只改提示'],
+        allowFreeText: true,
+      }],
     })
+  })
+
+  it('reads a multi-question ask as ordered pages', () => {
+    const detail = toolDetail(tool('ask_user', {
+      questions: [
+        { question: '部署到哪？', options: ['本机', 'VPS'] },
+        { question: '开鉴权吗？', options: ['开', '不开'], allowFreeText: false },
+      ],
+    }))
+    expect(detail.row).toBe('向你提问')
+    expect(detail.ask?.pages.map(page => page.question)).toEqual(['部署到哪？', '开鉴权吗？'])
+    expect(detail.ask?.pages[1]?.allowFreeText).toBe(false)
+    expect(detail.ask?.question).toBe('部署到哪？')
   })
 
   it('reads a pending question as waiting, not as output-less', () => {
@@ -66,5 +84,26 @@ describe('questions to the human', () => {
     expect(isRunning(pending)).toBe(true)
     expect(awaitingAnswer({ ...pending, output: '用户回答：第一个' })).toBe(false)
     expect(awaitingAnswer(tool('bash', {}, { output: '', finishedAt: undefined }))).toBe(false)
+  })
+})
+
+describe('plans submitted for approval', () => {
+  const plan = '## 登录页拆分\n\n1. 抽出表单组件\n2. 接路由\n'
+
+  it('titles the row with the plan title and keeps the markdown', () => {
+    const detail = toolDetail(tool('plan_submit', { title: '登录页拆分', plan }))
+    expect(detail.row).toBe('提交计划')
+    expect(detail.title).toBe('登录页拆分')
+    expect(detail.plan).toEqual({ title: '登录页拆分', plan: plan.trim() })
+  })
+
+  it('falls back to the plan heading, then to a generic title', () => {
+    expect(toolDetail(tool('plan_submit', { plan })).title).toBe('登录页拆分')
+    expect(toolDetail(tool('plan_submit', { plan: '1. 改一下\n' })).title).toBe('实施计划')
+  })
+
+  it('is not a plan when the tool is unrelated or the body is empty', () => {
+    expect(toolDetail(tool('bash', { command: 'ls' })).plan).toBeUndefined()
+    expect(toolDetail(tool('plan_submit', { plan: '  ' })).plan).toBeUndefined()
   })
 })
