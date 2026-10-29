@@ -6,7 +6,7 @@ import ConsoleExporter from '@ruobai/cordis-plugin-logger-console'
 export interface BootOptions {
   /** Config path handed to Include; relative paths resolve against `cwd`. */
   configPath?: string
-  /** Base URL for config and plugin resolution. Defaults to `process.cwd()`. */
+  /** Base URL for config resolution. Defaults to `process.cwd()`. */
   cwd?: string
 }
 
@@ -26,7 +26,12 @@ export async function boot(options: BootOptions = {}): Promise<Harness> {
   const configPath = options.configPath ?? 'cordis.yml'
 
   const ctx = new Context()
-  ctx.baseUrl = pathToFileURL(cwd).href + '/'
+  // Plugins are resolved next to the config, not the process cwd: the desktop
+  // runs the same checkout against a workspace elsewhere (`--workspace`).
+  const configUrl = configPath.startsWith('file:')
+    ? new URL(configPath)
+    : new URL(configPath, `${pathToFileURL(cwd).href}/`)
+  ctx.baseUrl = new URL('.', configUrl).href
 
   // Mounted before the loader so startup logs from config plugins are kept.
   await ctx.plugin(ConsoleExporter)

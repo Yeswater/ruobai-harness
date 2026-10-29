@@ -12,6 +12,7 @@
 vendor/        vendored 框架（cordis / loader / schemastery / cosmokit ...）
 packages/      一个能力一个包（@ruobai/<name>）
 apps/cli/      读配置、建 Context、挂 Loader
+apps/desktop/  Electron 桌面壳（窗口、菜单、harness 子进程）
 tests/         全栈测试 harness
 docs/          设计文档、实测记录、blog
 cordis.yml     插件的组合方式（唯一应用定义）
@@ -115,6 +116,8 @@ cordis.yml     插件的组合方式（唯一应用定义）
 ```bash
 pnpm dev                    # 启动 harness（默认端口见 cordis.yml）
 pnpm dev --port 4400        # 指定端口
+pnpm dev --workspace ~/x    # 插件从本检出加载，状态写入 ~/x
+pnpm desktop                # Electron 桌面端（先 pnpm build:ui 走静态产物）
 pnpm typecheck              # host + ui 两套 tsconfig
 pnpm test                   # 全量 vitest
 pnpm build:ui               # 构建浏览器产物

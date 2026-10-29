@@ -12,3 +12,4 @@ linkWorkspacePackages: true
 # esbuild's native binary is required by vite/vitest and tsx.
 allowBuilds:
   esbuild: true
+  electron: true

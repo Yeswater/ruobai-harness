@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "tsx apps/cli/src/bin.ts",
     "start": "tsx apps/cli/src/bin.ts",
+    "desktop": "pnpm --filter @ruobai/desktop start",
     "build:ui": "pnpm --filter @ruobai/ui-app build",
     "typecheck": "tsc -p tsconfig.json && tsc -p packages/ui-app/tsconfig.json",
     "test": "vitest run",

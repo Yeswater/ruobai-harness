@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { existsSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { boot } from './boot.ts'
 import { parseArgs, USAGE, type CliOptions } from './args.ts'
 
@@ -18,7 +21,24 @@ if (options.help) {
 // A separate config file may not read PORT, but the shipped cordis.yml does.
 if (options.port !== undefined) process.env.PORT = String(options.port)
 
-const harness = await boot({ configPath: options.configPath })
+// Resolve the config before switching directories: `--workspace` changes the
+// cwd so plugin roots (`process.cwd()` in cordis.yml) point at the workspace,
+// while the application definition still comes from the harness checkout.
+const configPath = pathToFileURL(resolve(options.configPath)).href
+
+if (options.workspace) {
+  const workspace = resolve(options.workspace)
+  if (!existsSync(workspace) || !statSync(workspace).isDirectory()) {
+    process.stderr.write(`[ruobai-harness] not a directory: ${workspace}\n`)
+    process.exit(1)
+  }
+  process.chdir(workspace)
+}
+
+const harness = await boot({ configPath })
+
+const web = harness.ctx.get('web', false) as { url?: string } | undefined
+if (web?.url) process.stdout.write(`[ruobai-harness] ui: ${web.url}\n`)
 
 let closing = false
 async function shutdown(signal: string) {

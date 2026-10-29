@@ -1,12 +1,15 @@
 export interface CliOptions {
   /** Path handed to the loader; relative paths resolve against the cwd. */
   configPath: string
+  /** Directory the harness works on (becomes `process.cwd()`). */
+  workspace?: string
   /** Overrides the web server port (0 picks a free port). */
   port?: number
   help: boolean
 }
 
-export const USAGE = 'Usage: pnpm dev [config.yml] [--port <port>]'
+export const USAGE =
+  'Usage: pnpm dev [config.yml] [--port <port>] [--workspace <dir>]'
 
 /**
  * `pnpm dev --port 4400`, `pnpm dev --port=4400` and a positional config path
@@ -32,6 +35,17 @@ export function parseArgs(argv: string[]): CliOptions {
     }
     if (arg.startsWith('--port=')) {
       options.port = parsePort(arg.slice('--port='.length))
+      continue
+    }
+    if (arg === '--workspace' || arg === '-C') {
+      const value = argv[index + 1]
+      if (value === undefined) throw new Error(`${arg} needs a directory`)
+      options.workspace = value
+      index += 1
+      continue
+    }
+    if (arg.startsWith('--workspace=')) {
+      options.workspace = arg.slice('--workspace='.length)
       continue
     }
     if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`)

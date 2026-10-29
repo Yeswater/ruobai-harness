@@ -22,6 +22,15 @@ pnpm dev
 
 打开 <http://localhost:4310>。没有配置真实模型时会使用离线 mock 提供方；在设置里添加 OpenAI 兼容的提供方与模型即可接入。
 
+也可以直接用桌面窗口打开同一个 harness：
+
+```bash
+pnpm build:ui
+pnpm desktop
+```
+
+`pnpm --filter @ruobai/desktop start -- --workspace /path/to/project` 可以让桌面端打开另一个工作区，插件仍从本检出加载；也可以在「文件 → 打开工作区…」里切换。实现与取舍见 [`docs/desktop.md`](docs/desktop.md)。
+
 提交前自检：
 
 ```bash
@@ -37,6 +46,7 @@ pnpm build:ui
 | `cordis.yml` | 插件组合方式（唯一应用定义） |
 | `packages/` | 一个能力一个包（`@ruobai/<name>`） |
 | `apps/cli/` | 读配置、建 Context、挂 Loader |
+| `apps/desktop/` | Electron 桌面壳：窗口、菜单、harness 子进程 |
 | `vendor/` | vendored 框架（cordis / loader / schemastery / cosmokit ...） |
 | `tests/` | 全栈测试 harness |
 | `docs/` | 设计文档与博客 |
@@ -52,6 +62,7 @@ pnpm build:ui
 - [`docs/agent-tooling.md`](docs/agent-tooling.md)：大文件读写、多行 grep、视觉截图与测试基线。
 - [`docs/tool-images.md`](docs/tool-images.md)：把工具产生的图片作为模型输入（截图 / 本地图片）。
 - [`docs/terminal-and-preview.md`](docs/terminal-and-preview.md)：交互式终端与开发服务器预览。
+- [`docs/desktop.md`](docs/desktop.md)：桌面端实现，以及与 dsh / Claude Code 桌面端的对照。
 - [`docs/session-panel.md`](docs/session-panel.md)：右侧会话信息栏（环境 / 上下文 / 输出 / 更改）。
 - [`docs/product-roadmap-review.md`](docs/product-roadmap-review.md)：外部产品 Roadmap 的逐条评审与取舍。
 - [`docs/prompt-cache.md`](docs/prompt-cache.md)：KV cache 交互设计与实测。

@@ -25,6 +25,13 @@ describe('cli arguments', () => {
     expect(parseArgs(['--', '--port', '0']).port).toBe(0)
   })
 
+  it('reads --workspace with a space, -C, or an equals sign', () => {
+    expect(parseArgs(['--workspace', '/tmp/project']).workspace).toBe('/tmp/project')
+    expect(parseArgs(['-C', '/tmp/project', '--port', '0']).workspace).toBe('/tmp/project')
+    expect(parseArgs(['--workspace=/tmp/project']).workspace).toBe('/tmp/project')
+    expect(() => parseArgs(['--workspace'])).toThrow('needs a directory')
+  })
+
   it('recognises --help', () => {
     expect(parseArgs(['--help']).help).toBe(true)
     expect(parseArgs(['-h']).help).toBe(true)
