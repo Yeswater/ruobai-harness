@@ -614,7 +614,7 @@ export class ContextService extends Service {
     if (state.running) return
     const built = await this.build(sessionId, options)
     if (!state.disabled && built.estimatedTokens >= this.threshold(sessionId)) {
-      return this.compact(sessionId, options, 'auto', built.estimatedTokens)
+      return this.compact(sessionId, options, 'auto', built.estimatedTokens, this.overhead(sessionId, built.system))
     }
     // Below the compaction threshold old tool output can still be shed, but
     // only when the one-off rewrite it causes is paid back by later reads.
@@ -671,7 +671,7 @@ export class ContextService extends Service {
     if (!record) throw new Error(`unknown session: ${sessionId}`)
     if (this.state(sessionId).running) throw new Error('compaction is already running')
     const built = await this.build(sessionId, options)
-    return this.compact(sessionId, options, 'manual', built.estimatedTokens)
+    return this.compact(sessionId, options, 'manual', built.estimatedTokens, this.overhead(sessionId, built.system))
   }
 
   /** Provider-confirmed overflow: force a reduction regardless of threshold. */
@@ -680,7 +680,17 @@ export class ContextService extends Service {
     if (!record) return
     if (this.state(sessionId).running) return
     const built = await this.build(sessionId, options)
-    return this.compact(sessionId, options, 'overflow', built.estimatedTokens)
+    return this.compact(sessionId, options, 'overflow', built.estimatedTokens, this.overhead(sessionId, built.system))
+  }
+
+  /**
+   * Tokens a summary cannot remove: the system prompt and the tool schemas.
+   * They must not inflate the shrink target, or adding a tool makes every
+   * compaction look like it failed to shrink.
+   */
+  private overhead(sessionId: string, system: string): number {
+    const tools = this.lastOptions.get(sessionId)?.tools
+    return estimate(system, [], tools, this.factor(sessionId))
   }
 
   /**
@@ -785,6 +795,7 @@ export class ContextService extends Service {
     options: CompactOptions,
     trigger: CompactionTrigger,
     before: number,
+    fixed = 0,
   ): Promise<CompactionInfo | undefined> {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) return
@@ -849,7 +860,10 @@ export class ContextService extends Service {
 
         const removed = source.reduce((total, event) => total + eventTokens(event, pruned), 0)
         projected = Math.max(0, before - removed) + estimateTextTokens(summaryText) + 64
-        if (projected < before * MIN_SHRINK_RATIO) break
+        // Only the history can shrink; the system prompt and tool schemas are
+        // a fixed floor in every request.
+        const history = Math.max(0, before - fixed)
+        if (projected < fixed + history * MIN_SHRINK_RATIO) break
         // A summary that does not shrink the prompt is not useful; retry with
         // a deeper cut before giving up.
         selection = null

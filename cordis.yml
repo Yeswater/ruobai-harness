@@ -186,6 +186,14 @@
 - id: preview-web
   name: '@ruobai/preview-web'
 
+# In-turn questions. `ask_user` blocks the tool call until the UI answers; an
+# unanswered question is reported as such, never treated as consent.
+- id: ask
+  name: '@ruobai/ask'
+
+- id: ask-web
+  name: '@ruobai/ask-web'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'

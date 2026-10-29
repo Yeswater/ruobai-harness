@@ -5,6 +5,8 @@ import AgentService from '@ruobai/agent'
 import A2aService from '@ruobai/a2a'
 import A2aWeb from '@ruobai/a2a-web'
 import ApprovalService from '@ruobai/approval'
+import AskService from '@ruobai/ask'
+import AskWeb from '@ruobai/ask-web'
 import ChatService from '@ruobai/chat'
 import CheckpointsService from '@ruobai/checkpoints'
 import CheckpointsWeb from '@ruobai/checkpoints-web'
@@ -185,6 +187,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   }))
   await mount(ctx.plugin(ContextSearch))
   await mount(ctx.plugin(ApprovalService))
+  await mount(ctx.plugin(AskService))
   await mount(ctx.plugin(PermissionService))
   // Gates with no configured checkers: guard and lifecycle paths are exercised,
   // but no external toolchain runs in unit tests.
@@ -205,6 +208,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(Trajectory))
   await mount(ctx.plugin(TrajectoryWeb))
   await mount(ctx.plugin(UiApi))
+  await mount(ctx.plugin(AskWeb))
   await mount(ctx.plugin(HooksWeb))
   await mount(ctx.plugin(WorkspaceWeb))
   await mount(ctx.plugin(GitWeb))

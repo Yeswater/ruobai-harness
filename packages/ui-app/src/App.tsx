@@ -9,6 +9,7 @@ import {
   isTerminalShortcut, modKeyLabel,
 } from './shortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
+import { AskCard } from './components/AskCard.tsx'
 import { CommandPalette } from './components/CommandPalette.tsx'
 import { Composer } from './components/Composer.tsx'
 import { editableContextMenu, useContextMenu } from './components/ContextMenu.tsx'
@@ -606,6 +607,20 @@ export function App() {
               />
 
               <TodoPanel todo={harness.todo} />
+
+              {harness.asks.length
+                ? (
+                  <div className="approval-stack">
+                    {harness.asks.map(request => (
+                      <AskCard
+                        key={request.id}
+                        request={request}
+                        onAnswer={answer => harness.answerAsk(request.id, answer)}
+                      />
+                    ))}
+                  </div>
+                )
+                : null}
 
               {pendingApprovals.length
                 ? (

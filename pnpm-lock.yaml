@@ -26,6 +26,12 @@ importers:
       '@ruobai/approval-deadline':
         specifier: workspace:*
         version: link:packages/approval-deadline
+      '@ruobai/ask':
+        specifier: workspace:*
+        version: link:packages/ask
+      '@ruobai/ask-web':
+        specifier: workspace:*
+        version: link:packages/ask-web
       '@ruobai/browser-preview':
         specifier: workspace:*
         version: link:packages/browser-preview
@@ -375,6 +381,39 @@ importers:
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
+
+  packages/ask:
+    dependencies:
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/ask-web:
+    dependencies:
+      '@ruobai/ask':
+        specifier: workspace:*
+        version: link:../ask
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/browser-preview:
     dependencies:

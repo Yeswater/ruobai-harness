@@ -761,6 +761,17 @@ export const api = {
       body: JSON.stringify({ decision }),
     }),
 
+  getAsks: async (sessionId?: string) =>
+    (await request<{ asks: AskRequest[] }>(
+      `/api/asks${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`,
+    )).asks,
+
+  answerAsk: async (id: string, answer: string) =>
+    request<{ ok: true; via: string }>(`/api/asks/${encodeURIComponent(id)}/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
+    }),
+
   getApprovalRules: async () =>
     (await request<{ rules: ApprovalRule[] }>('/api/approval/rules')).rules,
 
@@ -1170,6 +1181,7 @@ export interface EventHandlers {
   onError?: () => void
   onChat?: (event: ChatEvent) => void
   onApproval?: (payload: ApprovalEvent) => void
+  onAsk?: (payload: AskEvent) => void
   onTodo?: (payload: TodoSnapshot) => void
   onTerminal?: (payload: TerminalEvent) => void
   onPreview?: (payload: PreviewEvent) => void
@@ -1178,6 +1190,20 @@ export interface EventHandlers {
 export type ApprovalEvent =
   | { kind: 'requested'; request: ApprovalRequest }
   | { kind: 'resolved'; resolution: { id: string; decision: ApprovalDecision } }
+
+export interface AskRequest {
+  id: string
+  sessionId: string
+  question: string
+  options?: string[]
+  allowFreeText: boolean
+  createdAt: number
+  expiresAt: number
+}
+
+export type AskEvent =
+  | { kind: 'requested'; request: AskRequest }
+  | { kind: 'resolved'; resolution: { id: string; via: string; answer: string | null } }
 
 /**
  * Browsers may resolve `localhost` to ::1 while the harness binds 127.0.0.1;
@@ -1223,6 +1249,13 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('ask', (event) => {
+      try {
+        handlers.onAsk?.(JSON.parse((event as MessageEvent<string>).data) as AskEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
     source.addEventListener('todo', (event) => {
       try {
         handlers.onTodo?.(JSON.parse((event as MessageEvent<string>).data) as TodoSnapshot)
@@ -1256,8 +1289,10 @@ export function connectEvents(handlers: EventHandlers) {
           event?: ChatEvent
           data?: unknown
           kind?: 'requested' | 'resolved'
-          request?: ApprovalRequest
-          resolution?: { id: string; decision: ApprovalDecision }
+          request?: ApprovalRequest | AskRequest
+          resolution?:
+            | { id: string; decision: ApprovalDecision }
+            | { id: string; via: string; answer: string | null }
         }
         if (payload.type === 'hello') {
           document.documentElement.dataset.live = 'ws'
@@ -1268,8 +1303,12 @@ export function connectEvents(handlers: EventHandlers) {
         else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)
         else if (payload.type === 'approval') {
           handlers.onApproval?.(payload.kind === 'requested'
-            ? { kind: 'requested', request: payload.request! }
-            : { kind: 'resolved', resolution: payload.resolution! })
+            ? { kind: 'requested', request: payload.request as ApprovalRequest }
+            : { kind: 'resolved', resolution: payload.resolution as { id: string; decision: ApprovalDecision } })
+        } else if (payload.type === 'ask') {
+          handlers.onAsk?.(payload.kind === 'requested'
+            ? { kind: 'requested', request: payload.request as AskRequest }
+            : { kind: 'resolved', resolution: payload.resolution as { id: string; via: string; answer: string | null } })
         }
       } catch {
         // ignore malformed frames

@@ -24,6 +24,8 @@
     "@ruobai/agent": "workspace:*",
     "@ruobai/approval": "workspace:*",
     "@ruobai/approval-deadline": "workspace:*",
+    "@ruobai/ask": "workspace:*",
+    "@ruobai/ask-web": "workspace:*",
     "@ruobai/browser-preview": "workspace:*",
     "@ruobai/chat": "workspace:*",
     "@ruobai/checkpoints": "workspace:*",

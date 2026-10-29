@@ -7,6 +7,7 @@ import {
   summarize,
   type ApprovalDecision,
   type ApprovalRequest,
+  type AskRequest,
   type CommandPrefix,
   type ContextInfo,
   type ModeInfo,
@@ -109,6 +110,7 @@ export function useHarness() {
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null)
   const [commandPrefix, setCommandPrefix] = useState<CommandPrefix>('～')
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
+  const [asks, setAsks] = useState<AskRequest[]>([])
   const [todo, setTodo] = useState<TodoSnapshot | null>(null)
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
@@ -153,6 +155,7 @@ export function useHarness() {
         setActiveId(created.id)
         setSession(created)
         setApprovals([])
+        setAsks([])
       })
       .catch(fail)
   }, [fail])
@@ -162,6 +165,7 @@ export function useHarness() {
     sessionsRef.current = sessionsRef.current.filter(item => item.id !== id)
     setSessions(sessionsRef.current)
     setApprovals(previous => previous.filter(item => item.sessionId !== id))
+    setAsks(previous => previous.filter(item => item.sessionId !== id))
     if (activeRef.current !== id) return
     const next = sessionsRef.current[0]?.id ?? null
     activeRef.current = next
@@ -210,6 +214,7 @@ export function useHarness() {
         setActiveId(created.id)
         setSession(created)
         setApprovals([])
+        setAsks([])
       })
       .catch(fail)
   }, [fail])
@@ -330,6 +335,11 @@ export function useHarness() {
         if (!cancelled) setApprovals(list)
       })
       .catch(() => undefined)
+    void api.getAsks(activeId)
+      .then((list) => {
+        if (!cancelled) setAsks(list)
+      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -391,6 +401,16 @@ export function useHarness() {
           setApprovals(previous => previous.some(item => item.id === request.id) ? previous : [...previous, request])
         } else {
           setApprovals(previous => previous.filter(item => item.id !== payload.resolution.id))
+        }
+      },
+      onAsk: (payload) => {
+        if (payload.kind === 'requested') {
+          const request = payload.request
+          if (request.sessionId !== activeRef.current) return
+          setAsks(previous => previous.some(item => item.id === request.id) ? previous : [...previous, request])
+        } else {
+          const id = payload.resolution.id
+          setAsks(previous => previous.filter(item => item.id !== id))
         }
       },
     })
@@ -513,6 +533,15 @@ export function useHarness() {
     })
   }, [fail])
 
+  const answerAsk = useCallback((id: string, answer: string) => {
+    setAsks(previous => previous.filter(item => item.id !== id))
+    void api.answerAsk(id, answer).catch((caught) => {
+      fail(caught)
+      const sessionId = activeRef.current
+      if (sessionId) void api.getAsks(sessionId).then(setAsks).catch(() => undefined)
+    })
+  }, [fail])
+
   return {
     sessions,
     activeId,
@@ -527,6 +556,7 @@ export function useHarness() {
     commandPrefix,
     refreshSettings,
     approvals,
+    asks,
     todo,
     recentWorkspaces,
     select,
@@ -542,6 +572,7 @@ export function useHarness() {
     setPermission,
     withdrawQueued,
     resolveApproval,
+    answerAsk,
     dismissError: () => setError(null),
   }
 }
