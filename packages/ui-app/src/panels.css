@@ -221,6 +221,64 @@
   color: var(--accent-strong);
 }
 
+.preview-cast-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.preview-live {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2ea043;
+  box-shadow: 0 0 0 3px rgba(46, 160, 67, .16);
+}
+
+.preview-cast-label {
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.preview-cast-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.preview-cast {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 8px;
+  overflow: auto;
+  background: var(--tool-bg);
+}
+
+.preview-cast-frame {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .14);
+}
+
+.preview-cast .preview-idle {
+  margin: auto;
+}
+
 .preview-frame {
   display: flex;
   flex: 1;

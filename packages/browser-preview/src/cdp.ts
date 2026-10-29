@@ -3,9 +3,32 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+export type ConsoleKind = 'log' | 'info' | 'warning' | 'error' | 'debug'
+
 export interface ConsoleEntry {
-  kind: 'error' | 'warning'
+  kind: ConsoleKind
   text: string
+}
+
+export interface NetworkEntry {
+  id: string
+  url: string
+  method: string
+  type: string
+  status?: number
+  mimeType?: string
+  failed?: string
+  at: number
+}
+
+/** One accessibility node, flattened: what the agent reads to pick a target. */
+export interface AxEntry {
+  uid: string
+  role: string
+  name: string
+  value?: string
+  states: string[]
+  depth: number
 }
 
 export interface SessionOptions {
@@ -13,6 +36,7 @@ export interface SessionOptions {
   timeoutMs: number
   width: number
   height: number
+  mobile?: boolean
   colorScheme?: 'light' | 'dark'
   waitMs: number
 }
@@ -201,9 +225,16 @@ function textOfArgument(argument: any): string {
   return String(argument.description ?? argument.type ?? '')
 }
 
-/** One headless page: navigate, read the console, screenshot, evaluate. */
+/** One headless page: navigate, read the console, screenshot, evaluate, interact. */
 export class BrowserSession {
   private readonly consoleEntries: ConsoleEntry[] = []
+  private readonly requests = new Map<string, NetworkEntry>()
+  private currentUrl = 'about:blank'
+  private width: number
+  private height: number
+  private colorScheme?: 'light' | 'dark'
+  private casting = false
+  private offScreencast?: () => void
 
   private constructor(
     private readonly cdp: CdpClient,
@@ -213,7 +244,12 @@ export class BrowserSession {
     private readonly sessionId: string,
     private readonly timeoutMs: number,
     private readonly waitMs: number,
-  ) {}
+    view: { width: number; height: number; colorScheme?: 'light' | 'dark' },
+  ) {
+    this.width = view.width
+    this.height = view.height
+    this.colorScheme = view.colorScheme
+  }
 
   static async open(options: SessionOptions): Promise<BrowserSession> {
     const { child, endpoint, profile } = await launchChrome(options.chromePath, options.timeoutMs)
@@ -225,16 +261,20 @@ export class BrowserSession {
         targetId,
         flatten: true,
       })
-      const session = new BrowserSession(cdp, child, profile, targetId, sessionId, options.timeoutMs, options.waitMs)
+      const session = new BrowserSession(cdp, child, profile, targetId, sessionId, options.timeoutMs, options.waitMs, options)
       session.collectConsole()
+      session.collectNetwork()
       await cdp.send('Runtime.enable', {}, sessionId)
       await cdp.send('Log.enable', {}, sessionId)
       await cdp.send('Page.enable', {}, sessionId)
+      await cdp.send('DOM.enable', {}, sessionId)
+      await cdp.send('Network.enable', {}, sessionId)
+      await cdp.send('Accessibility.enable', {}, sessionId)
       await cdp.send('Emulation.setDeviceMetricsOverride', {
         width: options.width,
         height: options.height,
         deviceScaleFactor: 1,
-        mobile: false,
+        mobile: options.mobile === true,
       }, sessionId)
       if (options.colorScheme) {
         await cdp.send('Emulation.setEmulatedMedia', {
@@ -262,8 +302,115 @@ export class BrowserSession {
     // still gives the page a chance to settle.
     await loaded.catch(() => undefined)
     await sleep(this.waitMs)
+    this.currentUrl = url
     const info = await this.evaluate<{ title: string; url: string }>('({ title: document.title, url: location.href })')
+    this.currentUrl = info?.url ?? url
     return info ?? { title: '', url }
+  }
+
+  async reload(): Promise<{ title: string; url: string }> {
+    await this.cdp.send('Page.reload', {}, this.sessionId)
+    await sleep(this.waitMs)
+    const info = await this.evaluate<{ title: string; url: string }>('({ title: document.title, url: location.href })')
+    this.currentUrl = info?.url ?? this.currentUrl
+    return info ?? { title: '', url: this.currentUrl }
+  }
+
+  url() {
+    return this.currentUrl
+  }
+
+  view() {
+    return { width: this.width, height: this.height, colorScheme: this.colorScheme }
+  }
+
+  async resize(view: { width: number; height: number; mobile?: boolean; colorScheme?: 'light' | 'dark' }) {
+    this.width = view.width
+    this.height = view.height
+    await this.cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: view.width,
+      height: view.height,
+      deviceScaleFactor: 1,
+      mobile: view.mobile === true,
+    }, this.sessionId)
+    if (view.colorScheme) {
+      this.colorScheme = view.colorScheme
+      await this.cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: view.colorScheme }],
+      }, this.sessionId)
+    }
+    await sleep(this.waitMs)
+  }
+
+  /** Accessibility tree with stable uids; click and fill take those uids. */
+  async snapshot(maxNodes: number): Promise<{ entries: AxEntry[]; truncated: boolean }> {
+    const { nodes } = await this.cdp.send<{ nodes: RawAxNode[] }>('Accessibility.getFullAXTree', {}, this.sessionId)
+    return flattenAxTree(nodes, maxNodes)
+  }
+
+  async click(target: ElementTarget): Promise<void> {
+    const objectId = await this.resolveObject(target)
+    const box = await this.cdp.send<{ result?: { value?: { x: number; y: number; width: number; height: number } } }>(
+      'Runtime.callFunctionOn',
+      {
+        objectId,
+        functionDeclaration: `function () {
+          this.scrollIntoView({ block: 'center', inline: 'center' })
+          const r = this.getBoundingClientRect()
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, width: r.width, height: r.height }
+        }`,
+        returnByValue: true,
+      },
+      this.sessionId,
+    )
+    const point = box.result?.value
+    if (!point) throw new Error('the target element is not visible')
+    const buttons = { left: 1, middle: 4, right: 2 } as const
+    const button = target.button ?? 'left'
+    await this.cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', x: point.x, y: point.y, button: 'none',
+    }, this.sessionId)
+    for (const type of ['mousePressed', 'mouseReleased'] as const) {
+      await this.cdp.send('Input.dispatchMouseEvent', {
+        type,
+        x: point.x,
+        y: point.y,
+        button,
+        buttons: buttons[button],
+        clickCount: 1,
+      }, this.sessionId)
+    }
+    await sleep(this.waitMs)
+  }
+
+  async fill(target: ElementTarget, value: string): Promise<void> {
+    const objectId = await this.resolveObject(target)
+    const result = await this.cdp.send<{ result?: { value?: boolean } }>('Runtime.callFunctionOn', {
+      objectId,
+      functionDeclaration: `function (value) {
+        const el = this
+        el.focus()
+        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
+          : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype
+          : el instanceof HTMLInputElement ? HTMLInputElement.prototype
+          : null
+        if (el.isContentEditable) el.textContent = value
+        else if (proto) {
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+          if (setter) setter.call(el, value)
+          else el.value = value
+        } else {
+          throw new Error('the target element cannot hold text')
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        return true
+      }`,
+      arguments: [{ value }],
+      returnByValue: true,
+    }, this.sessionId)
+    if (!result.result?.value) throw new Error('the target element cannot hold text')
+    await sleep(this.waitMs)
   }
 
   async evaluate<T = unknown>(expression: string): Promise<T> {
@@ -308,8 +455,62 @@ export class BrowserSession {
     return Buffer.from(data, 'base64')
   }
 
-  consoleMessages(): ConsoleEntry[] {
-    return [...this.consoleEntries]
+  consoleMessages(clear = false): ConsoleEntry[] {
+    const entries = [...this.consoleEntries]
+    if (clear) this.consoleEntries.length = 0
+    return entries
+  }
+
+  /** Live JPEG frames for the UI panel; the model's page becomes watchable. */
+  async startScreencast(onFrame: (frame: { data: string; width: number; height: number }) => void): Promise<void> {
+    if (this.casting) return
+    this.casting = true
+    this.offScreencast = this.cdp.on('Page.screencastFrame', (params, sessionId) => {
+      if (sessionId && sessionId !== this.sessionId) return
+      // Not acking stops the stream after a few frames.
+      void this.cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId }, this.sessionId)
+        .catch(() => undefined)
+      const meta = params.metadata ?? {}
+      onFrame({
+        data: String(params.data ?? ''),
+        width: Number(meta.deviceWidth) || this.width,
+        height: Number(meta.deviceHeight) || this.height,
+      })
+    })
+    try {
+      await this.cdp.send('Page.startScreencast', {
+        format: 'jpeg',
+        quality: 60,
+        maxWidth: Math.min(1_600, Math.max(320, this.width)),
+        maxHeight: Math.min(1_000, Math.max(240, this.height)),
+        everyNthFrame: 2,
+      }, this.sessionId)
+    } catch {
+      this.casting = false
+      this.offScreencast?.()
+      this.offScreencast = undefined
+    }
+  }
+
+  async stopScreencast(): Promise<void> {
+    if (!this.casting) return
+    this.casting = false
+    this.offScreencast?.()
+    this.offScreencast = undefined
+    await this.cdp.send('Page.stopScreencast', {}, this.sessionId).catch(() => undefined)
+  }
+
+  networkEntries(): NetworkEntry[] {
+    return [...this.requests.values()]
+  }
+
+  async responseBody(requestId: string): Promise<{ body: string; base64: boolean; mimeType?: string }> {
+    const entry = this.requests.get(requestId)
+    if (!entry) throw new Error(`unknown request: ${requestId}`)
+    const result = await this.cdp.send<{ body: string; base64Encoded?: boolean }>(
+      'Network.getResponseBody', { requestId }, this.sessionId,
+    )
+    return { body: result.body, base64: Boolean(result.base64Encoded), ...(entry.mimeType ? { mimeType: entry.mimeType } : {}) }
   }
 
   async close(): Promise<void> {
@@ -323,28 +524,189 @@ export class BrowserSession {
     removeProfile(this.profile)
   }
 
+  private async resolveObject(target: ElementTarget): Promise<string> {
+    if (target.uid) {
+      const backendNodeId = Number(target.uid.replace(/^n/, ''))
+      if (!Number.isInteger(backendNodeId) || !target.uid.startsWith('n')) {
+        throw new Error(`unknown uid: ${target.uid}`)
+      }
+      const { object } = await this.cdp.send<{ object: { objectId: string } }>(
+        'DOM.resolveNode', { backendNodeId }, this.sessionId,
+      )
+      if (!object?.objectId) throw new Error(`uid ${target.uid} is no longer in the page`)
+      return object.objectId
+    }
+    const selector = String(target.selector ?? '').trim()
+    if (!selector) throw new Error('pass uid (from browser_snapshot) or selector')
+    const { result } = await this.cdp.send<{ result?: { objectId?: string; subtype?: string } }>('Runtime.evaluate', {
+      expression: `document.querySelector(${JSON.stringify(selector)})`,
+      returnByValue: false,
+    }, this.sessionId)
+    if (!result?.objectId) throw new Error(`no element matches selector: ${selector}`)
+    return result.objectId
+  }
+
   private collectConsole() {
     this.cdp.on('Runtime.consoleAPICalled', (params, sessionId) => {
       if (sessionId && sessionId !== this.sessionId) return
       const type = String(params.type ?? '')
-      if (type !== 'error' && type !== 'warning' && type !== 'assert') return
+      const kind: ConsoleKind = type === 'warning' ? 'warning'
+        : type === 'error' || type === 'assert' ? 'error'
+        : type === 'debug' ? 'debug'
+        : type === 'info' ? 'info'
+        : 'log'
       const text = (params.args ?? []).map(textOfArgument).join(' ').slice(0, 500)
-      this.consoleEntries.push({ kind: type === 'warning' ? 'warning' : 'error', text })
+      this.pushConsole({ kind, text })
     })
     this.cdp.on('Runtime.exceptionThrown', (params, sessionId) => {
       if (sessionId && sessionId !== this.sessionId) return
       const details = params.exceptionDetails ?? {}
       const text = String(details.exception?.description ?? details.text ?? 'uncaught exception').slice(0, 500)
-      this.consoleEntries.push({ kind: 'error', text })
+      this.pushConsole({ kind: 'error', text })
     })
     this.cdp.on('Log.entryAdded', (params, sessionId) => {
       if (sessionId && sessionId !== this.sessionId) return
       const entry = params.entry ?? {}
-      if (entry.level !== 'error' && entry.level !== 'warning') return
-      this.consoleEntries.push({ kind: entry.level, text: String(entry.text ?? '').slice(0, 500) })
+      const level = String(entry.level ?? '')
+      if (level !== 'error' && level !== 'warning' && level !== 'info' && level !== 'debug') return
+      this.pushConsole({ kind: level as ConsoleKind, text: String(entry.text ?? '').slice(0, 500) })
+    })
+  }
+
+  private pushConsole(entry: ConsoleEntry) {
+    this.consoleEntries.push(entry)
+    if (this.consoleEntries.length > 200) this.consoleEntries.splice(0, this.consoleEntries.length - 200)
+  }
+
+  private collectNetwork() {
+    this.cdp.on('Network.requestWillBeSent', (params, sessionId) => {
+      if (sessionId && sessionId !== this.sessionId) return
+      const request = params.request ?? {}
+      this.requests.set(String(params.requestId), {
+        id: String(params.requestId),
+        url: String(request.url ?? ''),
+        method: String(request.method ?? 'GET'),
+        type: String(params.type ?? ''),
+        at: Date.now(),
+      })
+      if (this.requests.size > 200) {
+        const oldest = this.requests.keys().next().value
+        if (oldest) this.requests.delete(oldest)
+      }
+    })
+    this.cdp.on('Network.responseReceived', (params, sessionId) => {
+      if (sessionId && sessionId !== this.sessionId) return
+      const entry = this.requests.get(String(params.requestId))
+      if (!entry) return
+      entry.status = Number(params.response?.status ?? 0)
+      entry.mimeType = params.response?.mimeType
+    })
+    this.cdp.on('Network.loadingFailed', (params, sessionId) => {
+      if (sessionId && sessionId !== this.sessionId) return
+      const entry = this.requests.get(String(params.requestId))
+      if (!entry) return
+      entry.failed = String(params.errorText ?? 'failed')
     })
   }
 }
+
+export interface ElementTarget {
+  uid?: string
+  selector?: string
+  button?: 'left' | 'middle' | 'right'
+}
+
+interface RawAxNode {
+  nodeId: string
+  parentId?: string
+  ignored?: boolean
+  role?: { value?: string }
+  name?: { value?: string }
+  value?: { value?: unknown }
+  backendDOMNodeId?: number
+  properties?: Array<{ name?: string; value?: { value?: unknown } }>
+}
+
+const STATE_NAMES = new Set(['disabled', 'checked', 'expanded', 'selected', 'focused', 'required'])
+
+/** Depth-first flatten of the accessibility tree, keeping only what is usable. */
+export function flattenAxTree(nodes: RawAxNode[], maxNodes = 1_500): { entries: AxEntry[]; truncated: boolean } {
+  const byId = new Map<string, RawAxNode>()
+  const children = new Map<string, RawAxNode[]>()
+  for (const node of nodes) byId.set(node.nodeId, node)
+  for (const node of nodes) {
+    if (!node.parentId) continue
+    const list = children.get(node.parentId) ?? []
+    list.push(node)
+    children.set(node.parentId, list)
+  }
+  const roots = nodes.filter(node => !node.parentId || !byId.has(node.parentId))
+  const entries: AxEntry[] = []
+  let truncated = false
+
+  const visit = (node: RawAxNode, depth: number) => {
+    if (entries.length >= maxNodes) {
+      truncated = true
+      return
+    }
+    const role = String(node.role?.value ?? '')
+    const name = String(node.name?.value ?? '')
+    const ignored = node.ignored === true
+    const uid = node.backendDOMNodeId ? `n${node.backendDOMNodeId}` : undefined
+    if (!ignored && role && role !== 'none' && role !== 'generic' && role !== 'InlineTextBox') {
+      const value = node.value?.value
+      const states = (node.properties ?? [])
+        .filter(property => property.name && STATE_NAMES.has(property.name) && property.value?.value === true)
+        .map(property => property.name!)
+      if (name || value !== undefined || STATES_WITHOUT_NAME.has(role) || role === 'RootWebArea') {
+        entries.push({
+          uid: uid ?? `ax${node.nodeId}`,
+          role,
+          name: name.slice(0, 160),
+          ...(value !== undefined && value !== '' ? { value: String(value).slice(0, 160) } : {}),
+          states,
+          depth,
+        })
+      }
+    }
+    for (const child of children.get(node.nodeId) ?? []) {
+      visit(child, ignored ? depth : depth + 1)
+    }
+  }
+
+  for (const root of roots) visit(root, 0)
+  return { entries, truncated }
+}
+
+const STATES_WITHOUT_NAME = new Set([
+  'button', 'link', 'checkbox', 'radio', 'textbox', 'combobox', 'switch', 'tab', 'menuitem',
+])
+
+/** One line per entry: `uid=... role "name" value="..." [states]`. */
+export function formatAxEntries(entries: AxEntry[], truncated: boolean): string {
+  const lines = entries.map((entry) => {
+    const indent = '  '.repeat(entry.depth)
+    const name = entry.name ? ` "${entry.name}"` : ''
+    const value = entry.value ? ` value="${entry.value}"` : ''
+    const states = entry.states.length ? ` [${entry.states.join(', ')}]` : ''
+    return `${indent}uid=${entry.uid} ${entry.role}${name}${value}${states}`
+  })
+  if (truncated) lines.push('… snapshot truncated; narrow the page or pass a smaller maxNodes')
+  return lines.join('\n')
+}
+
+/** One line per request: method, status, type, url. */
+export function formatNetwork(entries: NetworkEntry[], filter: 'all' | 'failed' = 'all'): string {
+  const list = filter === 'failed'
+    ? entries.filter(entry => entry.failed || (entry.status ?? 0) >= 400)
+    : entries
+  if (!list.length) return filter === 'failed' ? 'No failed requests.' : 'No requests recorded.'
+  return list.map((entry) => {
+    const status = entry.failed ? `FAILED ${entry.failed}` : String(entry.status ?? 'pending')
+    return `${entry.id} ${entry.method} ${status} ${entry.type || '-'} ${entry.url}`
+  }).join('\n')
+}
+
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms))

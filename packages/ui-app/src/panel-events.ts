@@ -1,4 +1,4 @@
-import type { PreviewEvent, TerminalEvent } from './api.ts'
+import type { BrowserCastEvent, PreviewEvent, TerminalEvent } from './api.ts'
 
 /**
  * Fan-out for panels that must not re-render the whole app per chunk.
@@ -23,3 +23,5 @@ function createBus<T>() {
 
 export const terminalBus = createBus<TerminalEvent>()
 export const previewBus = createBus<PreviewEvent>()
+/** Screencast frames of the page the agent is driving; high rate, so a bus. */
+export const browserBus = createBus<BrowserCastEvent>()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import type { AttachmentMeta } from '@ruobai/chat-protocol'
 import { useHarness } from './useHarness.ts'
 import { useClientPlugins } from './useClientPlugins.ts'
+import { browserBus } from './panel-events.ts'
 import { api, type ActivitySummary, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
 import {
@@ -133,6 +134,17 @@ export function App() {
   useEffect(() => {
     if (emptySession) setFileOpen(false)
   }, [emptySession])
+
+  // The agent opened a page: show it in the preview panel, mirroring the model.
+  useEffect(() => {
+    return browserBus.subscribe((event) => {
+      if (event.kind !== 'open' || !event.fresh) return
+      if (!harness.activeId || event.sessionId !== harness.activeId) return
+      setPanelView('preview')
+      setFileOpen(true)
+      setExpandedPanel(null)
+    })
+  }, [harness.activeId])
 
   useEffect(() => {
     if (!emptySession) return

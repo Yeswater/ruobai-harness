@@ -59,19 +59,29 @@ pnpm test:baseline packages/tool-fs/tests/fs.spec.ts
 
 **原因**：harness 的工具有文件、命令、检索，没有浏览器。视觉任务只能以 `typecheck` + `build:ui` 收尾，而这恰好答不了「看起来对不对」。
 
-新增 `@ruobai/browser-preview`（默认挂载）：
+新增 `@ruobai/browser-preview`（默认挂载）。它保留一个**跨调用存活的页面**：打开、快照、点击、输入、截图都作用于同一份文档，交互式验收不再需要每次从零加载：
 
 | 工具 | 作用 |
 | --- | --- |
-| `browser_screenshot({url,width,height,colorScheme,fullPage})` | 无头 Chrome 渲染，PNG 存到 `.ruobai/screenshots/`，返回路径、标题、尺寸、控制台错误与警告 |
-| `browser_eval({url,expression,...})` | 加载后执行一个表达式，返回 JSON；用于取计算样式、`scrollWidth` 溢出、`matchMedia('(prefers-color-scheme: dark)')` |
+| `browser_open({url \| preview})` | 打开 URL，或按 `launch.json` 配置名打开已运行的预览服务器；之后可省略 url |
+| `browser_snapshot({maxNodes?})` | 无障碍树，每行 `uid=… role "name"`；uid 是点击/输入的句柄 |
+| `browser_click({uid \| selector})` / `browser_fill({uid \| selector, value})` | 真实鼠标事件与 input/change 事件；可写工具，只读模式不可用 |
+| `browser_console({level?, clear?})` | 页面 console（log/info/debug/warning/error/异常） |
+| `browser_network({filter?, requestId?})` | 请求列表与状态；`failed` 只看失败，`requestId` 读响应体 |
+| `browser_resize({preset \| width/height, colorScheme?})` | mobile / tablet / desktop 或显式尺寸，可切换配色方案 |
+| `browser_screenshot({fullPage?, includeImage?, reload?})` | 同一页面的 PNG，存到 `.ruobai/screenshots/`，返回路径、标题、尺寸、控制台错误与警告 |
+| `browser_eval({expression, reload?})` | 同一页面里执行表达式，返回 JSON；用于计算样式、`scrollWidth` 溢出、`matchMedia('(prefers-color-scheme: dark)')` |
+| `browser_close({url?, all?})` | 关闭当前页面或本会话全部页面，释放 Chrome 进程 |
 
 实现取舍：
 
 - **不引入依赖**：通过 Chrome DevTools Protocol 直连，使用 Node 22 自带的全局 `WebSocket`。
-- **每次调用独立**：启动 `--headless=new`、独立临时 profile、调用结束关闭并删除；同时只允许一个浏览器（进程内串行）。
+- **页面按（会话, URL）复用**：首次调用启动 `--headless=new` 与独立临时 profile；之后沿用同一页面，空闲 `idleMs`（默认 120 s）关闭，每会话最多 `maxPages`（默认 4）个页面，按最久未用回收；进程内仍串行，避免多个 Chrome 同时跑。
+- **不带尺寸的调用不改视口**：只有显式传 `width`/`height`/`colorScheme` 或 `browser_resize` 才会改，之前切换的尺寸不会在下一步被悄悄重置。
 - **默认只允许 loopback**（`127.0.0.1` / `localhost` / `::1`）。要截远程页面，必须在 `cordis.yml` 的 `allowedHosts` 里显式添加——边界写在代码里，而不是让工具自己决定。
+- **`preview` 参数只读**：按配置名取已运行服务器的 URL，不会启动命令；启停仍是用户在预览面板里的动作。
 - **控制台错误算结果的一部分**：页面截图正常但脚本报错是常见情况，工具会把 `console.error`、未捕获异常与 `Log.entryAdded` 一起返回。
+- **实时投屏**：页面一打开就通过 `Page.startScreencast` 推帧到右侧预览面板（`browser` 通道），并在首次打开时自动展开，用户看到的就是模型正在操作的那一页；可切回开发服务器视图。详见 [`terminal-and-preview.md`](terminal-and-preview.md)。
 - 整页截图高度封顶 4000 px，避免一张图几十 MB。
 - 截图会作为工具结果的一部分交给视觉模型；纯文本模型只收到路径与说明。详见 [`tool-images.md`](tool-images.md)。
 
@@ -93,7 +103,7 @@ Chrome 不在常见路径时，工具返回明确的错误，要求设置 `brows
 - `packages/tool-fs/tests/fs.spec.ts`：12000 行文件的分段读、末尾窗口、以及超过读上限的 `edit_file` 成功且校验点仍可捕获。
 - `packages/tool-fs/tests/search.spec.ts`：跨行模式默认无结果并提示 `multiline`，开启后命中起始行。
 - `packages/ui-app/tests/tool-diff.spec.ts`：5000 行文件里改一行，diff 小于 20 行且行号正确。
-- `packages/browser-preview/tests/browser.spec.ts`：URL 白名单；真实无头 Chrome 的表达式求值（含深色模式、计算样式、控制台错误）与 PNG 落盘（Chrome 缺失时该组按运行时探测跳过）。
+- `packages/browser-preview/tests/browser.spec.ts`：URL 白名单；无障碍树与网络整形单测；真实无头 Chrome 的「打开 → 快照 → 按 uid 点击/填值 → 控制台/网络 → 移动端尺寸 → 关闭」与按 preview 配置名打开（Chrome 缺失时该组按运行时探测跳过）。
 - `pnpm test:baseline packages/tool-fs/tests/fs.spec.ts` 实测可用（临时 worktree，结束后自动移除）。
 
 ## 失败模式

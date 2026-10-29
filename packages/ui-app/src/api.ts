@@ -434,6 +434,20 @@ export type PreviewEvent =
   | { kind: 'state'; state: PreviewState }
   | { kind: 'log'; name: string; line: string }
 
+/** Live view of the page the agent is driving (`browser-preview` screencast). */
+export interface BrowserCastEvent {
+  kind: 'open' | 'frame' | 'close'
+  sessionId: string
+  url: string
+  title?: string
+  width?: number
+  height?: number
+  /** Base64 JPEG for `frame`. */
+  data?: string
+  /** The panel opens itself when a page is first created. */
+  fresh?: boolean
+}
+
 export interface ContextInfo {
   estimatedTokens: number
   compactAt: number
@@ -1248,6 +1262,7 @@ export interface EventHandlers {
   onPlan?: (payload: PlanEvent) => void
   onTerminal?: (payload: TerminalEvent) => void
   onPreview?: (payload: PreviewEvent) => void
+  onBrowser?: (payload: BrowserCastEvent) => void
 }
 
 export type ApprovalEvent =
@@ -1391,6 +1406,13 @@ export function connectEvents(handlers: EventHandlers) {
         // ignore malformed frames
       }
     })
+    source.addEventListener('browser', (event) => {
+      try {
+        handlers.onBrowser?.(JSON.parse((event as MessageEvent<string>).data) as BrowserCastEvent)
+      } catch {
+        // ignore malformed frames
+      }
+    })
   }
 
   try {
@@ -1416,6 +1438,7 @@ export function connectEvents(handlers: EventHandlers) {
         else if (payload.type === 'plan') handlers.onPlan?.(payload.data as PlanEvent)
         else if (payload.type === 'terminal') handlers.onTerminal?.(payload.data as TerminalEvent)
         else if (payload.type === 'preview') handlers.onPreview?.(payload.data as PreviewEvent)
+        else if (payload.type === 'browser') handlers.onBrowser?.(payload.data as BrowserCastEvent)
         else if (payload.type === 'chat' && payload.event) handlers.onChat?.(payload.event)
         else if (payload.type === 'approval') {
           handlers.onApproval?.(payload.kind === 'requested'

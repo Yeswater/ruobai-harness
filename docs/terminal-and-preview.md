@@ -80,10 +80,39 @@ macOS 的 `script` 在标准输入输出是管道时会失败（`tcgetattr: Oper
 
 ### 边界
 
-- **只有 UI 能启停。** 没有 agent 工具：`launch.json` 是工作区文件，模型可写；若再给它一个“执行已声明命令”的工具，就形成审批之外的执行通道。
+- **只有 UI 能启停。** 没有 agent 工具：`launch.json` 是工作区文件，模型可写；若再给它一个“执行已声明命令”的工具，就形成审批之外的执行通道。`browser_open` 的 `preview` 参数只读取已运行配置的 URL，不会启动命令。
 - 配置和命令都限定在工作区内。
-- 内嵌页面来自本地服务器，和 harness 不同源，因此面板**读不到 iframe 的控制台与网络**。需要检查页面内部状态时，用 `browser_eval` / `browser_screenshot`（`@ruobai/browser-preview`）对同一 URL 另开无头页面。
+- 内嵌页面来自本地服务器，和 harness 不同源，因此面板**读不到 iframe 的控制台与网络**。需要检查页面内部状态时，用 `@ruobai/browser-preview` 的无头页面（见下节）。
 - 如果命令不读取 `PORT`（例如把端口写死在参数里），自动换端口不会生效；这类配置应使用 `{port}` 占位符或 `autoPort: false`。
+
+### agent 侧：一个保持状态的页面
+
+`@ruobai/browser-preview` 不是每次调用新开浏览器，而是**每个（agent 会话, URL）保留一个页面**，工具之间共享同一份文档状态，所以「打开 → 看快照 → 点击 → 输入 → 截图」是一条连贯的验证流程：
+
+| 工具 | 作用 |
+| --- | --- |
+| `browser_open` | 打开 URL（或已运行的 preview 配置名），之后可以不传 url |
+| `browser_snapshot` | 无障碍树，每行 `uid=… role "name"`；uid 是后续点击/输入的句柄 |
+| `browser_click` / `browser_fill` | 按 uid 或 CSS 选择器点击/填值，派发真实鼠标与 input/change 事件 |
+| `browser_console` | 页面 console（log/info/debug/warning/error/异常），可 `clear` 开新的观察窗口 |
+| `browser_network` | 请求列表与状态，`filter: failed` 只看失败，`requestId` 读响应体 |
+| `browser_resize` | mobile 375×812 / tablet 768×1024 / desktop 或显式尺寸，可切换配色方案 |
+| `browser_screenshot` / `browser_eval` | 同一页面上的截图与表达式求值 |
+| `browser_close` | 关闭当前页面或本会话全部页面，释放 Chrome 进程 |
+
+页面在最后一次调用后 `idleMs`（默认 120 s）自动关闭；每个会话最多保留 `maxPages`（默认 4）个页面，超出按最久未用回收。导航仍限定 loopback（`browser-preview.allowedHosts` 可放开）。点击与输入标记为可写工具，只读权限模式下不可用。
+
+### 实时投屏：让用户看到模型在操作的那一页
+
+页面一打开就通过 CDP `Page.startScreencast` 采帧（JPEG、质量 60、每 2 帧取 1），经 `ui.broadcast('browser', …)` 走 SSE / WebSocket 推给浏览器；`chat` 之外多了一条 `browser` 通道，帧里带 `sessionId`、页面标题、URL 与实际视口尺寸。
+
+客户端（`PreviewPane`）按当前会话过滤：
+
+- 收到 `open`（`fresh: true`）时右侧预览面板**自动打开**并切到「模型页面」；面板晚于事件挂载时，从模块级的最新帧缓存补齐，不会空着等下一次重绘。
+- `frame` 以 100 ms 间隔节流，被丢掉的中间帧会保留最后一帧补发——镜像是给人看的，不追求逐帧一致。
+- 标题栏显示「模型正在操作」的页面标题与 URL，并用一个按钮在「模型页面 / 开发服务器」之间切换；面板原本的 `launch.json` 启停、日志、iframe 全部保留在服务器视图里。
+- `close`（手动关闭、空闲回收、插件卸载）后回到服务器视图。
+- 每帧都要 ack（`Page.screencastFrameAck`），否则 Chrome 自己停流；静态页面只有首帧，发生重绘才会继续推。
 
 ## 3. 安全模型
 
@@ -100,12 +129,27 @@ macOS 的 `script` 在标准输入输出是管道时会失败（`tcgetattr: Oper
 - `packages/preview/tests/preview.spec.ts`：真实启动一个 Node HTTP 服务、端口就绪、HTTP 请求、日志、停止后端口关闭；重复配置报错；HTTP 启停。
 - 浏览器实测：底部终端渲染 zsh 提示符并成功执行 `echo ui-terminal-ok`；预览面板选择 `fixture` → 启动 → 状态“运行中” → iframe 显示页面 → 停止后回到“已停止”。截图见 `docs/assets/`（本地验证，未提交图片）。
 
-## 5. 与 Claude Code 的差距
+## 5. 与 Claude Code 预览的差异
 
-已对齐：多终端、清屏、展开、终端持久化；`launch.json`、启停、日志、内嵌预览、外部打开、失败原因。
+Claude Code 的预览是**一个应用内的浏览器页签**：`.claude/launch.json` 里的配置由 `preview_start`（模型可调用）拉起，模型再用 `preview_snapshot` / `preview_click` / `preview_fill` / `preview_screenshot` / `preview_console_logs` / `preview_network` / `preview_resize` 直接驱动这个页签，用户看到的就是模型在操作的那一页；页面天然跨调用保持状态。
 
-未做（不在本轮范围）：
+ruobai 现在把这套交互能力补齐到了工具层，但仍刻意保留两条边界：
 
-- 终端与 IDE 的集成、任务/工作树面板；
-- 预览页面的控制台、网络面板与点击/输入自动化（`browser_*` 工具覆盖了页面求值与截图，但没有 iframe 内的元素驱动）；
-- Windows 终端（需要 ConPTY）。
+| | Claude Code | ruobai |
+| --- | --- | --- |
+| 启动服务器 | `preview_start` 工具，模型可调 | **只能用户点「启动」**；工具只能按配置名读取已运行 URL |
+| 浏览器在哪 | 应用内的预览页签 | 独立的无头 Chrome（`browser-preview`） |
+| 跨调用状态 | 同一页签 | 同一页面：按（会话, URL）复用，空闲 120 s 回收 |
+| 截图 / 快照 / 点击 / 输入 / 控制台 / 网络 / 尺寸 | `preview_*` 全套 | `browser_*` 全套（`browser_open` 起首，之后可省略 url） |
+| 用户能否看到模型正在看的页面 | 是，同一个页签 | 是：右侧预览面板实时显示同一页面的 screencast，可切回开发服务器 |
+| 选择器 | 快照 uid + CSS | 快照 uid + CSS |
+
+仍未做：在面板里直接操作用户手势（目前只做镜像，输入仍由模型通过 `browser_click` / `browser_fill` 发起）；终端与 IDE 的集成、任务/工作树面板；Windows 终端（需要 ConPTY）。
+
+验证：`packages/browser-preview/tests/browser.spec.ts` 的无障碍树/网络整形单测，以及真实 headless Chrome 的「打开 → 快照 → 按 uid 点击 → 按 uid 填值 → 读控制台/网络 → 切 mobile 尺寸 → 关闭」集成用例与「open / frame / close 投屏事件」用例。
+
+## 6. 与 Claude Code 的终端差距
+
+已对齐：多终端、清屏、展开、终端持久化。
+
+未做（不在本轮范围）：终端与 IDE 的集成、任务/工作树面板；Windows 终端（需要 ConPTY）。

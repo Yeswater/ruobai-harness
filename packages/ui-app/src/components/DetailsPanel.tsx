@@ -83,7 +83,7 @@ export function DetailsPanel({
         {view === 'terminal'
           ? <TerminalPanel workspace={session?.workspace} />
           : view === 'preview'
-          ? <PreviewPane />
+          ? <PreviewPane sessionId={session?.id} />
           : session
             ? view === 'files'
               ? <FileBrowser sessionId={session.id} onReference={onReferenceFile} openPath={openPath} />
