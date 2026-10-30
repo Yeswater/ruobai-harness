@@ -40,13 +40,13 @@ function commandOf(args: any) {
   return command
 }
 
-function previewOf(command: string, cwd: string, root: string) {
+function previewOf(command: string, cwd: string, root: string, note = '') {
   const lines = command.split('\n')
   const shown = lines.slice(0, 40).map((line, index) => index === 0 ? `$ ${line}` : `  ${line}`)
   if (lines.length > 40) shown.push('  …')
   const target = relative(root, cwd)
   return {
-    summary: `${lines[0]}${lines.length > 1 ? ` (+${lines.length - 1} lines)` : ''}${target ? ` · in ${target}` : ''}`,
+    summary: `${lines[0]}${lines.length > 1 ? ` (+${lines.length - 1} lines)` : ''}${target ? ` · in ${target}` : ''}${note}`,
     diff: shown.join('\n'),
   }
 }
@@ -68,10 +68,10 @@ function bashTool(ctx: Context, fallbackRoot: string, config: ResolvedConfig): T
       'Keep one purpose per call: do not chain unrelated commands with && or ;.',
       'The working directory is confined to the workspace, a timeout kills the process group,',
       'output is truncated, and harness credentials are stripped from the environment.',
-      'Commands run inside the OS sandbox; a sandbox denial comes back as a structured [sandbox] block.',
-      'Do not retry a denial with a different command or path; report it and ask the user.',
+      'Commands run inside the OS sandbox: writes stay in the workspace, and network access goes through an allowlist of domains.',
+      'A sandboxed command that stays inside the boundary is approved automatically; commands outside it ask the user first.',
+      'On a sandbox denial, do not repeat the same command. Explain what was blocked; only if the user approves, retry once with dangerouslyDisableSandbox: true.',
       'For a dev server: check it is not already running, log under .ruobai/scratch, use a short wait, and stop it when done.',
-      'Requires user approval.',
     ].join(' '),
     parameters: {
       type: 'object',
@@ -83,6 +83,10 @@ function bashTool(ctx: Context, fallbackRoot: string, config: ResolvedConfig): T
         },
         cwd: { type: 'string', description: 'Directory relative to the workspace root. Defaults to the root.' },
         timeoutMs: { type: 'number', description: `Timeout in milliseconds (max ${config.maxTimeoutMs}).` },
+        dangerouslyDisableSandbox: {
+          type: 'boolean',
+          description: 'Run outside the sandbox. Only after the user approves; use when the sandbox blocked a command that must run.',
+        },
       },
       required: ['command'],
     },
@@ -93,7 +97,8 @@ function bashTool(ctx: Context, fallbackRoot: string, config: ResolvedConfig): T
     preview(args, run) {
       const root = rootFor(run)
       const command = commandOf(args)
-      return previewOf(command, resolveCwd(root, args?.cwd), root)
+      const sandboxNote = args?.dangerouslyDisableSandbox === true ? ' · 不经沙箱' : ''
+      return previewOf(command, resolveCwd(root, args?.cwd), root, sandboxNote)
     },
     /**
      * Delegates to `ctx.shell`, so switching between the sandboxed and the
@@ -117,6 +122,7 @@ function bashTool(ctx: Context, fallbackRoot: string, config: ResolvedConfig): T
         maxOutputBytes: config.maxOutputBytes,
         sessionId: toolRun.sessionId,
         signal: toolRun.signal,
+        ...(args?.dangerouslyDisableSandbox === true ? { sandbox: false } : {}),
       })
       return result.content
     },

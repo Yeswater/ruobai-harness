@@ -92,6 +92,7 @@
     "@ruobai/sandbox-macos": "workspace:*",
     "@ruobai/sandbox-native-log": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/sandbox-proxy": "workspace:*",
     "@ruobai/sandbox-web": "workspace:*",
     "@ruobai/secrets": "workspace:*",
     "@ruobai/session": "workspace:*",

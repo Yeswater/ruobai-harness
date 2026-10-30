@@ -230,6 +230,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:packages/sandbox-policy
+      '@ruobai/sandbox-proxy':
+        specifier: workspace:*
+        version: link:packages/sandbox-proxy
       '@ruobai/sandbox-web':
         specifier: workspace:*
         version: link:packages/sandbox-web
@@ -1446,6 +1449,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
@@ -1619,6 +1625,21 @@ importers:
       '@ruobai/sandbox':
         specifier: workspace:*
         version: link:../sandbox
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+
+  packages/sandbox-proxy:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
 
   packages/sandbox-web:
     dependencies:
@@ -1637,6 +1658,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:../sandbox-policy
+      '@ruobai/sandbox-proxy':
+        specifier: workspace:*
+        version: link:../sandbox-proxy
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1764,6 +1788,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:../sandbox-policy
+      '@ruobai/sandbox-proxy':
+        specifier: workspace:*
+        version: link:../sandbox-proxy
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1777,9 +1804,6 @@ importers:
       '@ruobai/approval':
         specifier: workspace:*
         version: link:../approval
-      '@ruobai/sandbox-escalation':
-        specifier: workspace:*
-        version: link:../sandbox-escalation
 
   packages/skill-distiller:
     dependencies:

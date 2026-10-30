@@ -1,9 +1,10 @@
 /**
- * Sandbox status panel (client half).
+ * Sandbox panel (client half).
  *
  * Rendered in two host slots: Settings → 沙箱 (full) and the Context view's
- * right column (compact). Policy stays read-only; only the per-session
- * escalation switch is interactive (see docs/sandbox-macos.md §7).
+ * right column (compact). The model follows Claude Code: commands that stay
+ * inside the sandbox need no approval; the boundary, the domain allowlist and
+ * the unsandboxed escape hatch are all editable here.
  */
 
 const STYLES = `
@@ -19,14 +20,6 @@ const STYLES = `
 .sandbox-danger { color: var(--danger); font-size: 11.5px; margin: 6px 0; }
 .sandbox-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11.5px; cursor: pointer; }
 .sandbox-link:hover { text-decoration: underline; }
-.sandbox-btn {
-  height: 24px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--panel); color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer;
-}
-.sandbox-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
-.sandbox-btn:disabled { opacity: .45; cursor: not-allowed; }
-.sandbox-btn-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
-.sandbox-btn-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
 .sandbox-guards, .sandbox-denials { list-style: none; margin: 4px 0 0; padding: 0; }
 .sandbox-guards li {
   display: grid; grid-template-columns: 92px 38px minmax(0, 1fr); gap: 8px; align-items: baseline;
@@ -53,7 +46,7 @@ const STYLES = `
 .sandbox-confirm button.danger { border-color: var(--danger); background: var(--danger); color: #fff; }
 .sandbox-switch {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
   background: var(--panel);
 }
 .sandbox-switch-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -71,6 +64,23 @@ const STYLES = `
 .sandbox-toggle.on { border-color: var(--accent); background: var(--accent-soft); }
 .sandbox-toggle.on span { transform: translateX(14px); background: var(--accent); }
 .sandbox-toggle:disabled { opacity: .5; cursor: default; }
+.sandbox-field { display: flex; flex-direction: column; gap: 5px; margin: 8px 0; }
+.sandbox-field > span { color: var(--muted); font-size: 11.5px; }
+.sandbox-field > small { color: var(--faint); font-size: 11px; line-height: 1.5; }
+.sandbox-field textarea {
+  min-height: 74px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+  outline: none; resize: vertical; background: var(--panel); color: var(--text);
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+}
+.sandbox-field textarea:focus { border-color: var(--accent); }
+.sandbox-actions { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.sandbox-btn {
+  height: 26px; padding: 0 11px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer;
+}
+.sandbox-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.sandbox-btn:disabled { opacity: .45; cursor: not-allowed; }
+.sandbox-btn-primary { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
 `
 
 function ensureStyles() {
@@ -124,6 +134,13 @@ function relative(ts) {
   return `${Math.round(seconds / 3600)}h 前`
 }
 
+function linesOf(value) {
+  return String(value || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+}
+
 function GuardList(props) {
   const { guards, limit } = props
   const shown = limit ? guards.slice(0, limit) : guards
@@ -158,24 +175,52 @@ function DenialList(props) {
   )
 }
 
+function Toggle(props) {
+  const { label, description, checked, onChange, disabled } = props
+  return (
+    <div className="sandbox-switch">
+      <div className="sandbox-switch-copy">
+        <strong>{label}</strong>
+        <p>{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        className={`sandbox-toggle${checked ? ' on' : ''}`}
+        onClick={() => onChange(!checked)}
+      >
+        <span />
+      </button>
+    </div>
+  )
+}
+
 function SandboxPanel(props) {
-  const { useCallback, useEffect, useState } = React
+  const { useCallback, useEffect, useMemo, useState } = React
   const sessionId = props.sessionId || ''
   const compact = props.variant === 'context'
   const sessionQuery = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''
   const [status, setStatus] = useState(null)
+  const [draft, setDraft] = useState(null)
+  const [dirty, setDirty] = useState(false)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
   const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
     try {
       const body = await getJson(`/api/sandbox/status${sessionQuery}`)
       setStatus(body.status)
       setError(null)
+      if (!dirty && body.status.settings) setDraft(body.status.settings)
     } catch (err) {
       setError(err.message)
     }
-  }, [sessionQuery])
+  }, [sessionQuery, dirty])
 
   useEffect(() => {
     load()
@@ -183,24 +228,40 @@ function SandboxPanel(props) {
     return () => clearInterval(timer)
   }, [load])
 
-  const setMode = useCallback(async (mode) => {
-    if (!sessionId) return
-    try {
-      await patchJson(`/api/sandbox/session${sessionQuery}`, { mode })
-      await load()
-    } catch (err) {
-      setError(err.message)
-    }
-  }, [load, sessionId, sessionQuery])
+  const update = useCallback((patch) => {
+    setDraft((current) => {
+      if (!current) return current
+      const next = { ...current, ...patch }
+      if (patch.network) next.network = { ...current.network, ...patch.network }
+      if (patch.filesystem) next.filesystem = { ...current.filesystem, ...patch.filesystem }
+      return next
+    })
+    setDirty(true)
+    setNotice(null)
+  }, [])
 
-  const revoke = useCallback(async () => {
+  const save = useCallback(async () => {
+    if (!draft) return
+    setBusy(true)
+    setError(null)
+    setNotice(null)
     try {
-      await fetch('/api/sandbox/grants', { method: 'DELETE' })
+      await patchJson('/api/sandbox/config', {
+        autoAllowBashIfSandboxed: draft.autoAllowBashIfSandboxed,
+        allowUnsandboxedCommands: draft.allowUnsandboxedCommands,
+        excludedCommands: draft.excludedCommands,
+        network: draft.network,
+        filesystem: draft.filesystem,
+      })
+      setDirty(false)
+      setNotice('已保存，下一次命令生效')
       await load()
     } catch (err) {
       setError(err.message)
+    } finally {
+      setBusy(false)
     }
-  }, [load])
+  }, [draft, load])
 
   const applySandbox = useCallback(async (next) => {
     setConfirming(false)
@@ -212,10 +273,6 @@ function SandboxPanel(props) {
     }
   }, [load])
 
-  /**
-   * Turning the sandbox off is the one destructive switch here, so it asks
-   * inline: a native dialog cannot show the app's theme and blocks the page.
-   */
   const toggleSandbox = useCallback(() => {
     if (!status) return
     if (status.enabled === false) {
@@ -229,6 +286,9 @@ function SandboxPanel(props) {
   const active = Boolean(status && status.active)
   const recent = status ? (compact ? status.denials.recent.slice(0, 3) : status.denials.recent) : []
   const guardLimit = compact ? 6 : undefined
+  const proxy = status ? status.proxy : null
+  const networkMode = status ? status.policy.network.mode : 'deny'
+  const changed = useMemo(() => dirty, [dirty])
 
   return (
     <div className="sandbox-card">
@@ -240,22 +300,12 @@ function SandboxPanel(props) {
             {compact
               ? null
               : (
-                <div className="sandbox-switch">
-                  <div className="sandbox-switch-copy">
-                    <strong>沙箱保护</strong>
-                    <p>用 macOS Seatbelt 限制命令的文件与网络访问。关闭后命令直连执行，审批仍然生效。</p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={enabled}
-                    aria-label={enabled ? '关闭沙箱' : '启用沙箱'}
-                    className={`sandbox-toggle${enabled ? ' on' : ''}`}
-                    onClick={toggleSandbox}
-                  >
-                    <span />
-                  </button>
-                </div>
+                <Toggle
+                  label="沙箱保护"
+                  description="命令在 macOS Seatbelt 中执行：写入限定在工作区，网络走下方域名白名单。"
+                  checked={enabled}
+                  onChange={() => toggleSandbox()}
+                />
               )}
 
             <div className="sandbox-card-head">
@@ -272,18 +322,14 @@ function SandboxPanel(props) {
             {confirming
               ? (
                 <div className="sandbox-confirm" role="alertdialog" aria-label="关闭沙箱">
-                  <p>关闭后命令不再受 macOS Seatbelt 限制，只受审批规则约束。</p>
+                  <p>关闭后命令不再受 Seatbelt 限制，只受审批规则约束。</p>
                   <button type="button" onClick={() => setConfirming(false)}>取消</button>
                   <button type="button" className="danger" onClick={() => void applySandbox(false)}>关闭沙箱</button>
                 </div>
               )
               : null}
             {!enabled && !confirming
-              ? (
-                <p className="sandbox-warn">
-                  沙箱已关闭：命令不受 Seatbelt 限制，只受审批规则与危险命令保护约束。
-                </p>
-              )
+              ? <p className="sandbox-warn">沙箱已关闭：命令直连执行，只受审批规则与危险命令保护约束。</p>
               : null}
             {enabled && !active
               ? (
@@ -293,39 +339,85 @@ function SandboxPanel(props) {
               )
               : null}
 
-            {enabled
+            {enabled && draft
               ? (
                 <>
                   <p className="sandbox-line">
                     <span className="sandbox-mono">profile {shortDigest(status.provider?.profileDigest)}</span>
-                    <span>网络 {status.policy.network.mode}</span>
-                  </p>
-
-                  <h4>本会话升级策略</h4>
-                  <p className="sandbox-line">
-                    <button
-                      type="button"
-                      className={status.escalation.mode === 'auto' ? 'sandbox-btn sandbox-btn-on' : 'sandbox-btn'}
-                      disabled={!sessionId}
-                      onClick={() => setMode('auto')}
-                    >升级审批</button>
-                    <button
-                      type="button"
-                      className={status.escalation.mode === 'never' ? 'sandbox-btn sandbox-btn-warn' : 'sandbox-btn'}
-                      disabled={!sessionId}
-                      onClick={() => setMode('never')}
-                    >只报告</button>
-                    <span className="sandbox-hint">
-                      {sessionId ? '仅本会话，不写设置' : '打开一个会话后可按会话切换'}
+                    <span>
+                      网络 {networkMode === 'proxy'
+                        ? `代理 · ${proxy ? `${proxy.domains} 域名` : '未挂载'}`
+                        : networkMode === 'allowlist' ? '端口白名单' : '仅本地回环'}
                     </span>
+                    {proxy && proxy.active ? <span className="sandbox-hint">端口 {proxy.port}</span> : null}
+                    {proxy && proxy.upstream ? <span className="sandbox-hint">上游 {proxy.upstream}</span> : null}
                   </p>
 
-                  {status.escalation.sessionGrants.length
+                  {!compact
                     ? (
-                      <p className="sandbox-line">
-                        已授权 {status.escalation.sessionGrants.length} 项
-                        <button type="button" className="sandbox-link" onClick={revoke}>全部撤销</button>
-                      </p>
+                      <>
+                        <Toggle
+                          label="沙箱内命令免审批"
+                          description="命令留在沙箱边界内时直接执行；只有越过边界的命令才询问。危险命令规则仍然生效。"
+                          checked={draft.autoAllowBashIfSandboxed !== false}
+                          onChange={value => update({ autoAllowBashIfSandboxed: value })}
+                        />
+                        <Toggle
+                          label="允许不经沙箱重试"
+                          description="被沙箱拦截时，模型可以在你批准后用 dangerouslyDisableSandbox 重跑一次。"
+                          checked={draft.allowUnsandboxedCommands !== false}
+                          onChange={value => update({ allowUnsandboxedCommands: value })}
+                        />
+                        <Toggle
+                          label="本地开发服务器"
+                          description="允许命令监听和连接 localhost，vite/vitest/回调服务需要。"
+                          checked={draft.network.allowLocalBinding !== false}
+                          onChange={value => update({ network: { allowLocalBinding: value } })}
+                        />
+
+                        <label className="sandbox-field">
+                          <span>允许的域名（每行一个，支持 *.example.com 和 host:port）</span>
+                          <textarea
+                            value={draft.network.allowedDomains.join('\n')}
+                            spellCheck={false}
+                            onChange={event => update({ network: { allowedDomains: linesOf(event.target.value) } })}
+                          />
+                          <small>沙箱内只有这些域名（经由本机代理）和本地回环可达；留空表示完全断网。</small>
+                        </label>
+
+                        <label className="sandbox-field">
+                          <span>排除的命令（每行一个，始终不经沙箱）</span>
+                          <textarea
+                            value={draft.excludedCommands.join('\n')}
+                            spellCheck={false}
+                            onChange={event => update({ excludedCommands: linesOf(event.target.value) })}
+                          />
+                          <small>容器守护进程等无法在沙箱内工作的命令；它们仍然需要审批。</small>
+                        </label>
+
+                        <label className="sandbox-field">
+                          <span>额外可写目录（每行一个，支持 ~）</span>
+                          <textarea
+                            value={draft.filesystem.allowWrite.join('\n')}
+                            spellCheck={false}
+                            onChange={event => update({ filesystem: { allowWrite: linesOf(event.target.value) } })}
+                          />
+                          <small>默认只有工作区和临时目录可写。</small>
+                        </label>
+
+                        <div className="sandbox-actions">
+                          <button
+                            type="button"
+                            className="sandbox-btn sandbox-btn-primary"
+                            disabled={!changed || busy}
+                            onClick={() => void save()}
+                          >
+                            {busy ? '保存中…' : '保存策略'}
+                          </button>
+                          {notice ? <span className="sandbox-hint">{notice}</span> : null}
+                          {dirty ? <span className="sandbox-hint">有未保存的修改</span> : null}
+                        </div>
+                      </>
                     )
                     : null}
 

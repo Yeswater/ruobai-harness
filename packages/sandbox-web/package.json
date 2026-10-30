@@ -15,6 +15,7 @@
     "@ruobai/sandbox-denial": "workspace:*",
     "@ruobai/sandbox-escalation": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/sandbox-proxy": "workspace:*",
     "@ruobai/settings": "workspace:*",
     "@ruobai/shell": "workspace:*",
     "@ruobai/web-server": "workspace:*"

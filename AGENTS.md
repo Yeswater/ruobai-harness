@@ -61,14 +61,16 @@ cordis.yml     插件的组合方式（唯一应用定义）
 
 ## 5. 沙箱与审批
 
-- 沙箱与审批是两条正交防线：沙箱插件不 `inject` 审批，审批也不 `inject` 沙箱；中间用 `denial` / `escalation` 解耦。
+- 沙箱与审批是两条正交防线：沙箱插件不 `inject` 审批，审批也不 `inject` 沙箱。二者通过**"边界即授权"**衔接：预计留在沙箱内的 bash 免审批（`sandbox.autoAllowBashIfSandboxed`），越过边界才审批。
 - **fail-closed**：provider 不可用、profile 编译失败、审批超时都必须拒绝，不允许"静默放行"。
-- 审批只在**硬边界实际触发**时介入；成功命令里的启动探测属于噪音，必须在分类层过滤。
-- 豁免必须与拒绝同粒度（`write-file` 单文件，不是 `dirname`）；网络、进程控制、mach、AppleEvent 永不放宽。
-- 修改 macOS 沙箱前先读 `docs/sandbox-macos.md` 与附录 F；**任何"Seatbelt 支持 X"的判断都要在本机实测**，语法有效 ≠ 能应用 ≠ 会匹配。
+- 审批只在**越过沙箱边界**时介入；成功命令里的启动探测属于噪音，必须在分类层过滤。内置危险命令与显式 ask/deny 规则始终优先于免审批。
+- 越过沙箱只有两条路：模型显式请求 `dangerouslyDisableSandbox`（需审批），或命令命中 `sandbox.excludedCommands`（直连但仍审批）。不再做路径级 escalation。
+- 网络出口只有一个：本机 `@ruobai/sandbox-proxy`。Seatbelt 只放行代理端口（必须是 `localhost:<port>`，数值 IP 会让 profile 整体失效）；域名白名单存在 `settings.sandbox.network.allowedDomains`，不要往 SBPL 里塞域名。
+- 策略来自 `settings.sandbox`（域名、排除命令、额外可写目录、三个开关），热更新靠 `settings/updated` bump policy version；不要把这些写死进 cordis.yml。
+- 修改 macOS 沙箱前先读 `docs/sandbox.md`、`docs/sandbox-macos.md` 与附录 F；**任何"Seatbelt 支持 X"的判断都要在本机实测**，语法有效 ≠ 能应用 ≠ 会匹配。
 - 保留 `shell-direct` 作为逃生舱；沙箱出问题时它必须还能跑（`cordis.yml` 一行切换）。
-- harness 自己的检查（lint/typecheck）走 `shell-direct` 注册的非默认 `direct` 执行器，不经过 agent 沙箱；agent 的 bash 仍走默认沙箱执行器，工具层不得选择执行器。
-- 热卸载：先摘 provider 表，再 abort 全部 run，最后 `destroyAll()`；不得留下孤儿 `sandbox-exec` / `log stream`。
+- harness 自己的检查（lint/typecheck）走 `shell-direct` 注册的非默认 `direct` 执行器，不经过 agent 沙箱；agent 的 bash 仍走默认沙箱执行器。工具层只能表达"是否请求越过沙箱"（`ShellRunSpec.sandbox`），由 shell 层决定用哪个执行器，不能直接点名 executor。
+- 热卸载：先摘 provider 表，再 abort 全部 run，最后 `destroyAll()`；不得留下孤儿 `sandbox-exec` / `log stream` / 代理端口。
 
 ## 6. Web 与客户端
 

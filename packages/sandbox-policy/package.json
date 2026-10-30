@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@ruobai/cordis": "workspace:*",
-    "@ruobai/sandbox": "workspace:*"
+    "@ruobai/sandbox": "workspace:*",
+    "@ruobai/settings": "workspace:*"
   }
 }

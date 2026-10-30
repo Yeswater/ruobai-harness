@@ -59,6 +59,8 @@ export interface SandboxPolicy {
   net: {
     mode: NetMode
     allow: readonly NetRule[]
+    /** Permit listening on and connecting to localhost (dev servers, tests). */
+    allowLocalBinding?: boolean
   }
   exec: {
     allowPaths: readonly string[]
@@ -66,6 +68,86 @@ export interface SandboxPolicy {
   limits: SandboxLimits
   /** Platform escape hatch. Only the matching provider reads it. */
   platform?: Readonly<Record<string, unknown>>
+}
+
+/**
+ * Registries and code hosts a normal build needs. Used only as the default for
+ * `sandbox.network.allowedDomains`; the user owns the list afterwards.
+ */
+export const DEFAULT_ALLOWED_DOMAINS: readonly string[] = [
+  'registry.npmjs.org',
+  'registry.npmmirror.com',
+  'registry.yarnpkg.com',
+  'pypi.org',
+  'files.pythonhosted.org',
+  'github.com',
+  'api.github.com',
+  'raw.githubusercontent.com',
+  'objects.githubusercontent.com',
+  'codeload.github.com',
+  'proxy.golang.org',
+  'sum.golang.org',
+  'storage.googleapis.com',
+  'index.crates.io',
+  'static.crates.io',
+  'crates.io',
+  'rubygems.org',
+  'jsr.io',
+  'bun.sh',
+]
+
+/**
+ * Commands that usually cannot work inside Seatbelt (container daemons spawn
+ * helper processes and talk to host sockets). They run unsandboxed, which means
+ * they still need an approval.
+ */
+export const DEFAULT_EXCLUDED_COMMANDS: readonly string[] = ['docker', 'podman']
+
+/** Leading `FOO=bar` assignments do not change which program runs. */
+function stripAssignments(command: string): string {
+  let text = command.trim()
+  for (;;) {
+    const match = /^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)\s+/.exec(text)
+    if (!match) return text
+    text = text.slice(match[0].length)
+  }
+}
+
+/**
+ * Program a command will exec, as a basename.
+ *
+ * Conservative: wrappers (`env`, `command`, `exec`, `nohup`, `timeout`) are
+ * unwrapped so `env X=1 docker ps` still matches `docker`. Shell syntax that
+ * hides the program (`sh -c '...'`) intentionally resolves to the shell, not to
+ * whatever the string contains.
+ */
+export function commandExecutable(command: string): string {
+  let text = stripAssignments(command)
+  for (let depth = 0; depth < 4; depth++) {
+    const match = /^(\/[\w./-]*\/)?(env|command|exec|nohup|timeout)\s+/.exec(text)
+    if (!match) break
+    text = stripAssignments(text.slice(match[0].length))
+    // `timeout 30 cmd` / `timeout -s KILL 30 cmd` skip their own arguments.
+    if (match[2] === 'timeout') {
+      text = text.replace(/^(?:-\S+\s+)*\d+(?:\.\d+)?[smhd]?\s+/, '')
+    }
+  }
+  const token = /^("[^"]*"|'[^']*'|\S+)/.exec(text)?.[1] ?? ''
+  const unquoted = token.replace(/^['"]|['"]$/g, '')
+  return unquoted.split(/[\\/]/).pop() ?? ''
+}
+
+/** Whether this command must run outside the sandbox. */
+export function isExcludedCommand(command: string, excluded: readonly string[]): boolean {
+  if (!excluded.length) return false
+  const executable = commandExecutable(command).toLowerCase()
+  const normalized = stripAssignments(command).trim().toLowerCase()
+  return excluded.some((entry) => {
+    const rule = entry.trim().toLowerCase()
+    if (!rule) return false
+    if (rule.includes(' ')) return normalized === rule || normalized.startsWith(`${rule} `)
+    return executable === rule || executable === rule.split(/[\\/]/).pop()
+  })
 }
 
 /**

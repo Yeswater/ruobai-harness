@@ -72,9 +72,29 @@ export interface NetworkSettings {
   noProxy?: string
 }
 
+export interface SandboxNetworkSettings {
+  /** Hosts a sandboxed command may reach through the local proxy. */
+  allowedDomains?: string[]
+  /** Permit localhost listening and connections (dev servers, tests). */
+  allowLocalBinding?: boolean
+}
+
+export interface SandboxFilesystemSettings {
+  /** Extra writable roots outside the workspace (`~` expands). */
+  allowWrite?: string[]
+}
+
 export interface SandboxSettings {
   /** Seatbelt confinement for agent commands. Off keeps approvals, drops the OS boundary. */
   enabled?: boolean
+  /** Bash commands that run inside the sandbox skip the approval prompt. */
+  autoAllowBashIfSandboxed?: boolean
+  /** Let a command retry outside the sandbox after the user approves it. */
+  allowUnsandboxedCommands?: boolean
+  /** Commands that always run outside the sandbox, with an approval. */
+  excludedCommands?: string[]
+  network?: SandboxNetworkSettings
+  filesystem?: SandboxFilesystemSettings
 }
 
 export interface WikiAutomationSettings {
@@ -477,7 +497,7 @@ export class SettingsService extends Service {
     if (this.data.ui) result.ui = { ...this.data.ui }
     if (this.data.network) result.network = { ...this.data.network }
     if (this.data.agent) result.agent = { ...this.data.agent }
-    if (this.data.sandbox) result.sandbox = { ...this.data.sandbox }
+    if (this.data.sandbox) result.sandbox = structuredClone(this.data.sandbox)
     if (this.data.wiki) result.wiki = { ...this.data.wiki }
     if (this.data.approval) {
       result.approval = {
@@ -565,6 +585,32 @@ export class SettingsService extends Service {
     if (patch.sandbox) {
       const sandbox = this.data.sandbox ??= {}
       if (patch.sandbox.enabled !== undefined) sandbox.enabled = Boolean(patch.sandbox.enabled)
+      if (patch.sandbox.autoAllowBashIfSandboxed !== undefined) {
+        sandbox.autoAllowBashIfSandboxed = Boolean(patch.sandbox.autoAllowBashIfSandboxed)
+      }
+      if (patch.sandbox.allowUnsandboxedCommands !== undefined) {
+        sandbox.allowUnsandboxedCommands = Boolean(patch.sandbox.allowUnsandboxedCommands)
+      }
+      if (patch.sandbox.excludedCommands !== undefined) {
+        sandbox.excludedCommands = normalizeStringList(patch.sandbox.excludedCommands)
+      }
+      if (patch.sandbox.network) {
+        const network = sandbox.network ??= {}
+        if (patch.sandbox.network.allowedDomains !== undefined) {
+          network.allowedDomains = normalizeStringList(patch.sandbox.network.allowedDomains)
+        }
+        if (patch.sandbox.network.allowLocalBinding !== undefined) {
+          network.allowLocalBinding = Boolean(patch.sandbox.network.allowLocalBinding)
+        }
+      }
+      if (patch.sandbox.filesystem) {
+        const filesystem = sandbox.filesystem ??= {}
+        if (patch.sandbox.filesystem.allowWrite !== undefined) {
+          filesystem.allowWrite = normalizeStringList(patch.sandbox.filesystem.allowWrite)
+            .filter(path => path.length <= 500)
+            .slice(0, 50)
+        }
+      }
     }
     if (patch.profiles !== undefined) {
       this.data.profiles = patch.profiles.map(profile => ({ ...profile }))

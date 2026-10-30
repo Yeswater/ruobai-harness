@@ -11,12 +11,12 @@
     "@ruobai/sandbox": "workspace:*",
     "@ruobai/sandbox-denial": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/sandbox-proxy": "workspace:*",
     "@ruobai/schemastery": "workspace:*",
     "@ruobai/settings": "workspace:*",
     "@ruobai/shell": "workspace:*"
   },
   "devDependencies": {
-    "@ruobai/approval": "workspace:*",
-    "@ruobai/sandbox-escalation": "workspace:*"
+    "@ruobai/approval": "workspace:*"
   }
 }

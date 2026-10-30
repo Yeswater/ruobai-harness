@@ -59,24 +59,14 @@
   name: '@ruobai/sandbox-policy'
   config:
     root: !!js "process.cwd()"
-    network:
-      # Network is off by default: the harness itself (LLM, MCP, A2A, web) does
-      # not go through the shell sandbox, so closing it costs no functionality.
-      #
-      # The only reason this is not `deny` right now is dependency installs:
-      # `pnpm install` fetches tarballs. macOS Seatbelt only accepts `*` or
-      # `localhost` as a network host — a domain or an address literal makes
-      # `sandbox-exec` reject the whole profile (exit 65), so per-host
-      # allowlisting is not expressible here (appendix A28). `*` scoped to 443
-      # is the narrowest grant that works. Set `mode: deny` once dependencies
-      # are installed.
-      mode: allowlist
-      allow:
-        - host: '*'
-          port: 443
     limits:
       timeoutMs: 120000
       maxOutputBytes: 32768
+
+# Domain-filtering egress proxy. A sandboxed command can only reach this
+# loopback port; the allowlist lives in 设置 → 沙箱 and is hot-reloaded.
+- id: sandbox-proxy
+  name: '@ruobai/sandbox-proxy'
 
 - id: sandbox-guards
   name: '@ruobai/sandbox-guards'
@@ -110,7 +100,7 @@
 - id: shell-sandboxed
   name: '@ruobai/shell-sandboxed'
   config:
-    escalate: auto
+    excludedCommands: []
 
 # Harness-owned checks (lint / typecheck) are fixed commands run by the
 # harness, not by the agent: they use this host executor so the agent's
@@ -122,7 +112,7 @@
     default: false
     shell: /bin/sh
 
-# Status panel: sandbox state, guard list, denial timeline, session switch.
+# Status panel: sandbox state, policy, guard list and denial timeline.
 # Served over HTTP by the harness process (never a file the agent can write).
 - id: sandbox-web
   name: '@ruobai/sandbox-web'
@@ -234,15 +224,6 @@
   name: '@ruobai/approval-deadline'
   config:
     timeoutMs: 180000
-
-# Turns sandbox denials into approvals. One-way dependency on approval, so the
-# sandbox core never appears in the approval plugin's graph.
-- id: sandbox-escalation
-  name: '@ruobai/sandbox-escalation'
-  config:
-    relaxable: [fs-read-guarded, fs-write-guarded, fs-write-outside]
-    neverRelaxable: [network-outbound, process-control, mach-lookup, appleevent]
-    retrySafeCommands: [cat, ls, head, tail, wc, grep, git, node]
 
 # Per-session permission presets enforced by the agent, tools and approvals.
 - id: permissions

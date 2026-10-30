@@ -1,8 +1,10 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize as normalizePath, resolve, sep } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
+import type {} from '@ruobai/settings'
 import {
+  DEFAULT_ALLOWED_DOMAINS,
   PathGuardError,
   TOOLCHAIN_READ,
   type GuardAccess,
@@ -37,6 +39,24 @@ export interface Config {
 
 export interface PolicyRequest {
   sessionId?: string
+  /** Loopback port of the egress proxy; enables proxy mode when set. */
+  proxyPort?: number
+}
+
+interface SandboxSettingsShape {
+  network?: {
+    allowedDomains?: string[]
+    allowLocalBinding?: boolean
+  }
+  filesystem?: {
+    allowWrite?: string[]
+  }
+}
+
+function expandHome(path: string): string {
+  if (path === '~') return homedir()
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2))
+  return path
 }
 
 /** Quote-free glob → RegExp: `*` stops at `/`, `**` crosses directories. */
@@ -179,9 +199,19 @@ export class SandboxPolicyService extends Service {
       extraWrite: config.extraWrite ?? [],
       allowFullAccessWrite: config.allowFullAccessWrite ?? false,
     }
-    ctx.effect(() => () => {
-      this.guards.clear()
-      this.version++
+    ctx.effect(() => {
+      // Settings carry the user-facing policy (domains, extra writes). Their
+      // updates must invalidate compiled profiles, or a new allowlist would
+      // only take effect after a restart.
+      const off = ctx.on('settings/updated', () => {
+        this.version++
+        this.ctx.emit('sandbox/policy-changed', this.version, 'settings')
+      })
+      return () => {
+        off()
+        this.guards.clear()
+        this.version++
+      }
     }, 'sandbox-policy.dispose')
   }
 
@@ -255,10 +285,19 @@ export class SandboxPolicyService extends Service {
     const mode = this.permissionMode(request.sessionId)
     const root = this.root
     const home = process.env.HOME ?? ''
+    const settings = this.ctx.get('settings', false) as
+      | { get?(): { sandbox?: SandboxSettingsShape } }
+      | undefined
+    const configured = settings?.get?.()
+    const sandbox = configured?.sandbox
     const writeGrants: PathGrant[] = [{ path: root, recursive: true }]
     const tempRoot = this.config.tempRoot ?? tmpdir()
     if (tempRoot) writeGrants.push({ path: tempRoot, recursive: true })
     for (const extra of this.config.extraWrite) writeGrants.push({ path: resolve(extra), recursive: true })
+    for (const extra of sandbox?.filesystem?.allowWrite ?? []) {
+      const path = resolve(expandHome(extra))
+      if (!writeGrants.some(grant => grant.path === path)) writeGrants.push({ path, recursive: true })
+    }
     if (mode === 'full-access' && this.config.allowFullAccessWrite && home) {
       writeGrants.push({ path: home, recursive: true })
     }
@@ -298,13 +337,37 @@ export class SandboxPolicyService extends Service {
         guardRead: guards.filter(guard => guard.access === 'read'),
         guardWrite: guards.filter(guard => guard.access === 'write'),
       }),
-      net: this.network,
+      net: this.networkPolicy(request.proxyPort, sandbox, Boolean(configured)),
       exec: { allowPaths: this.config.exec?.allowPaths ?? [] },
       limits: {
         timeoutMs: this.config.limits?.timeoutMs ?? 120_000,
         maxOutputBytes: this.config.limits?.maxOutputBytes ?? 32_768,
       },
     }) as SandboxPolicy
+  }
+
+  /**
+   * Network intent for one run.
+   *
+   * With settings loaded the user-owned domain list is authoritative: every
+   * allowed host goes through the loopback proxy, and the kernel only permits
+   * the proxy port. Without a settings service (tests, headless embeds) the
+   * static cordis config still applies.
+   */
+  private networkPolicy(
+    proxyPort: number | undefined,
+    sandbox: SandboxSettingsShape | undefined,
+    settingsAvailable: boolean,
+  ): SandboxPolicy['net'] {
+    if (!settingsAvailable) return { ...this.network, allowLocalBinding: false }
+    const domains = sandbox?.network?.allowedDomains ?? [...DEFAULT_ALLOWED_DOMAINS]
+    const allowLocalBinding = sandbox?.network?.allowLocalBinding !== false
+    if (proxyPort && domains.length) {
+      return { mode: 'proxy', allow: [], allowLocalBinding }
+    }
+    // No proxy or an empty list: no egress. Localhost may still be used when
+    // explicitly allowed, which is what dev servers and test runners need.
+    return { mode: 'deny', allow: [], allowLocalBinding }
   }
 
   private permissionMode(sessionId?: string): string {

@@ -247,7 +247,9 @@ export function compileProfile(
   } else if (policy.net.mode === 'proxy') {
     const port = policy.platform?.proxyPort
     if (typeof port === 'number') {
-      lines.push(`(deny network*)`, `(allow network-outbound (remote ip ${quote(`127.0.0.1:${port}`)}))`)
+      // Seatbelt only accepts `*` or `localhost` here (A28); a numeric address
+      // makes sandbox-exec reject the whole profile.
+      lines.push('(deny network*)', `(allow network-outbound (remote tcp ${quote(`localhost:${port}`)}))`)
     } else {
       warnings.push('proxy mode without platform.proxyPort; falling back to deny')
       lines.push('(deny network*)')
@@ -277,6 +279,17 @@ export function compileProfile(
     } else {
       lines.push('(deny network*)')
     }
+  }
+
+  // Dev servers and test runners bind localhost; without this the sandbox
+  // breaks `vite`, `vitest` and any callback server. Both bind and inbound are
+  // required for another process to connect to the listener.
+  if (policy.net.allowLocalBinding) {
+    lines.push(
+      `(allow network-outbound (remote tcp ${quote('localhost:*')}))`,
+      `(allow network-bind (local ip ${quote('localhost:*')}))`,
+      `(allow network-inbound (local ip ${quote('localhost:*')}))`,
+    )
   }
 
   lines.push('', ';; control plane')
