@@ -111,6 +111,8 @@
 
 用户级 `agent.compactPercent` / `agent.compactAt` 仍可覆盖阈值。
 
+会话的上下文窗口先按 `session.meta.provider + model` 查找；供应商被改名或替换后（例如旧会话仍写着 `openai`，实际已是 `deepseek`），按模型 id 在所有已配置供应商里再匹配一次。只有完全找不到时才回落到 `compactAt`，避免出现「模型是 1M，界面却按 48k 显示 100%」。
+
 ## 5. 已实现与后续
 
 本轮已补上此前的四项遗留：

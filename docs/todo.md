@@ -43,7 +43,7 @@ todo/updated { items, rev }
 - `GET /api/todo?sessionId=…` 返回快照；
 - 收到 `todo/updated` 时通过 `ctx.ui.broadcast('todo', …)` 推送。
 
-`ui-server.broadcast` 现在同时发出 `ui/broadcast` 事件，`web-ws` 把它转成 `{ type: 'todo', data }`，因此面板在 WebSocket 与 SSE 两条通道上都能实时更新。没有清单时不渲染任何东西，单步会话的输入区不变。
+`ui-server.broadcast` 现在同时发出 `ui/broadcast` 事件，`web-ws` 把它转成 `{ type: 'todo', data }`，因此面板在 WebSocket 与 SSE 两条通道上都能实时更新。没有清单时不渲染任何东西；回合结束后（`session.streaming === false`）也不再渲染，避免已完成的任务清单一直占着输入区。
 
 ## 为什么不做任务依赖图
 

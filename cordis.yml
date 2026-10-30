@@ -1,16 +1,14 @@
 # The harness is this file: every row is a plugin mounted on one Context.
 # Order does not matter — `inject` decides when a plugin activates.
 
-# Model access. `mock` works offline; providers are registered dynamically from
-# settings by llm-catalog (DeepSeek ships as the seeded provider).
+# Model access. Providers are registered dynamically from settings by
+# llm-catalog (the seeded DeepSeek entry); the mock adapter is test-only and
+# deliberately absent from the app composition.
 - id: llm
   name: '@ruobai/llm'
   config:
-    provider: mock
-    model: mock-1
-
-- id: llm-mock
-  name: '@ruobai/llm-mock'
+    provider: deepseek
+    model: deepseek-chat
 
 - id: llm-catalog
   name: '@ruobai/llm-catalog'

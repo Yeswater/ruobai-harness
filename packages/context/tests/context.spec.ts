@@ -4,11 +4,34 @@ import LlmService from '@ruobai/llm'
 import SessionService from '@ruobai/session'
 import ToolRegistry from '@ruobai/tools'
 import ContextService from '../src/index.ts'
+import { createHarness, type Harness } from '../../../tests/harness.ts'
 
 const cleanups: Array<() => Promise<void>> = []
 
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()!()
+})
+
+describe('context window resolution', () => {
+  it('finds the model window by id when the session pinned a retired provider', async () => {
+    const harness: Harness = await createHarness()
+    cleanups.push(() => harness.dispose())
+    const ctx = harness.ctx
+
+    await ctx.settings.upsertProvider({
+      name: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/v1',
+      models: [{ id: 'deepseek-flash', contextWindow: 1_000_000, maxOutputTokens: 256_000 }],
+    })
+
+    // The session still names a provider that no longer exists; only the model
+    // id ties it to the configured window.
+    const meta = ctx.sessions.create({ provider: 'retired-provider', model: 'deepseek-flash' })
+    const info = await ctx.context.info(meta.id)
+
+    expect(info.contextWindow).toBe(1_000_000)
+    expect(info.compactAt).toBe(800_000)
+  })
 })
 
 describe('context service', () => {

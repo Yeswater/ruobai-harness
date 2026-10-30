@@ -518,7 +518,7 @@ export class SettingsService extends Service {
     activeProfile?: string
   }): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
-    if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || 'mock'
+    if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || undefined
     if (patch.llm?.activeModel !== undefined) llm.activeModel = patch.llm.activeModel || undefined
     if (patch.ui) this.data.ui = { ...this.data.ui, ...patch.ui }
     if (patch.agent) {
@@ -606,7 +606,7 @@ export class SettingsService extends Service {
     llm.providers = (llm.providers ?? []).filter(entry => entry.id !== id)
     if (llm.activeProvider === id) {
       const next = llm.providers[0]
-      llm.activeProvider = next?.id ?? 'mock'
+      llm.activeProvider = next?.id
       llm.activeModel = next?.models[0]?.id
     }
     // A leftover key in the keychain is harmless; a failed deletion must not
@@ -622,11 +622,6 @@ export class SettingsService extends Service {
 
   async activate(providerId: string, model?: string): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
-    if (providerId === 'mock') {
-      llm.activeProvider = 'mock'
-      llm.activeModel = model || 'mock-1'
-      return this.commit()
-    }
 
     const entry = this.findProvider(providerId)
     if (!entry) throw new SettingsError(404, `unknown provider: ${providerId}`)
@@ -929,8 +924,8 @@ export class SettingsService extends Service {
             { id: 'deepseek-reasoner', inputTypes: ['text'] },
           ],
         }]
-        llm.activeProvider = process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'mock'
-        llm.activeModel = process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : undefined
+        llm.activeProvider = 'deepseek'
+        llm.activeModel = 'deepseek-chat'
       }
       changed = true
     }
@@ -941,8 +936,16 @@ export class SettingsService extends Service {
         changed = true
       }
     }
-    if (!llm.activeProvider) {
-      llm.activeProvider = 'mock'
+    // Mock is test-only; settings saved by older builds may still point at it.
+    const firstProvider = llm.providers?.[0]
+    if (llm.activeProvider === 'mock') {
+      llm.activeProvider = firstProvider?.id
+      llm.activeModel = firstProvider?.models[0]?.id
+      changed = true
+    }
+    if (!llm.activeProvider && firstProvider) {
+      llm.activeProvider = firstProvider.id
+      llm.activeModel ??= firstProvider.models[0]?.id
       changed = true
     }
 

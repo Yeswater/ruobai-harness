@@ -170,10 +170,10 @@ export function SettingsDialog({
     .map(group => ({ ...group, items: group.items.filter(item => matchesItem(item, term)) }))
     .filter(group => group.items.length)
   const providers = settings?.llm?.providers ?? []
-  const activeProvider = settings?.llm?.activeProvider ?? 'mock'
-  const activeModel = settings?.llm?.activeModel ?? ''
-  const activeProviderName = providers.find(provider => provider.id === activeProvider)?.name
-    ?? (activeProvider === 'mock' ? 'Mock（离线）' : activeProvider)
+  const activeProvider = settings?.llm?.activeProvider ?? ''
+  const activeEntry = providers.find(provider => provider.id === activeProvider)
+  const activeModel = activeEntry ? settings?.llm?.activeModel ?? '' : ''
+  const activeProviderName = activeEntry?.name ?? '未配置模型'
 
   const handleSettingsChange = (next: PublicSettings) => {
     setSettings(next)

@@ -1016,7 +1016,15 @@ export class ContextService extends Service {
   private modelInfo(record: SessionRecord) {
     const settings = this.ctx.get('settings', false) as
       | {
-        raw?(): { llm?: { activeProvider?: string; activeModel?: string } }
+        raw?(): {
+          llm?: {
+            activeProvider?: string
+            activeModel?: string
+            providers?: Array<{
+              models: Array<{ id: string; contextWindow?: number; maxOutputTokens?: number }>
+            }>
+          }
+        }
         findProvider?(id: string): {
           models: Array<{ id: string; contextWindow?: number; maxOutputTokens?: number }>
         } | undefined
@@ -1025,9 +1033,19 @@ export class ContextService extends Service {
     const config = settings?.raw?.()
     const providerId = record.meta.provider ?? config?.llm?.activeProvider
     const modelId = record.meta.model ?? config?.llm?.activeModel
-    return providerId
-      ? settings?.findProvider?.(providerId)?.models.find(item => item.id === modelId)
-      : undefined
+    const direct = providerId ? settings?.findProvider?.(providerId) : undefined
+    if (modelId) {
+      const exact = direct?.models.find(item => item.id === modelId)
+      if (exact) return exact
+      // The provider may have been renamed or replaced since this session was
+      // created; the model id still identifies the window the user is billed on.
+      for (const provider of config?.llm?.providers ?? []) {
+        const hit = provider.models.find(item => item.id === modelId)
+        if (hit) return hit
+      }
+      return undefined
+    }
+    return direct?.models[0]
   }
 
   private instructionRoot(sessionId: string) {

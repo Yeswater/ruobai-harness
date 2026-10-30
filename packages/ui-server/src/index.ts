@@ -194,7 +194,9 @@ export class UiApi extends Service {
       )
       // Prefer the provider's display name and its full configured model list
       // over the adapter's single default model.
-      const providers = this.ctx.llm.list().map((provider) => {
+      const providers = this.ctx.llm.list()
+        .filter(provider => provider.name !== 'mock')
+        .map((provider) => {
         const entry = configured.get(provider.name)
         if (!entry) {
           return {

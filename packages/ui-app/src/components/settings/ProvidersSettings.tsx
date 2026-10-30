@@ -53,7 +53,7 @@ function draftOf(provider?: PublicProvider | null): Draft {
 export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSettingsProps) {
   const confirm = useConfirm()
   const providers = settings?.llm?.providers ?? []
-  const activeProvider = settings?.llm?.activeProvider ?? 'mock'
+  const activeProvider = settings?.llm?.activeProvider ?? ''
   const activeModel = settings?.llm?.activeModel ?? ''
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -257,6 +257,10 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
     setError(null)
     setNotice(null)
     try {
+      const name = draft.name.trim()
+      const baseUrl = draft.baseUrl.trim()
+      if (!name) throw new Error('请填写供应商名称')
+      if (!baseUrl) throw new Error('请填写请求地址')
       const seen = new Set<string>()
       const models: ProviderModel[] = []
       for (const model of draft.models) {
@@ -266,8 +270,10 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
         seen.add(id)
         const next: ProviderModel = { id }
         if (model.name?.trim()) next.name = model.name.trim()
-        if (model.contextWindow && model.contextWindow > 0) next.contextWindow = Math.floor(model.contextWindow)
-        if (model.maxOutputTokens && model.maxOutputTokens > 0) next.maxOutputTokens = Math.floor(model.maxOutputTokens)
+        const contextWindow = Number(model.contextWindow)
+        if (Number.isFinite(contextWindow) && contextWindow > 0) next.contextWindow = Math.floor(contextWindow)
+        const maxOutputTokens = Number(model.maxOutputTokens)
+        if (Number.isFinite(maxOutputTokens) && maxOutputTokens > 0) next.maxOutputTokens = Math.floor(maxOutputTokens)
         next.inputTypes = model.inputTypes?.length ? model.inputTypes : ['text']
         models.push(next)
       }
@@ -275,10 +281,10 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
         setDefaultModel(models[0]?.id ?? '')
       }
       const input: ProviderInput = {
-        name: draft.name.trim(),
+        name,
         note: draft.note.trim() || undefined,
         website: draft.website.trim() || undefined,
-        baseUrl: draft.baseUrl.trim(),
+        baseUrl,
         mode: draft.mode,
         models,
         ...(draft.preset ? { preset: draft.preset } : {}),
@@ -613,16 +619,20 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
                 </p>
               </div>
 
-              {error ? <div className="detail-note error">{error}</div> : null}
-              {notice ? <div className="detail-note">{notice}</div> : null}
-
               <div className="provider-actions">
                 {draft.id ? (
-                  <button className="btn ghost danger" onClick={remove} disabled={busy !== null}>删除</button>
+                  <button type="button" className="btn ghost danger" onClick={remove} disabled={busy !== null}>删除</button>
                 ) : null}
-                <span className="spacer" />
+                <span
+                  className={`provider-action-status ${error ? 'error' : ''}`}
+                  role={error ? 'alert' : 'status'}
+                  title={error ?? notice ?? ''}
+                >
+                  {error ?? notice ?? ''}
+                </span>
                 {draft.id ? (
                   <button
+                    type="button"
                     className="btn ghost"
                     onClick={activate}
                     disabled={busy !== null || activeProvider === draft.id}
@@ -630,7 +640,7 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
                     {activeProvider === draft.id ? '当前供应商' : '设为当前'}
                   </button>
                 ) : null}
-                <button className="btn" onClick={save} disabled={busy !== null}>
+                <button type="button" className="btn" onClick={save} disabled={busy !== null}>
                   {busy === 'save' ? '保存中…' : '保存'}
                 </button>
               </div>

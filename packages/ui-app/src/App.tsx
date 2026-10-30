@@ -680,7 +680,9 @@ export function App() {
                 }}
               />
 
-              <TodoPanel todo={harness.todo} />
+              {/* The checklist belongs to a running turn; once it ends the
+                  finished list would just sit in the composer area. */}
+              {harness.session?.streaming ? <TodoPanel todo={harness.todo} /> : null}
 
               {harness.planProposal
                 ? (
