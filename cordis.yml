@@ -475,7 +475,7 @@
     path: .ruobai/settings.json
 
 # Outbound HTTP for model calls, balance, skillhub, wiki embeddings and A2A.
-# The proxy comes from Settings → 网络: application-level HTTP(S)_PROXY/NO_PROXY.
+# The proxy comes from Settings → 网络: off, macOS system proxy, or manual.
 - id: net
   name: '@ruobai/net'
 
