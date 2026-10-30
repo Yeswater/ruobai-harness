@@ -27,6 +27,8 @@ export interface DecisionPoint {
   tool: string
   /** How many times this tool ran in a row up to this step. */
   repeat: number
+  /** Tools reachable when the choice was made; 0 for pre-`agent/decision` logs. */
+  available: number
 }
 
 export interface Pattern {
@@ -98,19 +100,37 @@ function collectFailures(events: SessionEvent[]): FailureReport[] {
   return failures.slice(-40)
 }
 
-/** Tool calls in order; the assistant message carries the tool-call parts. */
+/**
+ * Tool calls in order.
+ *
+ * Prefers `agent/decision`, which carries the reachable tool set; falls back to
+ * the assistant message for sessions recorded before that event existed.
+ */
 function collectDecisions(events: SessionEvent[]): DecisionPoint[] {
   const decisions: DecisionPoint[] = []
   let repeat = 0
   let last = ''
+
+  const push = (tool: string, available: number) => {
+    repeat = tool === last ? repeat + 1 : 1
+    last = tool
+    decisions.push({ step: decisions.length + 1, tool, repeat, available })
+  }
+
   for (const event of events) {
+    if (event.type === 'agent/decision') {
+      const chosen = Array.isArray(event.data?.chosen) ? event.data.chosen as string[] : []
+      const available = Array.isArray(event.data?.available) ? event.data.available.length : 0
+      for (const tool of chosen) {
+        if (typeof tool === 'string' && tool) push(tool, available)
+      }
+      continue
+    }
     if (event.type !== 'message/assistant') continue
     const parts = Array.isArray(event.data?.parts) ? event.data.parts as Array<{ type?: string; name?: string }> : []
     for (const part of parts) {
       if (part?.type !== 'tool-call' || typeof part.name !== 'string') continue
-      repeat = part.name === last ? repeat + 1 : 1
-      last = part.name
-      decisions.push({ step: decisions.length + 1, tool: part.name, repeat })
+      push(part.name, 0)
     }
   }
   return decisions

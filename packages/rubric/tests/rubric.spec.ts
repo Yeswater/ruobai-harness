@@ -46,6 +46,21 @@ describe('rubric diagnosis', () => {
     expect(report.rules.find(rule => rule.id === 'turn-errors')!.evidence).toHaveLength(2)
   })
 
+  it('prefers agent/decision and keeps the reachable tool count', async () => {
+    const { ctx, sessionId } = await setup()
+    ctx.sessions.append(sessionId, 'agent/decision', {
+      chosen: ['read_file', 'edit_file'],
+      available: ['read_file', 'edit_file', 'bash', 'todo_write'],
+      at: 1,
+    })
+
+    const report = analyse(ctx, sessionId)
+    expect(report.decisions.map(decision => [decision.tool, decision.available])).toEqual([
+      ['read_file', 4],
+      ['edit_file', 4],
+    ])
+  })
+
   it('counts consecutive tool calls and flags a loop', async () => {
     const { ctx, sessionId } = await setup()
     for (let index = 0; index < 3; index += 1) {

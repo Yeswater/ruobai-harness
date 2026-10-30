@@ -420,6 +420,18 @@ export class AgentService extends Service {
           })
         }
 
+        if (calls.length) {
+          // Record the decision point, not just its outcome: the tools that
+          // were reachable and the ones the model picked. Without the
+          // available set a replay cannot tell a deliberate choice from the
+          // only option.
+          this.ctx.sessions.append(sessionId, 'agent/decision', {
+            chosen: calls.map(call => call.name),
+            available: this.ctx.tools.list().map(tool => tool.name).slice(0, 200),
+            at: completedTime,
+          })
+        }
+
         if (!calls.length) {
           // Autonomous modes keep pushing until a completion tool fires.
           if (mode?.autonomous && nudges < 2 && !controller.signal.aborted) {
