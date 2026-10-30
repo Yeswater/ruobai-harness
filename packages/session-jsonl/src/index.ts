@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 
 import { basename, join, resolve } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
+import { inferVisibility } from '@ruobai/session'
 import type { SessionEvent, SessionMeta } from '@ruobai/session'
 
 export interface Config {
@@ -94,7 +95,19 @@ export class SessionJsonl extends Service {
         continue // torn tail from an interrupted append
       }
       if (row?.type === 'session' && row.version === 1) header = row
-      else if (typeof row?.seq === 'number' && typeof row?.type === 'string') events.push(row)
+      else if (typeof row?.seq === 'number' && typeof row?.type === 'string') {
+        events.push({
+          seq: row.seq,
+          ts: typeof row.ts === 'number' ? row.ts : Date.now(),
+          type: row.type,
+          data: row.data,
+          // Rows written before the field existed are upgraded on load, so a
+          // reloaded session and a live one agree on what may leave the harness.
+          visibility: row.visibility === 'client' || row.visibility === 'internal' || row.visibility === 'secret'
+            ? row.visibility
+            : inferVisibility(row.type),
+        })
+      }
     }
 
     events.sort((a, b) => a.seq - b.seq)

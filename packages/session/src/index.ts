@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@ruobai/cordis'
 import type {
+  EventVisibility,
   ProjectionDefinition,
   SessionEvent,
   SessionMeta,
   SessionRecord,
   SessionView,
 } from './types.ts'
+import { inferVisibility } from './visibility.ts'
 
 export type * from './types.ts'
+export { inferVisibility, visibleTo } from './visibility.ts'
 
 export interface CreateSessionOptions {
   id?: string
@@ -20,6 +23,7 @@ export interface CreateSessionOptions {
   parentId?: string
   workspace?: string
   permission?: string
+  profile?: string
   createdAt?: number
 }
 
@@ -85,6 +89,7 @@ export class SessionService extends Service {
       parentId: options.parentId,
       workspace: options.workspace,
       permission: options.permission,
+      profile: options.profile,
       createdAt: now,
       updatedAt: now,
     }
@@ -93,7 +98,7 @@ export class SessionService extends Service {
     this.ctx.emit('session/created', meta)
     // The title must be an event, otherwise a restart would restore the default.
     if (options.title && options.title !== 'New session') this.append(id, 'session/title', { title: options.title })
-    if (options.model || options.provider || options.mode || options.kind || options.parentId || options.workspace || options.permission) {
+    if (options.model || options.provider || options.mode || options.kind || options.parentId || options.workspace || options.permission || options.profile) {
       this.append(id, 'session/meta', {
         model: options.model,
         provider: options.provider,
@@ -102,6 +107,7 @@ export class SessionService extends Service {
         parentId: options.parentId,
         workspace: options.workspace,
         permission: options.permission,
+        profile: options.profile,
       })
     }
     return this.records.get(id)!.meta
@@ -119,10 +125,16 @@ export class SessionService extends Service {
     this.views.set(meta.id, this.buildView(meta.id))
   }
 
-  append<T>(id: string, type: string, data: T): SessionEvent<T> {
+  append<T>(id: string, type: string, data: T, options?: { visibility?: EventVisibility }): SessionEvent<T> {
     const record = this.records.get(id)
     if (!record) throw new Error(`unknown session: ${id}`)
-    const event: SessionEvent<T> = { seq: record.events.length, ts: Date.now(), type, data }
+    const event: SessionEvent<T> = {
+      seq: record.events.length,
+      ts: Date.now(),
+      type,
+      data,
+      visibility: options?.visibility ?? inferVisibility(type),
+    }
     record.events.push(event)
     record.meta.updatedAt = event.ts
     this.applyMeta(record.meta, event)
@@ -160,6 +172,13 @@ export class SessionService extends Service {
     this.append(id, 'session/meta', { permission })
   }
 
+  setProfile(id: string, profile: string) {
+    const record = this.records.get(id)
+    if (!record) throw new Error(`unknown session: ${id}`)
+    if (record.meta.profile === profile) return
+    this.append(id, 'session/meta', { profile })
+  }
+
   setModel(id: string, provider: string, model: string) {
     const record = this.records.get(id)
     if (!record) throw new Error(`unknown session: ${id}`)
@@ -186,6 +205,7 @@ export class SessionService extends Service {
       mode: record.meta.mode,
       workspace: record.meta.workspace,
       permission: record.meta.permission,
+      profile: record.meta.profile,
     })
 
     for (const event of record.events) {
@@ -258,6 +278,7 @@ export class SessionService extends Service {
       meta.workspace = event.data.workspace ?? meta.workspace
       meta.archived = event.data.archived ?? meta.archived
       meta.permission = event.data.permission ?? meta.permission
+      meta.profile = event.data.profile ?? meta.profile
     }
   }
 }

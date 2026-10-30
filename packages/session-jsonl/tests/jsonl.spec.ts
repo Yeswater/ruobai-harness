@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -49,5 +49,32 @@ describe('session jsonl', () => {
 
     await storeB.dispose()
     await sessionsB.dispose()
+  })
+
+  it('fills in visibility for rows written before the field existed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rbh-sessions-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+
+    const rows = [
+      { type: 'session', version: 1, id: 'legacy', createdAt: 1 },
+      { seq: 0, ts: 2, type: 'session/title', data: { title: 'Legacy' } },
+      { seq: 1, ts: 3, type: 'message/user', data: { id: 'm', text: 'hi', at: 3 } },
+      { seq: 2, ts: 4, type: 'tool/result', data: { id: 't', content: 'x', at: 4 } },
+    ]
+    await writeFile(join(root, 'legacy.jsonl'), rows.map(row => JSON.stringify(row)).join('\n') + '\n')
+
+    const ctx = new Context()
+    const sessions = ctx.plugin(SessionService)
+    await sessions
+    const store = ctx.plugin(SessionJsonl, { root })
+    await store
+
+    const events = ctx.sessions.get('legacy')!.events
+    expect(events.find(event => event.type === 'message/user')?.visibility).toBe('client')
+    expect(events.find(event => event.type === 'tool/result')?.visibility).toBe('internal')
+    expect(events.find(event => event.type === 'session/title')?.visibility).toBe('internal')
+
+    await store.dispose()
+    await sessions.dispose()
   })
 })
