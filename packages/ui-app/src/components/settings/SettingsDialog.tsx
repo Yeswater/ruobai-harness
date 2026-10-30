@@ -310,6 +310,7 @@ export function SettingsDialog({
                             ? (
                               <div className="settings-page-body scroll">
                                 <Slot name="settings.hooks" props={{ sessionId }} />
+                                <Slot name="settings.rubric" props={{ sessionId }} />
                               </div>
                             )
                             : (

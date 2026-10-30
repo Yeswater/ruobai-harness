@@ -182,6 +182,12 @@ importers:
       '@ruobai/preview-web':
         specifier: workspace:*
         version: link:packages/preview-web
+      '@ruobai/rubric':
+        specifier: workspace:*
+        version: link:packages/rubric
+      '@ruobai/rubric-web':
+        specifier: workspace:*
+        version: link:packages/rubric-web
       '@ruobai/sandbox':
         specifier: workspace:*
         version: link:packages/sandbox
@@ -1104,6 +1110,36 @@ importers:
       '@ruobai/preview':
         specifier: workspace:*
         version: link:../preview
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
+  packages/rubric:
+    dependencies:
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:../contract
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/delivery':
+        specifier: workspace:*
+        version: link:../delivery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/rubric-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/rubric':
+        specifier: workspace:*
+        version: link:../rubric
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server

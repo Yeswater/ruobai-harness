@@ -277,6 +277,14 @@
 - id: hooks
   name: '@ruobai/hooks'
 
+# Behaviour diagnosis: read-only rules derived from the log. It never edits
+# cordis.yml and never proposes an automatic change; the settings page renders
+# it under the gate tab as a list of reminders with evidence seqs.
+# `@ruobai/rubric` is a pure analysis module (analyse()), not a plugin: only the
+# adapter that exposes it over HTTP is mounted here.
+- id: rubric-web
+  name: '@ruobai/rubric-web'
+
 # System prompt assembly, token estimate, and LLM compaction.
 - id: context
   name: '@ruobai/context'

@@ -77,6 +77,8 @@
     "@ruobai/plan-web": "workspace:*",
     "@ruobai/preview": "workspace:*",
     "@ruobai/preview-web": "workspace:*",
+    "@ruobai/rubric": "workspace:*",
+    "@ruobai/rubric-web": "workspace:*",
     "@ruobai/sandbox": "workspace:*",
     "@ruobai/sandbox-denial": "workspace:*",
     "@ruobai/sandbox-escalation": "workspace:*",
