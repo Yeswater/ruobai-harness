@@ -64,9 +64,13 @@ function bashTool(ctx: Context, fallbackRoot: string, config: ResolvedConfig): T
     name: 'bash',
     description: [
       'Run a shell command in the workspace and return its output.',
+      'Use this to run commands, builds, tests and git; use read_file, list_dir, grep and glob to inspect workspace files instead of cat/sed/head/tail/grep/find.',
+      'Keep one purpose per call: do not chain unrelated commands with && or ;.',
       'The working directory is confined to the workspace, a timeout kills the process group,',
       'output is truncated, and harness credentials are stripped from the environment.',
       'Commands run inside the OS sandbox; a sandbox denial comes back as a structured [sandbox] block.',
+      'Do not retry a denial with a different command or path; report it and ask the user.',
+      'For a dev server: check it is not already running, log under .ruobai/scratch, use a short wait, and stop it when done.',
       'Requires user approval.',
     ].join(' '),
     parameters: {

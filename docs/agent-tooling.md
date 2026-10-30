@@ -98,6 +98,30 @@ Chrome 不在常见路径时，工具返回明确的错误，要求设置 `brows
 - 基线对照一律用 `test:baseline`，它不碰工作区；
 - 同一工作区里并行多个会话时，先看 `git status` 再提交，并把自己的改动留在自己的提交边界内。
 
+## 7. 工作方式：一次实测复盘
+
+对一次真实会话（修复两个 UI 缺陷，25 分钟）的事件日志做了统计：405 次工具调用、406 个模型步骤，**没有任何一步发出两个并行调用**；`bash` 210 次，其中 `head` 73、`grep` 71、`sed -n` 55、`ls` 49，而 `read_file`、`grep`、`glob` 这些专用工具几乎没用；同一个 `useHarness.ts` 被 `cat`/`sed` 读了 14 次。浏览器侧 95 次 `browser_eval`、29 张截图，多次把「连续点击」塞进同一个 eval，随后把 React 尚未提交的状态误判成产品 bug。沙箱拒绝后换命令重试，加上启动 dev server 的 `sleep`，累计 194 秒。
+
+结论不是「模型不够聪明」，而是原来的系统提示只有 6 句话，没有告诉它：文件工具的相对路径以工作区为根、读文件该用哪个工具、独立调用应当合并在一步、浏览器 eval 不是点击工具、沙箱拒绝后不该换命令重试。修法：
+
+- 基础提示改为分节的操作规范（工作方式、路径与环境、工具选择、边界），把上述失败模式逐条写成可执行规则；保留「推理用中文」。
+- `context` 新增 `environment` 提示段（顺序在 base 与 mode 之间）：工作区根、平台、日期、是否 git 仓库及分支，并明确「文件工具的路径以工作区根为基准，越界会被拒绝；bash 也从这里开始但受沙箱限制」。工作区与用户所指的仓库不是同一个目录时，模型第一步就能看见，不必再靠失败调用推断。
+- `bash`、`read_file`、`write_file`、`edit_file`、`browser_eval`、`browser_click`、`browser_fill` 的描述分别写明：读文件别用 `cat/sed/grep/find`、一次调用只做一件事、不要用 shell 改文件、eval 只做只读检查、点击/填值前先取新快照。
+- `write_file` / `edit_file` 的成功信息返回解析后的绝对路径，`resolveInside` 的越界错误带上工作区根，避免「相对谁」的歧义。
+
+## 8. 工具目录按需加载
+
+同一份会话日志里，46 个工具中实际只用了 12 个：gitee、wiki、memory、contract、delivery、plan_submit、skill_propose 等 25 个领域工具整场未用，却每个请求都随 schema 渲染。首步上下文约 1.3 万 token，工具 schema 占了大头。
+
+修法不是删能力，而是把「默认可见」和「注册存在」分开：
+
+- `ToolDefinition.defer`：标记领域工具；默认不进入请求，除非当前会话用 `tool_search` 打开，或者模式在 `allowTools` / `extraTools` 里显式列出（Ask/Plan 列了只读 gitee 三件套，Goal 列了 `goal_complete`，所以这些模式行为不变）。
+- `ToolRegistry.offered(sessionId, { allow, includeDeferred, deny })`：一次请求真正渲染的集合；`list()` 仍返回全量，UI 与诊断不受影响。
+- `ToolRegistry.searchDeferred(query, allow)`：按工具名、分组前缀、描述与 `keywords`（含中文）打分；`activate(sessionId, names)` 把命中的工具打开到会话结束。激活状态随会话删除回收，不落日志，刷新后重新检索。
+- Agent 新注册 `tool_search` 工具（约 300 字 schema），并在 `agent/decision.available` 里记录**本次真正可见**的工具，而不是全量目录。
+
+实测（测试 harness 装配全部插件）：全量 47 个，Agent 模式可见 **22 个**；schema 字节数 32,385 → 17,428（约 −46%）。Ask 仍是 7 个，Plan 8 个，Goal 23 个，没有因延迟加载丢工具。
+
 ## 验证
 
 - `packages/tool-fs/tests/fs.spec.ts`：12000 行文件的分段读、末尾窗口、以及超过读上限的 `edit_file` 成功且校验点仍可捕获。

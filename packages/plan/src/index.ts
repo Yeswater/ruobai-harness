@@ -109,6 +109,8 @@ export default { name, inject, apply }
 function planTool(ctx: Context): ToolDefinition {
   return {
     name: 'plan_submit',
+    defer: true,
+    keywords: ['plan', '计划', '方案', '实施'],
     // Session scratch state: it records a proposal, it does not touch the world.
     readOnly: true,
     description: [

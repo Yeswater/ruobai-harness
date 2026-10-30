@@ -48,7 +48,15 @@ describe('prompt sections', () => {
     const built = await ctx.context.build(sessionId, { basePrompt: 'BASE', modePrompt: 'MODE' })
     expect(built.system.indexOf('BASE')).toBeLessThan(built.system.indexOf('MODE'))
     expect(built.system.indexOf('MODE')).toBeLessThan(built.system.indexOf('DEMO-SECTION'))
-    expect(built.fingerprint.sections?.map(section => section.id)).toEqual(['base', 'mode', 'demo'])
+    expect(built.fingerprint.sections?.map(section => section.id)).toEqual(['base', 'environment', 'mode', 'demo'])
+  })
+
+  it('states the workspace root so the model knows where its file tools stop', async () => {
+    const { ctx, sessionId } = await setup()
+    const built = await ctx.context.build(sessionId)
+    expect(built.system).toContain('## Environment')
+    expect(built.system).toContain(`Workspace root: ${ctx.sessions.get(sessionId)!.meta.workspace}`)
+    expect(built.system).toContain('paths outside are rejected')
   })
 
   it('drops a section when its disposer runs', async () => {

@@ -33,7 +33,9 @@ function inside(root: string, target: string) {
 
 function resolveInside(root: string, path: unknown) {
   const target = resolve(root, typeof path === 'string' && path ? path : '.')
-  if (!inside(root, target)) throw new Error(`path escapes the workspace: ${String(path)}`)
+  if (!inside(root, target)) {
+    throw new Error(`path escapes the workspace: ${String(path)} (workspace root: ${root}; pass a path relative to it)`)
+  }
   return target
 }
 
@@ -229,14 +231,14 @@ function tools(
     {
       name: 'read_file',
       description: [
-        'Read a UTF-8 text file inside the workspace.',
+        'Read a UTF-8 text file inside the workspace. Prefer this over cat/sed/head/tail in bash.',
         'A file larger than the byte cap is returned as a line window; pass offset/limit to page through it.',
       ].join(' '),
       readOnly: true,
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path relative to the workspace root.' },
+          path: { type: 'string', description: 'Path relative to the workspace root; an absolute path is accepted only inside it.' },
           offset: { type: 'number', description: '1-based first line of the window.' },
           limit: { type: 'number', description: 'Lines in the window; default 2000, max 5000.' },
         },
@@ -327,6 +329,8 @@ function tools(
       name: 'write_file',
       description: [
         'Create or overwrite a UTF-8 text file inside the workspace. Requires user approval.',
+        'Use edit_file for a targeted change; use this for a new file or a full rewrite.',
+        'Never write files through shell redirection or python: checkpoints and approval previews only exist here.',
         'Write temporary files to .ruobai/scratch/ so they never land in the source tree.',
       ].join(' '),
       parameters: {
@@ -376,12 +380,15 @@ function tools(
           })
         }
 
-        return `Wrote ${Buffer.byteLength(content)} bytes to ${args?.path}`
+        return `Wrote ${Buffer.byteLength(content)} bytes to ${target}`
       },
     },
     {
       name: 'edit_file',
-      description: 'Replace exactly one occurrence of oldText with newText in a workspace file. Requires user approval.',
+      description: [
+        'Replace exactly one occurrence of oldText with newText in a workspace file. Requires user approval.',
+        'Prefer this over rewriting the whole file; after a failed match, read the file again instead of guessing.',
+      ].join(' '),
       parameters: {
         type: 'object',
         properties: {
@@ -439,7 +446,7 @@ function tools(
           })
         }
 
-        return `Edited ${args?.path}`
+        return `Edited ${target}`
       },
     },
     ...searchTools({

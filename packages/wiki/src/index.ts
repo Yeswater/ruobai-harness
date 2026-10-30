@@ -1077,7 +1077,7 @@ async function writeAtomic(target: string, content: string) {
 }
 
 function wikiTools(service: WikiService): ToolDefinition[] {
-  return [
+  return ([
     {
       name: 'wiki_search',
       description: 'Search the project wiki (lexical, offline). Returns page ids, headings and snippets; use wiki_read for more.',
@@ -1200,7 +1200,11 @@ function wikiTools(service: WikiService): ToolDefinition[] {
           .join('\n')
       },
     },
-  ]
+  ] as ToolDefinition[]).map((tool): ToolDefinition => ({
+    ...tool,
+    defer: true,
+    keywords: ['wiki', 'knowledge', 'knowledge base', 'document', 'page', '知识库', '文档', '页面'],
+  }))
 }
 
 export default WikiService

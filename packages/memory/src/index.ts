@@ -527,7 +527,11 @@ function memoryTools(service: MemoryService): ToolDefinition[] {
         return `Forgot ${forgotten.join(', ')}`
       },
     },
-  ]
+  ].map((tool): ToolDefinition => ({
+    ...tool,
+    defer: true,
+    keywords: ['memory', 'remember', 'forget', 'long-term', '长期记忆', '记忆', '记住', '偏好'],
+  }))
 }
 
 export default MemoryService

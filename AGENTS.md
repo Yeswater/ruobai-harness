@@ -51,6 +51,9 @@ cordis.yml     插件的组合方式（唯一应用定义）
   - `readOnly`：只读工具，read-only 权限模式下仍可用。
   - `approvalSubject`：持久审批规则匹配的键（命令或路径）。
   - `preview`：审批卡片里给人看的摘要/diff。
+  - `defer`：默认不进工具的可见集合，由 `tool_search` 按会话按需加载；模式在 `allowTools` / `extraTools` 里显式列出的仍直接可见。领域集成（gitee、wiki、memory、contract、delivery）用它，避免每个编码步骤都携带整套 schema。
+  - `keywords`：`tool_search` 的检索词（含中文），不发给模型。
+- 新增默认工具前先问：它是否每个任务都需要。只在特定领域用的工具标 `defer`，否则每次请求都在为它付上下文和选择成本。
 - 文件写入必须经过检查点（`checkpoints`），否则会话无法回退。
 - `tool-fs` 的读写必须查 `ctx.sandboxPolicy.check()`（进程内第二道守卫）；新增文件类工具同样要接。
 - 命令执行走 `ctx.shell`，不要在工具里直接 `child_process.spawn`；沙箱、超时、输出截断、环境清洗都在执行器里。

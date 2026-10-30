@@ -114,6 +114,8 @@ export default { name, inject, apply }
 function openTool(ctx: Context): ToolDefinition {
   return {
     name: 'contract_open',
+    defer: true,
+    keywords: ['contract', 'acceptance', 'delivery', '契约', '验收', '交付'],
     description: [
       'Open the delivery contract for this session: what is being delivered and how it will be accepted.',
       'Use it before delivery work with a customer or a verifiable outcome. acceptance is the only input of the delivery gate.',
@@ -172,6 +174,8 @@ function openTool(ctx: Context): ToolDefinition {
 function amendTool(ctx: Context): ToolDefinition {
   return {
     name: 'contract_amend',
+    defer: true,
+    keywords: ['contract', 'acceptance', 'delivery', '契约', '验收', '交付'],
     description: [
       'Amend the open contract. acceptance replaces the whole list, so pass every item you still want.',
       'An existing acceptance id cannot be dropped: evidence may already point at it.',
@@ -221,6 +225,8 @@ function amendTool(ctx: Context): ToolDefinition {
 function closeTool(ctx: Context): ToolDefinition {
   return {
     name: 'contract_close',
+    defer: true,
+    keywords: ['contract', 'acceptance', 'delivery', '契约', '验收', '交付'],
     description: [
       'Close the open contract once every acceptance item has a verdict.',
       'Closing does not mean "passed": the delivery verdict is recorded separately, this only ends the agreement.',

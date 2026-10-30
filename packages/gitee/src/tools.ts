@@ -318,7 +318,12 @@ export function giteeTools(service: GiteeService): ToolDefinition[] {
         }))
       },
     },
-  ]
+  ].map((tool): ToolDefinition => ({
+    ...tool,
+    defer: true,
+    keywords: ['gitee', 'git', 'repo', 'repository', 'issue', 'pr', 'pull request', 'release', 'publish',
+      '仓库', '代码托管', '问题', '发布', '合并请求'],
+  }))
 }
 
 function publishInput(args: any, workspace: string): PublishInput {
