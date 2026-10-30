@@ -806,6 +806,12 @@ body.resizing .sidebar-resizer::after {
   line-height: 1.75;
 }
 
+.turn-interrupted {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .prose.thinking {
   color: var(--muted);
   font-style: italic;

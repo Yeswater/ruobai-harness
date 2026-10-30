@@ -317,4 +317,116 @@ describe('openai adapter', () => {
     await provider.dispose()
     await llm.dispose()
   })
+
+  async function startServer(handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void) {
+    const server = createServer(handler)
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    servers.push(() => new Promise<void>(resolve => server.close(() => resolve())))
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  }
+
+  async function collect(baseUrl: string, config: Record<string, unknown> = {}, signal?: AbortSignal) {
+    const ctx = new Context()
+    const llm = ctx.plugin(LlmService, { provider: 'openai', model: 'test-model' })
+    await llm
+    const provider = ctx.plugin(OpenAiProvider, { baseUrl, model: 'test-model', ...config })
+    await provider
+    const chunks: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      ...(signal ? { signal } : {}),
+    }, 'openai')) {
+      chunks.push(chunk)
+    }
+    await provider.dispose()
+    await llm.dispose()
+    return chunks
+  }
+
+  it('reports a stalled stream as a timeout error instead of a fake done', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      // Headers arrive, then nothing: this is the failure the old total timeout
+      // turned into `done: aborted`, which persisted half a thought.
+    })
+
+    const chunks = await collect(baseUrl, { idleTimeoutMs: 40, maxRetries: 0 })
+
+    expect(chunks).toContainEqual(expect.objectContaining({ type: 'error', code: 'timeout' }))
+    expect(chunks.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+    expect(chunks).not.toContainEqual({ type: 'done', reason: 'aborted' })
+  })
+
+  it('keeps a streaming response alive past the idle window', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      let sent = 0
+      const timer = setInterval(() => {
+        sent += 1
+        res.write(`data: {"choices":[{"delta":{"content":"t${sent}"}}]}\n\n`)
+        if (sent === 4) {
+          clearInterval(timer)
+          res.write('data: [DONE]\n\n')
+          res.end()
+        }
+      }, 30)
+    })
+
+    // The idle timer resets on every chunk; a slow stream is not a stalled one.
+    const chunks = await collect(baseUrl, { idleTimeoutMs: 80, maxRetries: 0 })
+
+    expect(chunks.filter(chunk => chunk.type === 'text-delta')).toHaveLength(4)
+    expect(chunks.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+  })
+
+  it('retries a transient 5xx before giving up', async () => {
+    let hits = 0
+    const baseUrl = await startServer((_req, res) => {
+      hits += 1
+      if (hits === 1) {
+        res.writeHead(503, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: { message: 'overloaded' } }))
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n')
+      res.write('data: [DONE]\n\n')
+      res.end()
+    })
+
+    const chunks = await collect(baseUrl, { maxRetries: 1, retryDelayMs: 1 })
+
+    expect(hits).toBe(2)
+    expect(chunks).toContainEqual({ type: 'text-delta', text: 'ok' })
+    expect(chunks.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+  })
+
+  it('does not retry after content already reached the caller', async () => {
+    let hits = 0
+    const baseUrl = await startServer((_req, res) => {
+      hits += 1
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write('data: {"choices":[{"delta":{"content":"half"}}]}\n\n')
+      setTimeout(() => res.socket?.destroy(), 10)
+    })
+
+    const chunks = await collect(baseUrl, { idleTimeoutMs: 5_000, maxRetries: 2, retryDelayMs: 1 })
+
+    // Replaying would duplicate "half"; the failure has to surface instead.
+    expect(hits).toBe(1)
+    expect(chunks).toContainEqual({ type: 'text-delta', text: 'half' })
+    expect(chunks.some(chunk => chunk.type === 'error')).toBe(true)
+  })
+
+  it('reports a caller abort as an aborted stop', async () => {
+    const baseUrl = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    })
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), 30)
+
+    const chunks = await collect(baseUrl, { idleTimeoutMs: 5_000, maxRetries: 2 }, controller.signal)
+
+    expect(chunks).toEqual([{ type: 'done', reason: 'aborted' }])
+  })
 })

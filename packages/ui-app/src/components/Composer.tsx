@@ -55,7 +55,6 @@ const FILE_ACCEPT = [
   '.css', '.html', '.yml', '.yaml', '.toml', '.xml', '.csv', '.py', '.go', '.rs',
   '.java', '.kt', '.sh', '.sql', 'text/*',
 ].join(',')
-const DIRECTORY_PROPS = { webkitdirectory: '', directory: '' } as Record<string, string>
 
 export function Composer({
   disabled, streaming, sessionId, workspace, provider, model, models, modes, skills = [], mode, permission,
@@ -75,7 +74,6 @@ export function Composer({
   const handledReference = useRef<number | null>(null)
   const handledRestore = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
   const pendingCaret = useRef<number | null>(null)
   const attachments = useComposerAttachments(sessionId)
   const sessionRef = useRef(sessionId)
@@ -397,6 +395,22 @@ export function Composer({
     focusAt(position + 1)
   }, [text])
 
+  /**
+   * Opening the folder picker with an `@` turns it into a workspace reference.
+   * A folder's contents are never read: the agent reads it through its tools,
+   * so picking one does not upload the whole directory.
+   */
+  const insertMention = useCallback(() => {
+    const position = textareaRef.current?.selectionStart ?? text.length
+    const before = text.slice(0, position)
+    // A mention only opens at a word boundary.
+    const prefix = before && !/\s$/.test(before) ? ' @' : '@'
+    setText(`${before}${prefix}${text.slice(position)}`)
+    setCaret(position + prefix.length)
+    setDismissed(false)
+    focusAt(position + prefix.length)
+  }, [text])
+
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = [...event.clipboardData.items]
       .filter(item => item.kind === 'file')
@@ -530,7 +544,7 @@ export function Composer({
               disabled={disabled}
               onOpenChange={open => setOpenMenu(open ? 'plus' : null)}
               onAddFiles={() => fileInputRef.current?.click()}
-              onAddFolder={() => folderInputRef.current?.click()}
+              onReferenceFolder={insertMention}
               onSlash={insertSlash}
               onConnectors={onOpenConnectors}
             />
@@ -610,17 +624,6 @@ export function Composer({
           accept={FILE_ACCEPT}
           onChange={(event) => {
             if (event.target.files) void attachments.addFiles(event.target.files)
-            event.target.value = ''
-          }}
-        />
-        <input
-          ref={folderInputRef}
-          type="file"
-          hidden
-          multiple
-          {...DIRECTORY_PROPS}
-          onChange={(event) => {
-            if (event.target.files) attachments.addFolder(event.target.files)
             event.target.value = ''
           }}
         />

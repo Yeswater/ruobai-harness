@@ -290,3 +290,21 @@ describe('interrupted questions', () => {
     expect(steps.map(item => item.kind !== 'text' && item.pending)).toEqual([false])
   })
 })
+
+describe('interrupted answers', () => {
+  it('keeps a cut-off step visible instead of folding it as completed', () => {
+    const plan = buildPlan([
+      message('user', [text('go')]),
+      message('assistant', [thought('想一半'), call('bash'), text('半截回答')], 'interrupted'),
+    ])
+    expect(plan.map(item => item.kind)).toEqual(['user', 'process', 'text', 'interrupted'])
+  })
+
+  it('marks a step that produced nothing before it was cut', () => {
+    const plan = buildPlan([
+      message('user', [text('go')]),
+      message('assistant', [], 'interrupted'),
+    ])
+    expect(plan.map(item => item.kind)).toEqual(['user', 'interrupted'])
+  })
+})

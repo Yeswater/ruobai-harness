@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AttachmentMeta } from '@ruobai/chat-protocol'
 import {
-  filesToAttachments, folderManifest, MAX_ATTACHMENTS, MAX_TOTAL_BYTES, totalSize,
+  filesToAttachments, MAX_ATTACHMENTS, MAX_TOTAL_BYTES, totalSize,
 } from './attachments.ts'
 import { readDraft } from './composer-drafts.ts'
 
@@ -53,15 +53,6 @@ export function useComposerAttachments(sessionId?: string) {
     }
   }, [append])
 
-  const addFolder = useCallback((files: FileList) => {
-    try {
-      if (!files.length) return
-      append([folderManifest(files)])
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
-    }
-  }, [append])
-
   const addOne = useCallback((attachment: AttachmentMeta) => append([attachment]), [append])
 
   const remove = useCallback((id: string) => {
@@ -75,5 +66,5 @@ export function useComposerAttachments(sessionId?: string) {
     setAttachments([])
   }, [])
 
-  return { attachments, addFiles, addFolder, addOne, remove, clear, replace, error, setError }
+  return { attachments, addFiles, addOne, remove, clear, replace, error, setError }
 }

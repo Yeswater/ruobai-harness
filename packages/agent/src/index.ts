@@ -387,6 +387,9 @@ export class AgentService extends Service {
           throw new Error(failure)
         }
         if (textContent) lastText = textContent
+        // The stream can stop without the caller aborting only when the
+        // provider gives up (it never reports a timeout as a normal stop).
+        const aborted = controller.signal.aborted || stop === 'aborted'
 
         const parts: ContentPart[] = []
         if (reasoningContent) parts.push({ type: 'reasoning', text: reasoningContent })
@@ -415,9 +418,20 @@ export class AgentService extends Service {
             id: messageId,
             parts,
             at: completedTime,
+            // A step cut mid-stream keeps its partial output for the transcript
+            // but is marked so neither the next request nor the UI treats the
+            // fragment as a complete answer.
+            ...(aborted ? { interrupted: true } : {}),
             ...(stepUsage ? { usage: stepUsage } : {}),
             timing,
           })
+        }
+
+        // A stopped step ends the turn: its tool-call arguments may be
+        // truncated, so acting on them would run an incomplete plan.
+        if (aborted) {
+          reason = 'stopped'
+          break
         }
 
         if (calls.length) {

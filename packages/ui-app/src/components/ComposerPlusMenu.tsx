@@ -9,13 +9,13 @@ interface ComposerPlusMenuProps {
   disabled?: boolean
   onOpenChange: (open: boolean) => void
   onAddFiles: () => void
-  onAddFolder: () => void
+  onReferenceFolder: () => void
   onSlash: () => void
   onConnectors: () => void
 }
 
 export function ComposerPlusMenu({
-  open, disabled, onOpenChange, onAddFiles, onAddFolder, onSlash, onConnectors,
+  open, disabled, onOpenChange, onAddFiles, onReferenceFolder, onSlash, onConnectors,
 }: ComposerPlusMenuProps) {
   const { triggerRef, menuRef, position } = useAnchoredMenu({
     open,
@@ -61,9 +61,12 @@ export function ComposerPlusMenu({
                 <span className="view-menu-text"><span className="view-menu-title">添加文件或照片</span></span>
                 <span className="view-menu-shortcut">⌘U</span>
               </button>
-              <button type="button" role="menuitem" className="view-menu-row" onClick={() => run(onAddFolder)}>
+              <button type="button" role="menuitem" className="view-menu-row" onClick={() => run(onReferenceFolder)}>
                 <span className="view-menu-icon"><FolderIcon size={16} /></span>
-                <span className="view-menu-text"><span className="view-menu-title">添加文件夹</span></span>
+                <span className="view-menu-text">
+                  <span className="view-menu-title">引用文件夹</span>
+                </span>
+                <span className="view-menu-shortcut">@</span>
               </button>
               <button type="button" role="menuitem" className="view-menu-row" onClick={() => run(onSlash)}>
                 <span className="view-menu-icon"><CommandIcon size={16} /></span>

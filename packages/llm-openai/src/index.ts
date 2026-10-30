@@ -11,12 +11,73 @@ export interface Config {
   /** Model advertised by this adapter; requests may still override it. */
   model?: string
   headers?: Record<string, string>
+  /**
+   * Abort when no bytes arrive for this long. The timer resets on every chunk,
+   * so a slow but streaming reasoning model is never cut off mid-thought.
+   */
+  idleTimeoutMs?: number
+  /** Hard cap on one attempt (ms). Unset means no total limit. */
   timeoutMs?: number
+  /** Retries after a transient failure; only when nothing was streamed yet. */
+  maxRetries?: number
+  /** Base backoff between retries (ms), doubled per attempt. */
+  retryDelayMs?: number
   /**
    * Send `prompt_cache_key` as a routing hint. Off by default: the field is a
    * Responses-API parameter and strict compatible servers reject unknown keys.
    */
   promptCacheKey?: boolean
+}
+
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000
+const DEFAULT_MAX_RETRIES = 2
+const DEFAULT_RETRY_DELAY_MS = 800
+const MAX_RETRY_DELAY_MS = 15_000
+const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529])
+/** Provider error codes worth a retry: rate limits, overload, transport blips. */
+const RETRYABLE_CODE = /rate.?limit|overload|timeout|timed.?out|unavailable|server_error|internal_error|bad_gateway|gateway|too_many_requests/i
+
+type AttemptOutcome =
+  | { kind: 'done' }
+  | {
+    kind: 'failed'
+    message: string
+    code?: string
+    /** Safe to retry: nothing reached the caller, so a replay cannot duplicate text. */
+    retryable: boolean
+    retryAfterMs?: number
+  }
+
+function sleep(ms: number, signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve(false)
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve(true)
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function retryAfterMs(response: Response): number | undefined {
+  const raw = response.headers.get('retry-after')
+  if (!raw) return undefined
+  const seconds = Number(raw)
+  const value = Number.isFinite(seconds)
+    ? seconds * 1_000
+    : Date.parse(raw) - Date.now()
+  return Number.isFinite(value) ? Math.min(Math.max(value, 0), 30_000) : undefined
+}
+
+function timeoutText(reason: 'idle' | 'total', config: Config) {
+  const ms = reason === 'idle' ? (config.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS) : (config.timeoutMs ?? 0)
+  return reason === 'idle'
+    ? `provider stalled: no data for ${Math.round(ms / 1_000)}s`
+    : `request timed out after ${Math.round(ms / 1_000)}s`
 }
 
 interface OpenAiToolCall {
@@ -126,165 +187,267 @@ export class OpenAiProvider implements LlmProvider {
 
   async *stream(request: ModelRequest): AsyncIterable<StreamChunk> {
     const config = this.current()
-    const baseUrl = (config.baseUrl ?? 'https://api.openai.com/v1').replace(/\/+$/, '')
-    const signals: AbortSignal[] = []
-    if (request.signal) signals.push(request.signal)
-    if (config.timeoutMs) signals.push(AbortSignal.timeout(config.timeoutMs))
-    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0]
-
-    const post = (payload: Record<string, unknown>) => fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
-        ...config.headers,
-      },
-      body: JSON.stringify(payload),
-    })
-
-    const payload: Record<string, unknown> = {
-      model: request.model ?? config.model,
-      messages: toOpenAiMessages(request.messages),
-      tools: toOpenAiTools(request),
-      stream: true,
-      // Token totals only arrive in a trailing frame when asked for. A few
-      // compatible servers reject the field outright, so retry without it
-      // instead of losing the whole turn.
-      stream_options: { include_usage: true },
-      ...(config.promptCacheKey && request.cache?.key ? { prompt_cache_key: request.cache.key } : {}),
-      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-      ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
-    }
-
-    let response: Response | undefined
-    let failureBody = ''
-    try {
-      response = await post(payload)
-      if (!response.ok) {
-        failureBody = await response.text().catch(() => '')
-        if (/stream_options/i.test(failureBody)) {
-          const retry = { ...payload }
-          delete retry.stream_options
-          response = await post(retry)
-          failureBody = response.ok ? '' : await response.text().catch(() => '')
-        }
-      }
-    } catch (error) {
-      yield { type: 'error', message: `request failed: ${error instanceof Error ? error.message : String(error)}` }
-      yield { type: 'done', reason: 'stop' }
-      return
-    }
-
-    if (!response || !response.ok || !response.body) {
-      const code = errorCodeOf(failureBody)
-      const status = response ? `${response.status} ${response.statusText}: ` : ''
-      yield {
-        type: 'error',
-        message: `${status}${failureBody.slice(0, 500)}`,
-        ...(code ? { code } : {}),
-      }
-      yield { type: 'done', reason: 'stop' }
-      return
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    const calls = new Map<number, OpenAiToolCall>()
-    let buffer = ''
-    let usage: Usage | undefined
-    let stopReason: StopReason | undefined
-    let finished = false
-
-    try {
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        let boundary = buffer.indexOf('\n\n')
-        while (boundary >= 0) {
-          const frame = buffer.slice(0, boundary)
-          buffer = buffer.slice(boundary + 2)
-          boundary = buffer.indexOf('\n\n')
-
-          for (const line of frame.split('\n')) {
-            if (!line.startsWith('data:')) continue
-            const data = line.slice(5).trim()
-            if (!data) continue
-            if (data === '[DONE]') {
-              finished = true
-              break
-            }
-
-            let payload: any
-            try {
-              payload = JSON.parse(data)
-            } catch {
-              continue
-            }
-
-            if (payload.error) {
-              const code = errorCodeOf(payload)
-              const message = payload.error?.message ?? payload.error?.type ?? 'provider error'
-              yield { type: 'error', message: String(message), ...(code ? { code } : {}) }
-              finished = true
-              break
-            }
-
-            const billed = readUsage(payload.usage)
-            if (billed) usage = billed
-
-            const choice = payload.choices?.[0]
-            if (!choice) continue
-            const delta = choice.delta ?? {}
-            const thinking = reasoningText(delta)
-            if (thinking) yield { type: 'reasoning-delta', text: thinking }
-            if (typeof delta.content === 'string' && delta.content) {
-              yield { type: 'text-delta', text: delta.content }
-            }
-            for (const call of delta.tool_calls ?? []) {
-              const index = call.index ?? 0
-              const entry = calls.get(index) ?? { id: '', name: '', arguments: '' }
-              if (call.id) entry.id = call.id
-              if (call.function?.name) entry.name = call.function.name
-              if (call.function?.arguments) entry.arguments += call.function.arguments
-              calls.set(index, entry)
-            }
-            if (choice.finish_reason) {
-              stopReason = choice.finish_reason === 'tool_calls'
-                ? 'tool-calls'
-                : choice.finish_reason === 'length' ? 'length' : 'stop'
-            }
-          }
-          if (finished) break
-        }
-        if (finished) break
-      }
-    } catch (error) {
-      if (signal?.aborted) {
+    const maxRetries = Math.max(0, Math.floor(config.maxRetries ?? DEFAULT_MAX_RETRIES))
+    for (let attempt = 0; ; attempt += 1) {
+      const outcome = yield* this.attempt(request, config)
+      if (outcome.kind === 'done') return
+      // The caller pulled the plug; retrying would fight the stop button.
+      if (request.signal?.aborted) {
         yield { type: 'done', reason: 'aborted' }
         return
       }
-      yield { type: 'error', message: error instanceof Error ? error.message : String(error) }
-      yield { type: 'done', reason: 'stop' }
-      return
-    }
-
-    for (const call of calls.values()) {
-      yield {
-        type: 'tool-call',
-        id: call.id || `call_${Math.random().toString(36).slice(2, 10)}`,
-        name: call.name,
-        arguments: call.arguments || '{}',
+      if (!outcome.retryable || attempt >= maxRetries) {
+        yield { type: 'error', message: outcome.message, ...(outcome.code ? { code: outcome.code } : {}) }
+        yield { type: 'done', reason: 'stop' }
+        return
+      }
+      const wait = outcome.retryAfterMs ?? Math.min(
+        (config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS) * 2 ** attempt,
+        MAX_RETRY_DELAY_MS,
+      )
+      if (!(await sleep(wait, request.signal))) {
+        yield { type: 'done', reason: 'aborted' }
+        return
       }
     }
-    // `usage` is read at the end of the stream: some providers send the billed
-    // totals in a trailing frame after `finish_reason`.
-    yield {
-      type: 'done',
-      reason: stopReason ?? (calls.size ? 'tool-calls' : 'stop'),
-      ...(usage ? { usage } : {}),
+  }
+
+  /**
+   * One request/stream attempt.
+   *
+   * A timeout is an error, never a fake `done`: the caller has to be able to
+   * tell "the user stopped this" from "the provider went silent", otherwise a
+   * half-finished thought would be persisted as a complete answer.
+   */
+  private async *attempt(request: ModelRequest, config: Config): AsyncGenerator<StreamChunk, AttemptOutcome> {
+    const baseUrl = (config.baseUrl ?? 'https://api.openai.com/v1').replace(/\/+$/, '')
+    const controller = new AbortController()
+    let timeoutReason: 'idle' | 'total' | undefined
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+    let totalTimer: ReturnType<typeof setTimeout> | undefined
+    const onCallerAbort = () => controller.abort()
+    request.signal?.addEventListener('abort', onCallerAbort, { once: true })
+    if (request.signal?.aborted) controller.abort()
+
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      const idleMs = config.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS
+      if (idleMs <= 0) return
+      idleTimer = setTimeout(() => {
+        timeoutReason ??= 'idle'
+        controller.abort()
+      }, idleMs)
+    }
+    const totalMs = config.timeoutMs ?? 0
+    if (totalMs > 0) {
+      totalTimer = setTimeout(() => {
+        timeoutReason ??= 'total'
+        controller.abort()
+      }, totalMs)
+    }
+    armIdle()
+
+    try {
+      const post = (payload: Record<string, unknown>) => fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+          ...config.headers,
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const payload: Record<string, unknown> = {
+        model: request.model ?? config.model,
+        messages: toOpenAiMessages(request.messages),
+        tools: toOpenAiTools(request),
+        stream: true,
+        // Token totals only arrive in a trailing frame when asked for. A few
+        // compatible servers reject the field outright, so retry without it
+        // instead of losing the whole turn.
+        stream_options: { include_usage: true },
+        ...(config.promptCacheKey && request.cache?.key ? { prompt_cache_key: request.cache.key } : {}),
+        ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+        ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+      }
+
+      let response: Response | undefined
+      let failureBody = ''
+      try {
+        response = await post(payload)
+        if (!response.ok) {
+          failureBody = await response.text().catch(() => '')
+          if (/stream_options/i.test(failureBody)) {
+            const retry = { ...payload }
+            delete retry.stream_options
+            response = await post(retry)
+            failureBody = response.ok ? '' : await response.text().catch(() => '')
+          }
+        }
+      } catch (error) {
+        if (request.signal?.aborted) {
+          yield { type: 'done', reason: 'aborted' }
+          return { kind: 'done' }
+        }
+        if (timeoutReason) {
+          return { kind: 'failed', message: timeoutText(timeoutReason, config), code: 'timeout', retryable: true }
+        }
+        return {
+          kind: 'failed',
+          message: `request failed: ${error instanceof Error ? error.message : String(error)}`,
+          code: 'network',
+          retryable: true,
+        }
+      }
+
+      if (!response || !response.ok || !response.body) {
+        const code = errorCodeOf(failureBody)
+        const status = response ? `${response.status} ${response.statusText}: ` : ''
+        const retryable = response ? RETRYABLE_STATUS.has(response.status) : true
+        return {
+          kind: 'failed',
+          message: `${status}${failureBody.slice(0, 500)}`,
+          ...(code ? { code } : {}),
+          retryable,
+          ...(response ? { retryAfterMs: retryAfterMs(response) } : {}),
+        }
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      const calls = new Map<number, OpenAiToolCall>()
+      let buffer = ''
+      let usage: Usage | undefined
+      let stopReason: StopReason | undefined
+      let finished = false
+      /** Anything the caller already received: a replay would duplicate it. */
+      let received = false
+      // Headers are in: give the first token a full idle window instead of
+      // charging it for the time the provider spent connecting.
+      armIdle()
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          armIdle()
+          buffer += decoder.decode(value, { stream: true })
+
+          let boundary = buffer.indexOf('\n\n')
+          while (boundary >= 0) {
+            const frame = buffer.slice(0, boundary)
+            buffer = buffer.slice(boundary + 2)
+            boundary = buffer.indexOf('\n\n')
+
+            for (const line of frame.split('\n')) {
+              if (!line.startsWith('data:')) continue
+              const data = line.slice(5).trim()
+              if (!data) continue
+              if (data === '[DONE]') {
+                finished = true
+                break
+              }
+
+              let payload: any
+              try {
+                payload = JSON.parse(data)
+              } catch {
+                continue
+              }
+
+              if (payload.error) {
+                const code = errorCodeOf(payload)
+                const message = payload.error?.message ?? payload.error?.type ?? 'provider error'
+                return {
+                  kind: 'failed',
+                  message: String(message),
+                  ...(code ? { code } : {}),
+                  retryable: !received && (!code || RETRYABLE_CODE.test(code)),
+                }
+              }
+
+              const billed = readUsage(payload.usage)
+              if (billed) usage = billed
+
+              const choice = payload.choices?.[0]
+              if (!choice) continue
+              const delta = choice.delta ?? {}
+              const thinking = reasoningText(delta)
+              if (thinking) {
+                received = true
+                yield { type: 'reasoning-delta', text: thinking }
+              }
+              if (typeof delta.content === 'string' && delta.content) {
+                received = true
+                yield { type: 'text-delta', text: delta.content }
+              }
+              for (const call of delta.tool_calls ?? []) {
+                received = true
+                const index = call.index ?? 0
+                const entry = calls.get(index) ?? { id: '', name: '', arguments: '' }
+                if (call.id) entry.id = call.id
+                if (call.function?.name) entry.name = call.function.name
+                if (call.function?.arguments) entry.arguments += call.function.arguments
+                calls.set(index, entry)
+              }
+              if (choice.finish_reason) {
+                stopReason = choice.finish_reason === 'tool_calls'
+                  ? 'tool-calls'
+                  : choice.finish_reason === 'length' ? 'length' : 'stop'
+              }
+            }
+            if (finished) break
+          }
+          if (finished) break
+        }
+      } catch (error) {
+        if (request.signal?.aborted) {
+          yield { type: 'done', reason: 'aborted' }
+          return { kind: 'done' }
+        }
+        if (timeoutReason) {
+          return {
+            kind: 'failed',
+            message: timeoutText(timeoutReason, config),
+            code: 'timeout',
+            retryable: !received,
+          }
+        }
+        return {
+          kind: 'failed',
+          message: error instanceof Error ? error.message : String(error),
+          code: 'stream',
+          retryable: !received,
+        }
+      }
+
+      // A 200 with no deltas is almost always an upstream fault, not an answer.
+      if (!received) {
+        return { kind: 'failed', message: 'provider returned an empty response', code: 'empty', retryable: true }
+      }
+
+      for (const call of calls.values()) {
+        yield {
+          type: 'tool-call',
+          id: call.id || `call_${Math.random().toString(36).slice(2, 10)}`,
+          name: call.name,
+          arguments: call.arguments || '{}',
+        }
+      }
+      // `usage` is read at the end of the stream: some providers send the billed
+      // totals in a trailing frame after `finish_reason`.
+      yield {
+        type: 'done',
+        reason: stopReason ?? (calls.size ? 'tool-calls' : 'stop'),
+        ...(usage ? { usage } : {}),
+      }
+      return { kind: 'done' }
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer)
+      if (totalTimer) clearTimeout(totalTimer)
+      request.signal?.removeEventListener('abort', onCallerAbort)
     }
   }
 }
@@ -378,7 +541,10 @@ export default class OpenAiProviderPlugin {
     apiKey: z.string(),
     model: z.string(),
     headers: z.dict(z.string()),
+    idleTimeoutMs: z.number().min(0).default(DEFAULT_IDLE_TIMEOUT_MS),
     timeoutMs: z.number().min(1),
+    maxRetries: z.number().min(0).default(DEFAULT_MAX_RETRIES),
+    retryDelayMs: z.number().min(0).default(DEFAULT_RETRY_DELAY_MS),
     promptCacheKey: z.boolean().default(false),
   })
 

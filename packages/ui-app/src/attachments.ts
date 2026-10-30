@@ -84,19 +84,3 @@ export async function filesToAttachments(
   }
   return converted
 }
-
-/** A bounded directory listing used as the "添加文件夹" attachment. */
-export function folderManifest(files: FileList): AttachmentMeta {
-  const all = [...files]
-  const root = all[0]?.webkitRelativePath?.split('/')[0] || '文件夹'
-  const lines: string[] = [`目录：${root}`, '']
-  for (const file of all.slice(0, 200)) {
-    const path = file.webkitRelativePath || file.name
-    lines.push(`${path} (${formatBytes(file.size)})`)
-  }
-  if (all.length > 200) lines.push(`… 其余 ${all.length - 200} 个文件未列出`)
-  let text = lines.join('\n')
-  if (text.length > 200_000) text = `${text.slice(0, 200_000)}\n…（清单已截断）`
-  const size = new TextEncoder().encode(text).length
-  return { id: newId(), kind: 'file', name: `${root}.manifest.txt`, mime: 'text/plain', size, text }
-}

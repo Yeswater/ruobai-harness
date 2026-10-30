@@ -1232,6 +1232,9 @@ function toMessages(
     return parts.length ? [{ role: 'user', content: parts }] : []
   }
   if (event.type === 'message/assistant') {
+    // A step cut mid-stream is a fragment, not an answer; replaying it would
+    // hand the model a half-finished thought as its own completed turn.
+    if (event.data?.interrupted) return []
     // Thinking alone is not a turn: the model never sees it, and providers
     // reject an assistant message without text or tool calls.
     const parts = (event.data.parts as ContentPart[]).filter(part =>

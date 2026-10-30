@@ -68,7 +68,7 @@ export interface ChatMessage {
   id: string
   role: ChatRole
   blocks: ChatBlock[]
-  status: 'streaming' | 'done'
+  status: 'streaming' | 'done' | 'interrupted'
   createdAt: number
 }
 

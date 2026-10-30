@@ -30,6 +30,8 @@ export type PlanItem =
    * a normal step again once the answer is logged.
    */
   | { kind: 'ask'; key: string; block: ToolBlock }
+  /** A step that was cut off before it finished producing an answer. */
+  | { kind: 'interrupted'; key: string }
   | {
     kind: 'process'
     key: string
@@ -89,6 +91,9 @@ export function buildPlan(messages: ChatMessage[], turnStreaming = false): PlanI
       if (message.status === 'streaming') {
         open(`${message.id}-pending`)
         waiting = true
+      } else if (message.status === 'interrupted') {
+        flush()
+        plan.push({ kind: 'interrupted', key: `${message.id}-interrupted` })
       }
       continue
     }
@@ -126,6 +131,11 @@ export function buildPlan(messages: ChatMessage[], turnStreaming = false): PlanI
         ? { kind: 'reasoning', key, block, pending }
         : { kind: 'tool', key, block, pending })
     })
+
+    if (message.status === 'interrupted') {
+      flush()
+      plan.push({ kind: 'interrupted', key: `${message.id}-interrupted` })
+    }
   }
   flush()
   return mergeFinishedTurns(plan, turnStreaming)
@@ -157,8 +167,10 @@ function mergeFinishedTurns(plan: PlanItem[], streaming: boolean): PlanItem[] {
     const live = streaming && index >= plan.length
     const groups = segment.filter(item => item.kind === 'process')
     // A plain answer with no tools keeps its prose visible: there is no run to
-    // summarize, and hiding it would turn every reply into a click.
-    if (live || !groups.length) {
+    // summarize, and hiding it would turn every reply into a click. An
+    // interrupted turn keeps its rows open too — folding it into "已完成"
+    // would present a fragment as a finished turn.
+    if (live || !groups.length || segment.some(item => item.kind === 'interrupted')) {
       merged.push(...segment)
       continue
     }

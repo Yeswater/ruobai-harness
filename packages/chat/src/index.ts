@@ -125,13 +125,16 @@ export class ChatService extends Service {
       this.ctx.emit('chat/event', { type: 'message-reasoning', sessionId: id, messageId, delta })
     })
 
-    ctx.on('agent/turn-end', (id) => {
+    ctx.on('agent/turn-end', (id, reason) => {
       if (!this.visible(id)) return
       const session = this.ensure(id)
       session.streaming = false
       const endedAt = Date.now()
+      // A turn that failed or was stopped left its last step mid-stream; that
+      // fragment is not a finished answer, so it is not marked done.
+      const cut = reason === 'error' || reason === 'stopped'
       for (const message of session.messages) {
-        if (message.status === 'streaming') message.status = 'done'
+        if (message.status === 'streaming') message.status = cut ? 'interrupted' : 'done'
         // Nothing can still be running once the turn is over: an interrupted
         // action would otherwise keep the whole group without a duration.
         closeBlocks(message.blocks, endedAt)
@@ -486,15 +489,16 @@ export class ChatService extends Service {
       // The live stream already stamped when thinking ended; the settled step
       // only knows when the whole step ended, so keep the earlier reading.
       mergeTiming(blocks, existing?.blocks ?? [])
+      const status = event.data.interrupted ? 'interrupted' : 'done'
       if (existing) {
         existing.blocks = blocks
-        existing.status = 'done'
+        existing.status = status
       } else {
         session.messages.push({
           id: event.data.id,
           role: 'assistant',
           blocks,
-          status: 'done',
+          status,
           createdAt: event.data.at ?? event.ts,
         })
       }

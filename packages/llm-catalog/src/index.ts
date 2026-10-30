@@ -36,7 +36,6 @@ export function apply(ctx: Context) {
           baseUrl: entry.baseUrl,
           apiKey: ctx.settings.apiKeyFor(entry.id),
           model: entry.models[0]?.id,
-          timeoutMs: 180_000,
         },
         () => {
           const current = ctx.settings.findProvider(entry.id)

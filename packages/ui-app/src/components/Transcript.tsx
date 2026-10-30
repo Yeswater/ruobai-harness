@@ -163,6 +163,9 @@ export function Transcript({
             if (item.kind === 'ask') {
               return <AskBlock key={item.key} block={item.block} />
             }
+            if (item.kind === 'interrupted') {
+              return <div className="turn-interrupted" key={item.key}>已中断，这一步没有完成</div>
+            }
             return (
               <ProcessGroup
                 key={item.key}
