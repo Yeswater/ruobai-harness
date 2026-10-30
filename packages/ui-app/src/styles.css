@@ -3779,6 +3779,12 @@ body {
   font-size: 9.5px;
 }
 
+/* An unsent session: its row exists, its log does not. */
+.session-tag.draft {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+
 .session.archived .session-title {
   color: var(--faint);
 }

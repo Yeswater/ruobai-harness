@@ -5,6 +5,7 @@ import { useClientPlugins } from './useClientPlugins.ts'
 import { browserBus } from './panel-events.ts'
 import { api, type ActivitySummary, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
+import { withDraftRow } from './draft-session.ts'
 import {
   isExpandShortcut, isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut,
   isTerminalShortcut, modKeyLabel,
@@ -114,6 +115,12 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
+  // `withDraftRow` builds a fresh array, so memoize it: the sidebar groups and
+  // filters it on every change and would otherwise recompute each render.
+  const sidebarSessions = useMemo(
+    () => withDraftRow(harness.sessions, harness.draft),
+    [harness.sessions, harness.draft],
+  )
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const [skills, setSkills] = useState<SkillSummary[]>([])
@@ -428,8 +435,8 @@ export function App() {
       }}
     >
       <Sidebar
-        sessions={harness.sessions}
-        activeId={harness.activeId}
+        sessions={sidebarSessions}
+        activeId={harness.draft?.id ?? harness.activeId}
         open={sidebarOpen}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
@@ -813,7 +820,12 @@ export function App() {
         sessionId={sessionId}
         themePreference={preference}
         onThemeChange={setPreference}
-        onSaved={() => { void harness.refreshSettings() }}
+        onSaved={() => {
+          // Provider edits change the model list, so the pickers need a re-read
+          // as well as the command prefix.
+          void harness.refreshSettings()
+          void harness.refreshModels()
+        }}
         onClose={() => setSettingsOpen(false)}
       />
 

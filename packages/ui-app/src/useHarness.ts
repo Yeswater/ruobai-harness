@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AttachmentMeta, ChatEvent, ChatMessage, ChatSession, SessionSummary } from '@ruobai/chat-protocol'
 import { browserBus, previewBus, terminalBus } from './panel-events.ts'
+import { draftSession, isDraftId } from './draft-session.ts'
 import {
   api,
   connectEvents,
@@ -75,32 +76,12 @@ function applyEvent(session: ChatSession, event: ChatEvent): ChatSession {
 let bootstrapPromise: Promise<{ sessions: SessionSummary[]; activeId: string | null }> | undefined
 
 const ACTIVE_KEY = 'rbh-active-session'
-const DRAFT_PREFIX = 'draft:'
-let draftSeq = 0
 
 function storedActiveId(): string | null {
   try {
     return localStorage.getItem(ACTIVE_KEY)
   } catch {
     return null
-  }
-}
-
-/**
- * A new session that lives only in this tab. The host learns about it on the
- * first message, so an untouched "new session" leaves neither a row nor a file.
- */
-function draftSession(workspace?: string): ChatSession {
-  const now = Date.now()
-  return {
-    id: `${DRAFT_PREFIX}${++draftSeq}`,
-    title: 'New session',
-    model: '',
-    workspace,
-    createdAt: now,
-    updatedAt: now,
-    messages: [],
-    streaming: false,
   }
 }
 
@@ -137,6 +118,9 @@ export function useHarness() {
   const activeRef = useRef<string | null>(null)
   const sessionsRef = useRef<SessionSummary[]>([])
   const draftRef = useRef<ChatSession | null>(null)
+  // The launch placeholder must not turn the empty sidebar into a group while
+  // nobody asked for a session: only a session the user opened gets a row.
+  const [draftListed, setDraftListed] = useState(false)
 
   useEffect(() => {
     activeRef.current = activeId
@@ -160,6 +144,9 @@ export function useHarness() {
   }, [])
 
   const select = useCallback((id: string) => {
+    // The draft row is the screen already open: it has no host session to
+    // load, and asking for one would only fail.
+    if (isDraftId(id)) return
     // Clicking the active row must not clear the transcript: activeId would
     // not change, so the loading effect would never run again.
     if (activeRef.current === id) return
@@ -174,9 +161,10 @@ export function useHarness() {
    * Open an unsent session. Nothing is created on the host: the session is
    * persisted by `send` once there is a first message to store.
    */
-  const startDraft = useCallback((workspace?: string) => {
+  const startDraft = useCallback((workspace?: string, silent = false) => {
     const draft = draftSession(workspace)
     draftRef.current = draft
+    setDraftListed(!silent)
     activeRef.current = null
     setActiveId(null)
     setSession(draft)
@@ -201,7 +189,9 @@ export function useHarness() {
     activeRef.current = next
     setActiveId(next)
     setSession(null)
-    if (!next) createFresh()
+    // Deleting the last row leaves the sidebar empty again, like a fresh page:
+    // the placeholder session that replaces it does not claim a folder.
+    if (!next) createFresh(undefined, true)
   }, [createFresh])
 
   const renameSession = useCallback((id: string, title: string) => {
@@ -260,7 +250,9 @@ export function useHarness() {
           activeRef.current = activeId
           setActiveId(activeId)
         } else {
-          startDraft()
+          // Nothing to come back to: open an unsent session, but keep the
+          // sidebar showing its "no sessions yet" hint.
+          startDraft(undefined, true)
         }
       })
       .catch((caught) => {
@@ -326,15 +318,16 @@ export function useHarness() {
     }
   }, [fail])
 
-  useEffect(() => {
-    let cancelled = false
-    void api.getModels()
-      .then((list) => {
-        if (!cancelled) setModels(list)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
+  /**
+   * Re-read the catalog. The host rebuilds `/api/models` from the saved
+   * providers on every request, so a provider added, removed or given a new
+   * model in the settings dialog only reaches the model pickers after this.
+   */
+  const refreshModels = useCallback(async () => {
+    try {
+      setModels(await api.getModels())
+    } catch {
+      // keep the previous catalog when the host cannot answer
     }
   }, [])
 
@@ -346,6 +339,10 @@ export function useHarness() {
       // keep the previous prefix when settings are unavailable
     }
   }, [])
+
+  useEffect(() => {
+    void refreshModels()
+  }, [refreshModels])
 
   useEffect(() => {
     void refreshSettings()
@@ -576,8 +573,18 @@ export function useHarness() {
 
   const createSession = createFresh
 
+  /**
+   * The unsent session on screen, if any. Its row shows in the sidebar under
+   * the folder it was opened in, and disappears the moment the first message
+   * gives it a host session.
+   */
+  const draft = useMemo(
+    () => (!activeId && draftListed && session && isDraftId(session.id) ? session : null),
+    [activeId, draftListed, session],
+  )
+
   // A host session with no messages never became a conversation: keep it out
-  // of the sidebar and the palette. The draft on screen has no row at all.
+  // of the sidebar and the palette. The draft on screen is added separately.
   const visibleSessions = useMemo(
     () => sessions.filter(item => item.messageCount > 0),
     [sessions],
@@ -586,14 +593,15 @@ export function useHarness() {
   const recentWorkspaces = useMemo(() => {
     const seen = new Set<string>()
     const list: string[] = []
-    for (const item of visibleSessions) {
-      const workspace = item.workspace
+    // The folder picked for the session on screen counts even before its first
+    // message: reopening the picker right away should offer it again.
+    for (const workspace of [draft?.workspace, ...visibleSessions.map(item => item.workspace)]) {
       if (!workspace || seen.has(workspace)) continue
       seen.add(workspace)
       list.push(workspace)
     }
     return list.slice(0, 8)
-  }, [visibleSessions])
+  }, [draft, visibleSessions])
 
   const setMode = useCallback((mode: string) => {
     const id = activeRef.current
@@ -725,6 +733,7 @@ export function useHarness() {
     sessions: visibleSessions,
     activeId,
     session,
+    draft,
     connected,
     error,
     modes,
@@ -734,6 +743,7 @@ export function useHarness() {
     refreshContext,
     commandPrefix,
     refreshSettings,
+    refreshModels,
     approvals,
     asks,
     todo,

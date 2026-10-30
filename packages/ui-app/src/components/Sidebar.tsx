@@ -10,6 +10,7 @@ import {
   BrandMarkIcon, ChevronRightIcon, FolderIcon, FolderPlusIcon, FolderTreeIcon, GearIcon,
   PanelLeftIcon, PlusIcon, SearchIcon, SparkIcon,
 } from './Icons.tsx'
+import { isDraftId } from '../draft-session.ts'
 import { useContextMenu } from './ContextMenu.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
 import { shortcutLabel } from '../shortcuts.ts'
@@ -197,7 +198,10 @@ export function Sidebar(props: SidebarProps) {
   }
 
   const renderRow = (session: SessionSummary, groupKey: string, indent: number) => {
-    const draggable = view.orderBy === 'manual'
+    // An unsent session has no host log yet: it can be opened, but there is
+    // nothing to rename, fork, archive or delete until its first message.
+    const draftRow = isDraftId(session.id)
+    const draggable = view.orderBy === 'manual' && !draftRow
     const active = drag?.key === groupKey && drag.id === session.id
     const marker = drag?.key === groupKey && drag.targetId === session.id ? drag.half : undefined
 
@@ -216,7 +220,7 @@ export function Sidebar(props: SidebarProps) {
         style={{ marginLeft: indent }}
         draggable={draggable && editingId !== session.id}
         onContextMenu={(event) => {
-          if (editingId === session.id) return
+          if (editingId === session.id || draftRow) return
           setMenuId(null)
           contextMenu.open(event, [
             { label: '重命名', onSelect: () => startRename(session) },
@@ -244,7 +248,7 @@ export function Sidebar(props: SidebarProps) {
           setDrag({ key: groupKey, id: session.id })
         }}
         onDragOver={(event) => {
-          if (!drag || drag.key !== groupKey) return
+          if (!drag || drag.key !== groupKey || draftRow) return
           event.preventDefault()
           event.dataTransfer.dropEffect = 'move'
           const rect = event.currentTarget.getBoundingClientRect()
@@ -254,7 +258,7 @@ export function Sidebar(props: SidebarProps) {
           }
         }}
         onDrop={(event) => {
-          if (!drag || drag.key !== groupKey) return
+          if (!drag || drag.key !== groupKey || draftRow) return
           event.preventDefault()
           dropCommitted.current = true
           const rect = event.currentTarget.getBoundingClientRect()
@@ -291,20 +295,24 @@ export function Sidebar(props: SidebarProps) {
           <button
             className="session-open"
             onClick={() => props.onSelect(session.id)}
-            onDoubleClick={() => startRename(session)}
+            onDoubleClick={() => { if (!draftRow) startRename(session) }}
           >
             <span className="session-title">{session.title || '新的会话'}</span>
             <span className="session-meta">
               {session.streaming
                 ? <span className="pulse" aria-label="running" />
                 : null}
-              {session.archived ? <span className="session-tag">已归档</span> : null}
-              <span className="session-time">{session.streaming ? '运行中' : relativeTime(session.updatedAt)}</span>
+              {draftRow
+                ? <span className="session-tag draft">草稿</span>
+                : session.archived ? <span className="session-tag">已归档</span> : null}
+              {draftRow
+                ? null
+                : <span className="session-time">{session.streaming ? '运行中' : relativeTime(session.updatedAt)}</span>}
             </span>
           </button>
         )}
 
-        {editingId === session.id ? null : (
+        {editingId === session.id || draftRow ? null : (
           <button
             className="session-more"
             aria-label="会话操作"
@@ -317,7 +325,7 @@ export function Sidebar(props: SidebarProps) {
           </button>
         )}
 
-        {menuId === session.id ? (
+        {menuId === session.id && !draftRow ? (
           <div className="session-menu" onClick={event => event.stopPropagation()}>
             <button onClick={() => startRename(session)}>重命名</button>
             <button disabled={session.streaming} onClick={() => { setMenuId(null); props.onFork(session.id) }}>分叉</button>
