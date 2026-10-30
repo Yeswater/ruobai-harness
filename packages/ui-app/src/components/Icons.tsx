@@ -419,6 +419,16 @@ export function RefreshIcon({ size }: IconProps) {
   )
 }
 
+export function WalletIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a3 3 0 0 1 3 3v9a2 2 0 0 1-2 2H5.5A2.5 2.5 0 0 1 3 16.5Z" />
+      <path d="M3 8h15" />
+      <path d="M16 12.5h2.5" />
+    </svg>
+  )
+}
+
 export function SyncIcon({ size }: IconProps) {
   return (
     <svg {...base(size)}>

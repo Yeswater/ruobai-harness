@@ -29,6 +29,8 @@ import HooksWeb from '@ruobai/hooks-web'
 import LintService from '@ruobai/lint'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
+import LlmBalance from '@ruobai/llm-balance'
+import LlmBalanceWeb from '@ruobai/llm-balance-web'
 import MemoryService from '@ruobai/memory'
 import MemoryDistill from '@ruobai/memory-distill'
 import MemoryWeb from '@ruobai/memory-web'
@@ -215,6 +217,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(PreviewWeb))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))
+  await mount(ctx.plugin(LlmBalance))
 
   await mount(ctx.plugin(WebServer, { port: 0, host: '127.0.0.1', ...options.web }))
   await mount(ctx.plugin(Trajectory))
@@ -228,6 +231,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(GiteeWeb))
   await mount(ctx.plugin(CheckpointsWeb))
   await mount(ctx.plugin(SettingsWeb))
+  await mount(ctx.plugin(LlmBalanceWeb))
   await mount(ctx.plugin(SkillsWeb))
   await mount(ctx.plugin(MemoryWeb))
   await mount(ctx.plugin(WikiWeb))

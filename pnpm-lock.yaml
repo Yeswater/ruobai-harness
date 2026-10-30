@@ -131,6 +131,12 @@ importers:
       '@ruobai/llm':
         specifier: workspace:*
         version: link:packages/llm
+      '@ruobai/llm-balance':
+        specifier: workspace:*
+        version: link:packages/llm-balance
+      '@ruobai/llm-balance-web':
+        specifier: workspace:*
+        version: link:packages/llm-balance-web
       '@ruobai/llm-catalog':
         specifier: workspace:*
         version: link:packages/llm-catalog
@@ -191,6 +197,9 @@ importers:
       '@ruobai/preview-web':
         specifier: workspace:*
         version: link:packages/preview-web
+      '@ruobai/provider-catalog':
+        specifier: workspace:*
+        version: link:packages/provider-catalog
       '@ruobai/rubric':
         specifier: workspace:*
         version: link:packages/rubric
@@ -1182,6 +1191,33 @@ importers:
         specifier: workspace:*
         version: link:../../vendor/schemastery
 
+  packages/llm-balance:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/provider-catalog':
+        specifier: workspace:*
+        version: link:../provider-catalog
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+
+  packages/llm-balance-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/llm-balance':
+        specifier: workspace:*
+        version: link:../llm-balance
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
   packages/llm-catalog:
     dependencies:
       '@ruobai/cordis':
@@ -1447,6 +1483,8 @@ importers:
         specifier: workspace:*
         version: link:../web-server
 
+  packages/provider-catalog: {}
+
   packages/rubric:
     dependencies:
       '@ruobai/contract':
@@ -1648,6 +1686,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/provider-catalog':
+        specifier: workspace:*
+        version: link:../provider-catalog
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings

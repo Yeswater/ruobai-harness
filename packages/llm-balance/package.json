@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/llm-balance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/provider-catalog": "workspace:*",
+    "@ruobai/settings": "workspace:*",
+    "@ruobai/session": "workspace:*"
+  }
+}

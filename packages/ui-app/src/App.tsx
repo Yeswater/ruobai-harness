@@ -463,6 +463,7 @@ export function App() {
         onArchive={harness.archiveSession}
         onDelete={harness.deleteSession}
         onOpenSettings={() => openSettings('behavior')}
+        onOpenModelSettings={() => openSettings('providers')}
         functionView={functionView}
         onOpenFunction={(view) => {
           setFunctionView(view)

@@ -31,6 +31,8 @@ export interface ProviderEntry {
   apiKey?: string
   mode: ProviderMode
   models: ProviderModel[]
+  /** Built-in vendor preset this provider was created from. */
+  preset?: string
 }
 
 export interface ProviderInput {
@@ -42,6 +44,8 @@ export interface ProviderInput {
   apiKey?: string
   mode?: ProviderMode
   models?: Array<ProviderModel | string>
+  /** Preset key; unspecified fields fall back to its endpoint and models. */
+  preset?: string
 }
 
 export interface LlmSettings {
@@ -287,6 +291,7 @@ export interface PublicProvider {
   mode: ProviderMode
   models: ProviderModel[]
   hasApiKey: boolean
+  preset?: string
 }
 
 export interface PublicSettings {
@@ -340,6 +345,20 @@ export interface SecretStore {
 
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1'
 
+/** Environment fallback per built-in vendor preset. */
+const PRESET_ENV: Record<string, string> = {
+  deepseek: 'DEEPSEEK_API_KEY',
+  moonshot: 'MOONSHOT_API_KEY',
+  zhipu: 'ZHIPU_API_KEY',
+  dashscope: 'DASHSCOPE_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+  siliconflow: 'SILICONFLOW_API_KEY',
+  minimax: 'MINIMAX_API_KEY',
+  xai: 'XAI_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+}
+
 /** Shell control and expansion characters that make prefix matching unsafe. */
 const CONTROL_CHARACTERS = /[;&|<>`$()\\\n\r]/
 
@@ -387,9 +406,11 @@ export class SettingsService extends Service {
   /** Effective key: secret store, then stored value, then environment fallbacks. */
   apiKeyFor(id: string): string | undefined {
     const entry = this.findProvider(id)
+    const envName = entry?.preset ? PRESET_ENV[entry.preset] : PRESET_ENV[id]
     return this.secrets()?.get(`llm/${id}`)
       || entry?.apiKey
       || process.env.RBU_API_KEY
+      || (envName ? process.env[envName] : undefined)
       || (entry?.baseUrl?.includes('deepseek') || id === 'deepseek' ? process.env.DEEPSEEK_API_KEY : undefined)
   }
 
@@ -553,6 +574,7 @@ export class SettingsService extends Service {
       models,
       ...(input.note !== undefined ? { note: input.note } : existing?.note ? { note: existing.note } : {}),
       ...(input.website !== undefined ? { website: input.website } : existing?.website ? { website: existing.website } : {}),
+      ...((input.preset ?? existing?.preset) ? { preset: (input.preset ?? existing?.preset)!.trim() } : {}),
     }
 
     const store = this.secrets()
@@ -901,6 +923,7 @@ export class SettingsService extends Service {
           website: 'https://platform.deepseek.com',
           baseUrl: process.env.RBU_BASE_URL ?? DEEPSEEK_BASE,
           mode: 'direct',
+          preset: 'deepseek',
           models: [
             { id: 'deepseek-chat', inputTypes: ['text'] },
             { id: 'deepseek-reasoner', inputTypes: ['text'] },

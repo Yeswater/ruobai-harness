@@ -11,6 +11,7 @@ import {
   PanelLeftIcon, PlusIcon, SearchIcon, SparkIcon,
 } from './Icons.tsx'
 import { isDraftId } from '../draft-session.ts'
+import { BalanceCard } from './BalanceCard.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
 import { shortcutLabel } from '../shortcuts.ts'
@@ -29,6 +30,8 @@ interface SidebarProps {
   onArchive: (id: string, archived: boolean) => void
   onDelete: (id: string) => void
   onOpenSettings: () => void
+  /** Opens the 模型 tab directly (the balance card's footer link). */
+  onOpenModelSettings: () => void
   functionView: FunctionView | null
   onOpenFunction: (view: FunctionView) => void
   /** Current width in px; the resizer reports a new one while dragging. */
@@ -549,6 +552,8 @@ export function Sidebar(props: SidebarProps) {
             </div>
           )}
         </div>
+
+        <BalanceCard onOpenModelSettings={props.onOpenModelSettings} />
 
         <button
           type="button"

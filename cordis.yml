@@ -15,6 +15,14 @@
 - id: llm-catalog
   name: '@ruobai/llm-catalog'
 
+# Account balance and today's token totals. Balance is queried only for
+# vendors with a documented endpoint; the card shows why for the rest.
+- id: llm-balance
+  name: '@ruobai/llm-balance'
+
+- id: llm-balance-web
+  name: '@ruobai/llm-balance-web'
+
 # Append-only session log plus its JSONL persistence adapter.
 - id: sessions
   name: '@ruobai/session'

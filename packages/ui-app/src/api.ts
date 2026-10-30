@@ -224,6 +224,7 @@ export interface PublicProvider {
   mode: ProviderMode
   models: ProviderModel[]
   hasApiKey: boolean
+  preset?: string
 }
 
 /** One environment (customer / staging / prod); secrets stay behind keyRef. */
@@ -273,8 +274,10 @@ export interface ProviderPreset {
   name: string
   note?: string
   website?: string
+  /** Console page that issues API keys. */
+  keyUrl?: string
   baseUrl: string
-  models: Array<{ id: string; inputTypes?: Array<'text' | 'image'> }>
+  models: ProviderModel[]
 }
 
 export interface ProviderInput {
@@ -285,6 +288,49 @@ export interface ProviderInput {
   apiKey?: string
   mode?: ProviderMode
   models?: Array<ProviderModel | string>
+  /** Built-in vendor preset; the server fills endpoint and models from it. */
+  preset?: string
+}
+
+export interface LlmBalanceLine {
+  label: string
+  amount: string
+  currency?: string
+}
+
+export interface LlmProviderBalance {
+  available: boolean
+  currency?: string
+  total?: string
+  items: LlmBalanceLine[]
+  updatedAt: number
+}
+
+export interface LlmProviderOverview {
+  id: string
+  name: string
+  preset?: string
+  active: boolean
+  hasKey: boolean
+  modelCount: number
+  state: 'ok' | 'no-key' | 'unsupported' | 'error'
+  balance?: LlmProviderBalance
+  message?: string
+}
+
+export interface LlmUsageToday {
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  cacheWriteInputTokens: number
+  totalTokens: number
+  calls: number
+}
+
+export interface LlmOverview {
+  providers: LlmProviderOverview[]
+  usage: LlmUsageToday
+  updatedAt: number
 }
 
 export interface SettingsPatch {
@@ -1318,11 +1364,14 @@ export const api = {
   providerPresets: async () =>
     (await request<{ presets: ProviderPreset[] }>('/api/providers/presets')).presets,
 
-  fetchProviderModels: async (input: { baseUrl: string; apiKey?: string; id?: string }) =>
+  fetchProviderModels: async (input: { baseUrl?: string; apiKey?: string; id?: string; preset?: string }) =>
     (await request<{ models: ProviderModel[] }>('/api/providers/models', {
       method: 'POST',
       body: JSON.stringify(input),
     })).models,
+
+  llmOverview: async (refresh = false) =>
+    request<LlmOverview>(`/api/llm/overview${refresh ? '?refresh=1' : ''}`),
 
   getMcpServers: async () =>
     (await request<{ servers: McpServer[] }>('/api/mcp')).servers,
