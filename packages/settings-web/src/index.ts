@@ -57,6 +57,8 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
               compactAt: typeof body.agent.compactAt === 'number' ? body.agent.compactAt : undefined,
             }
           : undefined,
+        profiles: Array.isArray(body?.profiles) ? normalizeProfiles(body.profiles) : undefined,
+        activeProfile: typeof body?.activeProfile === 'string' ? body.activeProfile : undefined,
       })
       sendJson(res, 200, { settings })
       return true
@@ -66,6 +68,35 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
     fail(ctx, res, error, 'settings-web')
   }
   return true
+}
+
+/**
+ * Profiles are environment labels, not a second settings tree: only the fields
+ * that differ per environment are kept, and secrets stay behind `keyRef`.
+ */
+function normalizeProfiles(input: unknown[]) {
+  return input.slice(0, 20).map((raw, index) => {
+    const profile = (raw ?? {}) as Record<string, any>
+    const id = typeof profile.id === 'string' ? profile.id.trim() : ''
+    if (!id) throw new HttpError(400, `profile ${index + 1} needs an id`)
+    const label = typeof profile.label === 'string' && profile.label.trim() ? profile.label.trim() : id
+    const llm = profile.llm && typeof profile.llm === 'object'
+      ? {
+          ...(typeof profile.llm.provider === 'string' ? { provider: profile.llm.provider } : {}),
+          ...(typeof profile.llm.baseUrl === 'string' ? { baseUrl: profile.llm.baseUrl } : {}),
+          ...(typeof profile.llm.keyRef === 'string' ? { keyRef: profile.llm.keyRef } : {}),
+        }
+      : undefined
+    const root = profile.workspace && typeof profile.workspace.root === 'string'
+      ? profile.workspace.root.trim()
+      : ''
+    return {
+      id,
+      label,
+      ...(llm && Object.keys(llm).length ? { llm } : {}),
+      ...(root ? { workspace: { root } } : {}),
+    }
+  })
 }
 
 async function handleProviders(ctx: Context, req: IncomingMessage, res: ServerResponse, url: URL) {

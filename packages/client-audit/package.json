@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "rbu": {
+    "client": "./client/index.jsx"
+  },
   "dependencies": {
     "@ruobai/contract": "workspace:*",
     "@ruobai/cordis": "workspace:*",

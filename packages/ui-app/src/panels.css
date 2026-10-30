@@ -1333,3 +1333,21 @@ button.session-row:hover {
     overflow-x: auto;
   }
 }
+
+/* Settings: environment profile selector. */
+.settings-select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings-note {
+  padding-top: 4px;
+  font-size: 11px;
+  color: var(--faint, #6b7280);
+}

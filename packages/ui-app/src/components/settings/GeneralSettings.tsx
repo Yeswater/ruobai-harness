@@ -48,6 +48,7 @@ export function GeneralSettings({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmFullAccess, setConfirmFullAccess] = useState(false)
+  const [activeProfile, setActiveProfile] = useState(settings?.activeProfile ?? '')
 
   useEffect(() => {
     let cancelled = false
@@ -69,6 +70,7 @@ export function GeneralSettings({
     setDefaultPermission(next.defaultPermission)
     setCommandPrefix(next.commandPrefix)
     setCompactPercent(next.compactPercent)
+    setActiveProfile(settings?.activeProfile ?? '')
   }, [settings])
 
   const dirty = agentMode !== saved.agentMode
@@ -102,6 +104,37 @@ export function GeneralSettings({
   return (
     <div className="settings-panel">
       <SettingsScroll>
+        <SettingsGroup label="环境">
+          <SettingRow
+            title="环境档案"
+            description="新建会话钉住的客户/环境；切换不会移动已开的会话。密钥只存 keyRef，不随档案导出。"
+          >
+            <select
+              className="settings-select"
+              value={activeProfile}
+              onChange={async (event) => {
+                const value = event.target.value
+                setActiveProfile(value)
+                setError(null)
+                try {
+                  onSaved(await api.updateSettings({ activeProfile: value }))
+                  setNotice('环境已切换，新建会话生效')
+                } catch (caught) {
+                  setError(caught instanceof Error ? caught.message : String(caught))
+                }
+              }}
+            >
+              <option value="">未选择</option>
+              {(settings?.profiles ?? []).map(profile => (
+                <option key={profile.id} value={profile.id}>{profile.label}</option>
+              ))}
+            </select>
+          </SettingRow>
+          {(settings?.profiles ?? []).length === 0
+            ? <div className="settings-note">还没有环境档案：在 settings.json 的 profiles 里添加，字段为 id / label / workspace.root / llm.keyRef。</div>
+            : null}
+        </SettingsGroup>
+
         <SettingsGroup label="外观">
           <SettingRow
             title="主题"

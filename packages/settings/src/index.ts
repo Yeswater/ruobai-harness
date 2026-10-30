@@ -303,6 +303,8 @@ export interface PublicSettings {
   mcp?: PublicMcpSettings
   hooks?: HookSettings
   gitee?: PublicGiteeSettings
+  profiles?: EnvironmentProfile[]
+  activeProfile?: string
 }
 
 export interface Config {
@@ -457,6 +459,8 @@ export class SettingsService extends Service {
     }
     if (this.data.hooks) result.hooks = structuredClone(this.data.hooks)
     if (this.data.gitee || process.env.GITEE_TOKEN) result.gitee = this.publicGitee()
+    if (this.data.profiles?.length) result.profiles = structuredClone(this.data.profiles)
+    if (this.data.activeProfile) result.activeProfile = this.data.activeProfile
     return result
   }
 

@@ -226,6 +226,14 @@ export interface PublicProvider {
   hasApiKey: boolean
 }
 
+/** One environment (customer / staging / prod); secrets stay behind keyRef. */
+export interface ProfileSummary {
+  id: string
+  label: string
+  llm?: { provider?: string; baseUrl?: string; keyRef?: string }
+  workspace?: { root?: string }
+}
+
 export interface PublicSettings {
   llm?: {
     activeProvider?: string
@@ -247,6 +255,8 @@ export interface PublicSettings {
     rules: ApprovalRule[]
     guard: ApprovalGuard
   }
+  profiles?: ProfileSummary[]
+  activeProfile?: string
 }
 
 export interface ProviderPreset {
@@ -284,6 +294,8 @@ export interface SettingsPatch {
     bypassApprovals?: boolean
     compactAt?: number
   }
+  profiles?: ProfileSummary[]
+  activeProfile?: string
 }
 
 export interface ModeInfo {

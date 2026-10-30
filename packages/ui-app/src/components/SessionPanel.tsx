@@ -11,6 +11,7 @@ import {
 import { selectOutputs } from '../output-files.ts'
 import { CreatePrDialog } from './CreatePrDialog.tsx'
 import { DeliveryPanel } from './DeliveryPanel.tsx'
+import { Slot } from './Slot.tsx'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
 import {
   BranchIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, GearIcon, ListIcon,
@@ -155,6 +156,7 @@ export function SessionPanel({
 
       <Section title="交付" icon={<ShieldIcon />}>
         <DeliveryPanel delivery={delivery} />
+        <Slot name="details.audit" props={{ sessionId: session.id }} />
       </Section>
 
       <Section
