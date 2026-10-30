@@ -1328,6 +1328,9 @@ importers:
       '@ruobai/context':
         specifier: workspace:*
         version: link:../context
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:../contract
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis

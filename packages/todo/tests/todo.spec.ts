@@ -135,4 +135,44 @@ describe('todo', () => {
     const unknown = await fetch(`${ctx.web.url}/api/todo?sessionId=nope`)
     expect(unknown.status).toBe(404)
   })
+
+  it('binds a completed task to an acceptance and its evidence', async () => {
+    const { ctx, sessionId } = await setup()
+    await ctx.tools.invoke('contract_open', {
+      title: 'V1',
+      goals: [],
+      nonGoals: [],
+      acceptance: [{
+        id: 'A1',
+        criterion: '首页首屏在 2 秒内渲染完成',
+        kind: 'auto',
+        check: { tool: 'bash', command: 'curl -s localhost:3000', expectExit: 0 },
+      }],
+    }, { sessionId })
+
+    const missingEvidence = await ctx.tools.invoke('todo_write', {
+      tasks: [{ id: '1', text: '修首页', status: 'completed', contractRef: 'A1' }],
+    }, { sessionId })
+    expect(missingEvidence.isError).toBe(true)
+    expect(missingEvidence.content).toContain('no evidence')
+
+    const unknownAcceptance = await ctx.tools.invoke('todo_write', {
+      tasks: [{ id: '1', text: '修首页', status: 'completed', contractRef: 'A9', evidence: ['12'] }],
+    }, { sessionId })
+    expect(unknownAcceptance.isError).toBe(true)
+    expect(unknownAcceptance.content).toContain('unknown acceptance')
+
+    const inProgress = await ctx.tools.invoke('todo_write', {
+      tasks: [{ id: '1', text: '修首页', status: 'in_progress', contractRef: 'A1' }],
+    }, { sessionId })
+    expect(inProgress.isError).toBe(false)
+    expect(todoOf(ctx, sessionId).unsatisfied).toBe(1)
+
+    const done = await ctx.tools.invoke('todo_write', {
+      tasks: [{ id: '1', text: '修首页', status: 'completed', contractRef: 'A1', evidence: ['12'] }],
+    }, { sessionId })
+    expect(done.isError).toBe(false)
+    expect(todoOf(ctx, sessionId).unsatisfied).toBe(0)
+    expect(todoOf(ctx, sessionId).closedAt).toBeTypeOf('number')
+  })
 })

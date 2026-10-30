@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@ruobai/context": "workspace:*",
+    "@ruobai/contract": "workspace:*",
     "@ruobai/cordis": "workspace:*",
     "@ruobai/session": "workspace:*",
     "@ruobai/tools": "workspace:*"

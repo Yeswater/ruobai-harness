@@ -3,6 +3,7 @@ import type {} from '@ruobai/context'
 import type { SessionEvent } from '@ruobai/session'
 import type {} from '@ruobai/session'
 import type { ToolDefinition } from '@ruobai/tools'
+import { contractOf } from '@ruobai/contract'
 
 export const name = 'todo'
 export const inject = ['tools', 'sessions']
@@ -13,6 +14,10 @@ export interface TodoItem {
   id: string
   text: string
   status: TodoStatus
+  /** Acceptance id this task proves; completing it needs evidence. */
+  contractRef?: string
+  /** Evidence refs: a tool/result seq or a checker id. Never the proof itself. */
+  evidence?: string[]
 }
 
 export interface TodoState {
@@ -20,6 +25,10 @@ export interface TodoState {
   /** Monotonic per session; clients use it to discard stale snapshots. */
   rev: number
   lastSeq: number
+  /** Contract-linked items done on paper but still missing evidence. */
+  unsatisfied: number
+  /** Set when the whole list is complete; used by handoff as the finish time. */
+  closedAt?: number
 }
 
 export const TODO_EVENT = 'todo/updated'
@@ -35,7 +44,7 @@ declare module '@ruobai/cordis' {
   }
 }
 
-const EMPTY: TodoState = { items: [], rev: 0, lastSeq: -1 }
+const EMPTY: TodoState = { items: [], rev: 0, lastSeq: -1, unsatisfied: 0 }
 
 /**
  * Fold `todo/updated` into the list the model and the UI read.
@@ -49,10 +58,17 @@ export const todoProjection = {
   apply(state: TodoState, event: SessionEvent): TodoState {
     if (event.type !== TODO_EVENT) return state
     const data = event.data as Partial<TodoState> | undefined
+    const items = Array.isArray(data?.items) ? data.items as TodoItem[] : []
+    // Contract-linked items without evidence are done only on paper; the panel
+    // shows the count so progress is not mistaken for acceptance.
+    const unsatisfied = items.filter(item => item.contractRef && !item.evidence?.length).length
+    const allDone = items.length > 0 && items.every(item => item.status === 'completed')
     return {
-      items: Array.isArray(data?.items) ? data.items as TodoItem[] : [],
+      items,
       rev: Number(data?.rev ?? state.rev),
       lastSeq: event.seq,
+      unsatisfied,
+      ...(allDone ? { closedAt: state.closedAt ?? event.ts } : {}),
     }
   },
 }
@@ -138,25 +154,30 @@ function todoTool(ctx: Context): ToolDefinition {
     execute(args, run) {
       const sessionId = run?.sessionId
       if (!sessionId) throw new Error('todo_write requires a session')
-      const items = normalize(args?.tasks)
+      const items = normalize(ctx, sessionId, args?.tasks)
       const previous = todoOf(ctx, sessionId)
       const rev = previous.rev + 1
       ctx.sessions.append(sessionId, TODO_EVENT, { items, rev })
-      const state: TodoState = { items, rev, lastSeq: previous.lastSeq }
+      const state: TodoState = {
+        items,
+        rev,
+        lastSeq: previous.lastSeq,
+        unsatisfied: items.filter(item => item.contractRef && !item.evidence?.length).length,
+      }
       ctx.emit('todo/updated', sessionId, state)
       return summarize(items)
     },
   }
 }
 
-function normalize(input: unknown): TodoItem[] {
+function normalize(ctx: Context, sessionId: string, input: unknown): TodoItem[] {
   if (input === undefined || input === null) throw new Error('tasks is required')
   if (!Array.isArray(input)) throw new Error('tasks must be an array')
   if (input.length > MAX_ITEMS) throw new Error(`task list is limited to ${MAX_ITEMS} items`)
 
   const seen = new Set<string>()
   const items = input.map((raw, index) => {
-    const item = (raw ?? {}) as { id?: unknown; text?: unknown; status?: unknown }
+    const item = (raw ?? {}) as { id?: unknown; text?: unknown; status?: unknown; contractRef?: unknown; evidence?: unknown }
     const text = typeof item.text === 'string' ? item.text.trim() : ''
     if (!text) throw new Error(`task ${index + 1} has no text`)
     if (text.length > MAX_TEXT) throw new Error(`task ${index + 1} is longer than ${MAX_TEXT} characters`)
@@ -166,10 +187,35 @@ function normalize(input: unknown): TodoItem[] {
     const id = (typeof item.id === 'string' ? item.id.trim() : '') || String(index + 1)
     if (seen.has(id)) throw new Error(`duplicate task id "${id}"`)
     seen.add(id)
-    return { id, text, status: item.status as TodoStatus }
+
+    const contractRef = typeof item.contractRef === 'string' ? item.contractRef.trim() : ''
+    const evidence = Array.isArray(item.evidence)
+      ? item.evidence.map(entry => typeof entry === 'string' ? entry.trim() : '').filter(Boolean)
+      : []
+    return {
+      id,
+      text,
+      status: item.status as TodoStatus,
+      ...(contractRef ? { contractRef } : {}),
+      ...(evidence.length ? { evidence } : {}),
+    }
   })
   if (items.filter(item => item.status === 'in_progress').length > 1) {
     throw new Error('only one task may be in progress')
+  }
+
+  // Contract binding: a completed task that claims an acceptance must cite
+  // evidence, and the acceptance must exist in the open contract.
+  const contract = contractOf(ctx, sessionId).open
+  for (const item of items) {
+    if (!item.contractRef) continue
+    if (!contract) throw new Error(`task ${item.id} references ${item.contractRef} but no contract is open`)
+    if (!contract.acceptance.some(candidate => candidate.id === item.contractRef)) {
+      throw new Error(`task ${item.id} references unknown acceptance ${item.contractRef}`)
+    }
+    if (item.status === 'completed' && !item.evidence?.length) {
+      throw new Error(`task ${item.id} is completed but has no evidence`)
+    }
   }
   return items
 }
@@ -193,7 +239,11 @@ function renderSection(items: TodoItem[]): string {
   return [
     '<task_list>',
     'Your current task list for this session. Update it with todo_write as work moves; keep one item in progress.',
-    ...items.map(item => `${item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[>]' : '[ ]'} ${item.text}`),
+    ...items.map((item) => {
+      const mark = item.status === 'completed' ? '[x]' : item.status === 'in_progress' ? '[>]' : '[ ]'
+      const pending = item.contractRef && !item.evidence?.length ? ' (needs evidence)' : ''
+      return `${mark} ${item.text}${pending}`
+    }),
     '</task_list>',
   ].join('\n')
 }

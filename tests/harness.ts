@@ -15,6 +15,8 @@ import CommitPromptService from '@ruobai/commit-prompt'
 import CommitPromptWeb from '@ruobai/commit-prompt-web'
 import ContextSearch from '@ruobai/context-search'
 import ContextService from '@ruobai/context'
+import ContractService from '@ruobai/contract'
+import DeliveryService from '@ruobai/delivery'
 import { Context } from '@ruobai/cordis'
 import GitService from '@ruobai/git'
 import GitWeb from '@ruobai/git-web'
@@ -197,9 +199,11 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   // but no external toolchain runs in unit tests.
   await mount(ctx.plugin(LintService, { checkers: [] }))
   await mount(ctx.plugin(HooksService))
+  await mount(ctx.plugin(DeliveryService))
   await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(Todo))
+  await mount(ctx.plugin(ContractService))
   await mount(ctx.plugin(PlanService))
   await mount(ctx.plugin(BrowserPreview, { waitMs: 50 }))
   await mount(ctx.plugin(TerminalService, { root: dir }))

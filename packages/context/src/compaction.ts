@@ -37,6 +37,28 @@ export const IMAGE_TOKENS = 2_000
 /** Conversation events that reach the model. */
 const CONVERSATION_EVENTS = new Set(['message/user', 'message/assistant', 'tool/result'])
 
+/**
+ * Events a compaction must never rewrite or fold away.
+ *
+ * The contract and its evidence are facts the delivery verdict is recomputed
+ * from; a summary that paraphrases them would let a claim drift from its proof.
+ */
+export const PROTECTED_EVENTS = new Set([
+  'contract/opened',
+  'contract/amended',
+  'contract/closed',
+  'delivery/claim',
+  'delivery/verdict',
+  'delivery/waiver',
+  'todo/updated',
+  'plan/proposed',
+  'plan/resolved',
+])
+
+export function isProtected(event: SessionEvent): boolean {
+  return PROTECTED_EVENTS.has(event.type)
+}
+
 export interface PruneConfig {
   enabled: boolean
   /** Newest tool results excluded from any prune epoch. */
@@ -175,7 +197,14 @@ export function planPruneEpoch(
   options: { afterSeq: number; keepRecent: number },
 ): PrunePlan | undefined {
   if (!config.enabled) return undefined
-  const results = events.filter(event => event.type === 'tool/result' && event.seq > options.afterSeq)
+  // Never prune past the newest protected event: the evidence a claim cites
+  // would lose the context that makes it checkable.
+  const latestProtected = events.reduce(
+    (max, event) => isProtected(event) ? Math.max(max, event.seq) : max,
+    -1,
+  )
+  const afterSeq = Math.max(options.afterSeq, latestProtected)
+  const results = events.filter(event => event.type === 'tool/result' && event.seq > afterSeq)
   const keep = Math.max(0, options.keepRecent)
   const candidates = results.slice(0, Math.max(0, results.length - keep))
 

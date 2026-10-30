@@ -119,6 +119,29 @@ describe('compaction helpers', () => {
     expect(plan?.upToSeq).toBe(0)
   })
 
+  it('never prunes tool output older than the newest contract event', () => {
+    const config = {
+      enabled: true,
+      keepRecent: 1,
+      thresholdChars: 100,
+      headChars: 10,
+      tailChars: 10,
+    }
+    const events = [
+      event(0, 'tool/result', { callId: 'c0', name: 'read_file', content: 'a'.repeat(500) }),
+      event(1, 'contract/opened', { id: 'k', title: 'V1', goals: [], nonGoals: [], acceptance: [] }),
+      event(2, 'tool/result', { callId: 'c2', name: 'read_file', content: 'b'.repeat(500) }),
+      event(3, 'tool/result', { callId: 'c3', name: 'read_file', content: 'c'.repeat(500) }),
+    ]
+
+    const plan = planPruneEpoch(events, config, { afterSeq: -1, keepRecent: 1 })
+    // seq 0 predates the contract: pruning it would strip the context of the
+    // evidence the contract points at. Only results after it are eligible.
+    expect(plan?.decisions.has(0)).toBe(false)
+    expect(plan?.decisions.has(2)).toBe(true)
+    expect(plan?.decisions.has(3)).toBe(false)
+  })
+
   it('never revisits a committed decision when new results arrive', () => {
     const config = {
       enabled: true,
