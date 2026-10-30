@@ -39,8 +39,15 @@ function spec(overrides: Partial<SandboxSpec> = {}): SandboxSpec {
   }
 }
 
+/**
+ * The service resolves providers by the running platform (`process.platform`),
+ * so the fake has to register for that one too; hard-coding `darwin` made every
+ * provider-backed test fail on the Linux CI runner.
+ */
+const PLATFORM = process.platform as NodeJS.Platform
+
 class FakeProvider implements SandboxProvider {
-  readonly platform = 'darwin' as NodeJS.Platform
+  readonly platform = PLATFORM
   readonly id = 'fake'
   readonly capabilities = new Set<Capability>(['kernel-fs'])
   constructor(public available = true) {}
@@ -114,7 +121,7 @@ async function setup() {
 describe('SandboxService', () => {
   it('fails closed with no provider', async () => {
     const { ctx } = await setup()
-    expect(ctx.sandbox.provider('darwin')).toBeUndefined()
+    expect(ctx.sandbox.provider()).toBeUndefined()
     await expect(ctx.sandbox.execute(spec())).rejects.toBeInstanceOf(SandboxUnavailableError)
   })
 
@@ -122,7 +129,7 @@ describe('SandboxService', () => {
     const { ctx } = await setup()
     const provider = new FakeProvider(false)
     cleanups.push(ctx.sandbox.registerProvider(provider))
-    expect(ctx.sandbox.provider('darwin')).toBeUndefined()
+    expect(ctx.sandbox.provider()).toBeUndefined()
     await expect(ctx.sandbox.execute(spec())).rejects.toBeInstanceOf(SandboxUnavailableError)
   })
 
@@ -151,7 +158,7 @@ describe('SandboxService', () => {
     const provider = new FakeProvider()
     const dispose = ctx.sandbox.registerProvider(provider)
     dispose()
-    expect(ctx.sandbox.provider('darwin')).toBeUndefined()
+    expect(ctx.sandbox.provider()).toBeUndefined()
     // destroyAll is async; the capability must be gone synchronously.
     await Promise.resolve()
     expect(provider.destroysAll).toBe(1)
@@ -163,11 +170,11 @@ describe('SandboxService', () => {
     const second = new FakeProvider()
     const disposeFirst = ctx.sandbox.registerProvider(first)
     const disposeSecond = ctx.sandbox.registerProvider(second)
-    expect(ctx.sandbox.provider('darwin')?.id).toBe('fake')
+    expect(ctx.sandbox.provider()?.id).toBe('fake')
     disposeSecond()
-    expect(ctx.sandbox.provider('darwin')).toBe(first)
+    expect(ctx.sandbox.provider()).toBe(first)
     disposeFirst()
-    expect(ctx.sandbox.provider('darwin')).toBeUndefined()
+    expect(ctx.sandbox.provider()).toBeUndefined()
   })
 
   it('aborts in-flight runs and reclaims everything on unload', async () => {
