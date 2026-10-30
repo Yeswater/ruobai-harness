@@ -4,11 +4,13 @@ import {
   api,
   type CheckpointChange,
   type ContextInfo,
+  type DeliverySnapshot,
   type GitChange,
   type GitInfo,
 } from '../api.ts'
 import { selectOutputs } from '../output-files.ts'
 import { CreatePrDialog } from './CreatePrDialog.tsx'
+import { DeliveryPanel } from './DeliveryPanel.tsx'
 import { FileTypeIcon } from './FileTypeIcon.tsx'
 import {
   BranchIcon, ChevronDownIcon, ChevronRightIcon, FolderIcon, GearIcon, ListIcon,
@@ -47,6 +49,7 @@ export function SessionPanel({
 }: SessionPanelProps) {
   const [context, setContext] = useState<ContextInfo | null>(null)
   const [checkpoints, setCheckpoints] = useState<CheckpointChange[]>([])
+  const [delivery, setDelivery] = useState<DeliverySnapshot | null>(null)
   const [git, setGit] = useState<GitState | null>(null)
   const [allOutputs, setAllOutputs] = useState(false)
   const [prOpen, setPrOpen] = useState(false)
@@ -55,6 +58,7 @@ export function SessionPanel({
     if (!session) {
       setContext(null)
       setCheckpoints([])
+      setDelivery(null)
       return
     }
     let cancelled = false
@@ -65,6 +69,14 @@ export function SessionPanel({
         setCheckpoints(nextCheckpoints)
       })
       .catch(() => undefined)
+    // Optional panel: a deployment without `delivery-web` has no contract view.
+    void api.delivery(session.id)
+      .then((next) => {
+        if (!cancelled) setDelivery(next)
+      })
+      .catch(() => {
+        if (!cancelled) setDelivery(null)
+      })
     return () => {
       cancelled = true
     }
@@ -139,6 +151,10 @@ export function SessionPanel({
             </span>
           </span>
         </div>
+      </Section>
+
+      <Section title="交付" icon={<ShieldIcon />}>
+        <DeliveryPanel delivery={delivery} />
       </Section>
 
       <Section
@@ -331,6 +347,16 @@ function GaugeIcon() {
       strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M4 15a8 8 0 1 1 16 0" />
       <path d="m12 15 4-4" />
+    </svg>
+  )
+}
+
+function ShieldIcon() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7}
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+      <path d="m9 12 2 2 4-4" />
     </svg>
   )
 }

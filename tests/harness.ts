@@ -17,6 +17,7 @@ import ContextSearch from '@ruobai/context-search'
 import ContextService from '@ruobai/context'
 import ContractService from '@ruobai/contract'
 import DeliveryService from '@ruobai/delivery'
+import DeliveryWeb from '@ruobai/delivery-web'
 import { Context } from '@ruobai/cordis'
 import GitService from '@ruobai/git'
 import GitWeb from '@ruobai/git-web'
@@ -201,6 +202,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(LintService, { checkers: [] }))
   await mount(ctx.plugin(HooksService))
   await mount(ctx.plugin(DeliveryService))
+  await mount(ctx.plugin(DeliveryWeb))
   await mount(ctx.plugin(AgentService))
   await mount(ctx.plugin(ToolTask))
   await mount(ctx.plugin(Todo))

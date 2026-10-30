@@ -29,11 +29,12 @@ import { Sidebar } from './components/Sidebar.tsx'
 import { FunctionWorkspace } from './components/workspace/FunctionWorkspace.tsx'
 import { functionViewInfo, type FunctionView, type ToolTab } from './function-views.ts'
 import { Slot } from './components/Slot.tsx'
+import { HandoffView } from './components/HandoffView.tsx'
 import { Transcript } from './components/Transcript.tsx'
 import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
-type MainView = 'chat' | 'changes' | 'trajectory' | 'context'
+type MainView = 'chat' | 'changes' | 'trajectory' | 'context' | 'handoff'
 
 const MAIN_VIEW_KEY = 'rbh-main-view'
 const MAIN_TABS: Array<{ id: MainView; label: string }> = [
@@ -41,11 +42,12 @@ const MAIN_TABS: Array<{ id: MainView; label: string }> = [
   { id: 'changes', label: '更改' },
   { id: 'trajectory', label: '轨迹' },
   { id: 'context', label: '上下文' },
+  { id: 'handoff', label: '交接包' },
 ]
 
 function loadMainView(): MainView {
   const saved = localStorage.getItem(MAIN_VIEW_KEY)
-  return saved === 'trajectory' || saved === 'context' ? saved : 'chat'
+  return saved === 'trajectory' || saved === 'context' || saved === 'handoff' ? saved : 'chat'
 }
 
 function initialPreference(): ThemePreference {
@@ -771,6 +773,8 @@ export function App() {
             ? <ChangesView session={harness.activeId ? harness.session : null} />
             : mainView === 'trajectory'
               ? <TrajectoryView session={harness.activeId ? harness.session : null} />
+            : mainView === 'handoff'
+              ? <HandoffView session={harness.activeId ? harness.session : null} />
             : (
               <ContextView
                 session={harness.activeId ? harness.session : null}

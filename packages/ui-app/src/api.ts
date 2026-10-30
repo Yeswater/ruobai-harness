@@ -640,6 +640,38 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
+/** Contract + acceptance + verdict for the right-hand delivery panel. */
+export interface DeliverySnapshot {
+  sessionId: string
+  rev: number
+  contract: {
+    id: string
+    title: string
+    customer: string | null
+    goals: string[]
+    nonGoals: string[]
+    revision: number
+    acceptance: Array<{ id: string; criterion: string; kind: 'auto' | 'manual' }>
+  } | null
+  verdict: 'pass' | 'fail' | 'unsure'
+  reason: string | null
+  checks: Array<{
+    acceptanceId: string
+    status: 'passed' | 'failed' | 'missing' | 'manual-pending'
+    reason: string
+    evidence: string[]
+  }>
+  waivers: string[]
+  /** The delivery gate blocks the turn while this is true. */
+  blocked: boolean
+}
+
+/** Handoff bundle manifest served by `@ruobai/handoff`. */
+export interface HandoffManifest {
+  generatedFrom: { sessionId: string; upToSeq: number; eventCount: number; generatedAt: string }
+  artifacts: Array<{ name: string; bytes: number; sha256: string }>
+}
+
 export interface TodoSnapshot {
   sessionId: string
   rev: number
@@ -729,6 +761,18 @@ export const api = {
 
   todo: async (id: string) =>
     request<TodoSnapshot>(`/api/todo?sessionId=${encodeURIComponent(id)}`),
+
+  delivery: async (id: string) =>
+    request<DeliverySnapshot>(`/api/delivery?sessionId=${encodeURIComponent(id)}`),
+
+  handoff: async (id: string) =>
+    request<HandoffManifest>(`/api/handoff/${encodeURIComponent(id)}/manifest`),
+
+  handoffArtifact: async (id: string, name: string) => {
+    const response = await fetch(`/api/handoff/${encodeURIComponent(id)}/${encodeURIComponent(name)}`)
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
+    return response.text()
+  },
 
   getCommits: async (id: string) =>
     (await request<{ proposals: CommitProposal[] }>(

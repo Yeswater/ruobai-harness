@@ -41,6 +41,7 @@
     "@ruobai/context-search": "workspace:*",
     "@ruobai/contract": "workspace:*",
     "@ruobai/delivery": "workspace:*",
+    "@ruobai/delivery-web": "workspace:*",
     "@ruobai/cordis": "workspace:*",
     "@ruobai/cordis-plugin-group": "workspace:*",
     "@ruobai/cordis-plugin-include": "workspace:*",

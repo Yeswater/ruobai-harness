@@ -92,6 +92,9 @@ importers:
       '@ruobai/delivery':
         specifier: workspace:*
         version: link:packages/delivery
+      '@ruobai/delivery-web':
+        specifier: workspace:*
+        version: link:packages/delivery-web
       '@ruobai/git':
         specifier: workspace:*
         version: link:packages/git
@@ -683,6 +686,24 @@ importers:
       '@ruobai/tools':
         specifier: workspace:*
         version: link:../tools
+
+  packages/delivery-web:
+    dependencies:
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:../contract
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/delivery':
+        specifier: workspace:*
+        version: link:../delivery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/git:
     dependencies:

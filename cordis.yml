@@ -214,6 +214,10 @@
 - id: delivery
   name: '@ruobai/delivery'
 
+# Delivery panel: contract, acceptance status and the verdict, pushed on change.
+- id: delivery-web
+  name: '@ruobai/delivery-web'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'
