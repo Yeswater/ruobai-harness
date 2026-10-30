@@ -30,6 +30,9 @@ rmSync(join(app, 'dist'), { recursive: true, force: true })
 
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const deploy = spawnSync(pnpm, [
+  // Flat, real directories: pnpm's default `.pnpm/<long-name>/...` layout
+  // exceeds Windows' path limit during NSIS packaging and install.
+  '--config.node-linker=hoisted',
   '--filter', '@ruobai/desktop-runtime',
   'deploy', '--prod', '--legacy', out,
 ], {

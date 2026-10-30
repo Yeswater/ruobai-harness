@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "description": "Ruobai Harness desktop shell",
+  "homepage": "https://github.com/Yeswater/ruobai-harness",
+  "author": "yeswater",
   "type": "module",
   "main": "dist/main.mjs",
   "scripts": {
