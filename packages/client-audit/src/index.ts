@@ -161,9 +161,13 @@ function summarize(event: SessionEvent) {
 function send(res: any, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(body))
+  // `web-server` only stops routing on an exact `true`; returning undefined
+  // would fall through to the SPA fallback and write headers twice.
+  return true
 }
 
 function sendHtml(res: any, status: number, body: string) {
   res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' })
   res.end(body)
+  return true
 }

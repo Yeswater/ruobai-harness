@@ -86,6 +86,10 @@ async function handle(ctx: Context, req: any, res: any, url: URL) {
 function send(res: any, status: number, type: string, body: string) {
   res.writeHead(status, { 'content-type': type })
   res.end(body)
+  // `web-server` only stops routing when a handler returns exactly `true`;
+  // returning undefined makes it fall through to the SPA fallback, which then
+  // writes headers on an already-finished response.
+  return true
 }
 
 function renderReadme(contract: TaskContract | null): string {

@@ -330,6 +330,14 @@
 - id: handoff
   name: '@ruobai/handoff'
 
+# Customer-facing read-only audit (page at /audit/:id, JSON under /api/audit).
+# Off by default: set RBU_AUDIT=1 to expose it, together with web-auth's
+# auditTokens for a read-only credential.
+- id: client-audit
+  name: '@ruobai/client-audit'
+  config:
+    enabled: !!js "process.env.RBU_AUDIT === '1'"
+
 # Gate status API, SSE channel and the Settings → 门禁 panel.
 - id: hooks-web
   name: '@ruobai/hooks-web'

@@ -188,6 +188,10 @@ export class WebServer extends Service {
         return
       }
       if (this.fallback) {
+        // A handler that already responded but did not return exactly `true`
+        // must not reach the fallback: writing twice throws
+        // ERR_HTTP_HEADERS_SENT and surfaces as a Vite overlay.
+        if (res.headersSent) return
         if (await this.fallback(req, res, url) === true) return
         return
       }
