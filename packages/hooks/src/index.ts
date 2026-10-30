@@ -48,6 +48,15 @@ export interface StopDecision {
   feedback?: string
 }
 
+/** What the delivery plugin exposes to the gate; kept structural on purpose. */
+interface DeliveryObservable {
+  contractId: string
+  verdict: 'pass' | 'fail' | 'unsure'
+  checks: Array<{ acceptanceId: string; status: string; reason: string }>
+  at: number
+  reason?: string
+}
+
 interface RoundState {
   key: string
   round: number
@@ -95,6 +104,7 @@ export class HooksService extends Service {
 
   private readonly runs: HookRunView[] = []
   private readonly rounds = new Map<string, RoundState>()
+  private readonly deliverRounds = new Map<string, RoundState>()
   private readonly auditing = new Set<string>()
   private metrics: MetricsState = {
     runs: 0,
@@ -270,6 +280,120 @@ export class HooksService extends Service {
     )
   }
 
+  /**
+   * Delivery gate: every acceptance item of the open contract must be covered.
+   *
+   * Fail-closed by design, unlike the stop gate: a code check that cannot run
+   * may be skipped, but a delivery claim that cannot be judged must never read
+   * as a pass.
+   */
+  async beforeDeliver(sessionId: string): Promise<StopDecision> {
+    const settings = this.settings()
+    if (settings.enabled === false || settings.deliver?.enabled === false) {
+      return { blocked: false, diagnostics: [] }
+    }
+
+    const delivery = this.ctx.get('delivery', false) as
+      | { evaluate(sessionId: string): DeliveryObservable }
+      | undefined
+    if (!delivery) {
+      // An unmounted gate is invisible unless it says so.
+      this.append(sessionId, 'gate/skipped', {
+        at: Date.now(),
+        gate: 'deliver',
+        reason: 'delivery-not-mounted',
+      })
+      return { blocked: false, diagnostics: [] }
+    }
+
+    let outcome: DeliveryObservable
+    try {
+      outcome = delivery.evaluate(sessionId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.append(sessionId, 'delivery/verdict', {
+        contractId: '',
+        verdict: 'unsure',
+        checks: [],
+        reason: `gate-unavailable: ${message}`,
+        at: Date.now(),
+      })
+      return { blocked: false, diagnostics: [] }
+    }
+
+    if (outcome.reason === 'no-contract') {
+      this.append(sessionId, 'gate/skipped', {
+        at: Date.now(),
+        gate: 'deliver',
+        reason: 'no-contract',
+      })
+      return { blocked: false, diagnostics: [] }
+    }
+
+    if (outcome.verdict === 'pass') {
+      this.deliverRounds.delete(sessionId)
+      this.append(sessionId, 'delivery/verdict', outcome)
+      return { blocked: false, diagnostics: [] }
+    }
+
+    return this.blockDelivery(sessionId, outcome, settings.deliver?.maxRounds ?? 3)
+  }
+
+  /**
+   * Block the turn with the acceptance gaps; escalate instead of looping.
+   *
+   * The breaker mirrors the stop gate's: the same fingerprint twice, or too
+   * many rounds, downgrades the verdict to `unsure` and lets the turn end.
+   */
+  private blockDelivery(
+    sessionId: string,
+    outcome: DeliveryObservable,
+    maxRounds: number,
+  ): StopDecision {
+    const key = this.turnKey(sessionId)
+    const current = this.deliverRounds.get(sessionId)
+    const state: RoundState = current && current.key === key ? current : { key, round: 0, last: '' }
+    this.deliverRounds.set(sessionId, state)
+
+    const missing = outcome.checks.filter(check => check.status !== 'passed')
+    const fingerprint = missing
+      .map(check => `${check.acceptanceId}:${check.status}`)
+      .sort()
+      .join('|')
+
+    if (state.round >= maxRounds || state.last === fingerprint) {
+      const reason = state.last === fingerprint ? 'no-progress' : 'max-rounds'
+      this.metrics.escalations += 1
+      this.append(sessionId, 'delivery/verdict', {
+        ...outcome,
+        verdict: 'unsure',
+        reason,
+        at: Date.now(),
+      })
+      this.append(sessionId, 'hooks/escalated', {
+        at: Date.now(),
+        reason,
+        acceptance: missing.map(check => check.acceptanceId),
+      })
+      this.ctx.emit('hooks/escalated', { sessionId, reason })
+      return { blocked: false, escalated: true, diagnostics: [] }
+    }
+
+    state.round += 1
+    state.last = fingerprint
+    this.metrics.blocks += 1
+    this.metrics.lastBlockAt = Date.now()
+    return {
+      blocked: true,
+      diagnostics: [],
+      feedback: [
+        `<delivery-gate round="${state.round}" missing="${missing.length}">`,
+        ...missing.map(check => `${check.acceptanceId} [${check.status}] ${check.reason}`),
+        '</delivery-gate>',
+      ].join('\n'),
+    }
+  }
+
   /** Dry run used by the settings panel; never blocks and never feeds back. */
   async run(
     layer: 'edit' | 'stop',
@@ -310,6 +434,7 @@ export class HooksService extends Service {
         edit: enabled && settings.edit?.enabled !== false,
         stop: enabled && settings.stop?.enabled !== false,
         audit: settings.audit?.enabled === true,
+        deliver: enabled && settings.deliver?.enabled !== false,
       },
       metrics: {
         ...this.metrics,

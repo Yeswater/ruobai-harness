@@ -209,6 +209,11 @@
 - id: contract
   name: '@ruobai/contract'
 
+# Delivery evidence: claims cite tool results by seq; the gate recomputes a
+# verdict from the log, and the section keeps it readable across compaction.
+- id: delivery
+  name: '@ruobai/delivery'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'

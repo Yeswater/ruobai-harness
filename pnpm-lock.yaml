@@ -86,6 +86,9 @@ importers:
       '@ruobai/cordis-plugin-timer':
         specifier: workspace:*
         version: link:vendor/timer
+      '@ruobai/delivery':
+        specifier: workspace:*
+        version: link:packages/delivery
       '@ruobai/git':
         specifier: workspace:*
         version: link:packages/git
@@ -629,6 +632,24 @@ importers:
       '@ruobai/context':
         specifier: workspace:*
         version: link:../context
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
+
+  packages/delivery:
+    dependencies:
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:../contract
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis

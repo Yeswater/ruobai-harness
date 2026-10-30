@@ -218,6 +218,8 @@ export interface HookSettings {
   enabled?: boolean
   edit?: HookLayerSettings
   stop?: HookLayerSettings
+  /** Delivery gate: acceptance coverage before a turn may finish. Fail-closed. */
+  deliver?: HookLayerSettings
   guard?: HookGuardSettings
   audit?: HookAuditSettings
 }

@@ -436,7 +436,10 @@ export class AgentService extends Service {
           // Deterministic gate: a turn may not finish with unbaselined errors.
           // Feedback is persisted so the diagnostics survive a reload.
           const hooks = this.ctx.get('hooks', false) as
-            | { beforeStop(sessionId: string): Promise<{ blocked: boolean; feedback?: string }> }
+            | {
+              beforeStop(sessionId: string): Promise<{ blocked: boolean; feedback?: string }>
+              beforeDeliver?(sessionId: string): Promise<{ blocked: boolean; feedback?: string }>
+            }
             | undefined
           if (hooks && !controller.signal.aborted) {
             try {
@@ -450,8 +453,20 @@ export class AgentService extends Service {
                 })
                 continue
               }
+              // Delivery gate runs after the code gate: a build error should be
+              // reported before a missing acceptance item.
+              const delivery = await hooks.beforeDeliver?.(sessionId)
+              if (delivery?.blocked && delivery.feedback) {
+                this.ctx.sessions.append(sessionId, 'message/user', {
+                  id: randomUUID(),
+                  text: delivery.feedback,
+                  at: Date.now(),
+                  source: { kind: 'hook', name: 'deliver', forMessageId: messageId },
+                })
+                continue
+              }
             } catch (error) {
-              this.ctx.logger('agent').warn('stop gate failed: %s',
+              this.ctx.logger('agent').warn('gate failed: %s',
                 error instanceof Error ? error.message : String(error))
             }
           }

@@ -1,6 +1,6 @@
 /** Wire types shared with the settings panel (no node or cordis imports). */
 
-export type HookLayer = 'edit' | 'stop' | 'audit'
+export type HookLayer = 'edit' | 'stop' | 'audit' | 'deliver'
 
 export interface DiagnosticView {
   path: string
@@ -60,6 +60,7 @@ export interface HookStatusView {
     edit: boolean
     stop: boolean
     audit: boolean
+    deliver: boolean
   }
   metrics: HookMetricsView
   checkers: HookCheckerInfo[]
