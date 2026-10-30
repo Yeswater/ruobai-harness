@@ -3,6 +3,7 @@ import { contractOf } from '@ruobai/contract'
 import { evaluate } from '@ruobai/delivery'
 import z from '@ruobai/schemastery'
 import { visibleTo, type SessionEvent } from '@ruobai/session'
+import { renderAuditPage } from './page.ts'
 import type {} from '@ruobai/session'
 
 export interface Config {
@@ -35,6 +36,19 @@ export function apply(ctx: Context, config: Config) {
     prefix: '/api/audit',
     handler: (req, res, url) => handle(ctx, req, res, url),
   }), 'client-audit.route')
+
+  // The customer's entry point: one server-rendered page, no console bundle.
+  ctx.effect(() => ctx.web.register({
+    prefix: '/audit',
+    handler: (req, res, url) => {
+      if ((req.method ?? 'GET') !== 'GET') return sendHtml(res, 405, '<h1>read-only view</h1>')
+      const match = /^\/audit\/([^/]+)$/.exec(url.pathname)
+      if (!match) return sendHtml(res, 404, '<h1>not found</h1>')
+      const sessionId = decodeURIComponent(match[1]!)
+      if (!ctx.sessions.get(sessionId)) return sendHtml(res, 404, '<h1>unknown session</h1>')
+      return sendHtml(res, 200, renderAuditPage(sessionId))
+    },
+  }), 'client-audit.page')
 }
 
 export default { name, inject, Config, apply }
@@ -147,4 +161,9 @@ function summarize(event: SessionEvent) {
 function send(res: any, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(body))
+}
+
+function sendHtml(res: any, status: number, body: string) {
+  res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' })
+  res.end(body)
 }

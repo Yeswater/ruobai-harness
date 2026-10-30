@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
 import type {} from '@ruobai/session'
+import { resolveProfile, type SettingsData } from '@ruobai/settings'
 
 export interface WorkspaceEntry {
   name: string
@@ -67,8 +68,17 @@ export class WorkspaceService extends Service {
   }
 
   rootFor(sessionId?: string | null) {
-    const workspace = sessionId ? this.ctx.sessions.get(sessionId)?.meta.workspace : undefined
+    const session = sessionId ? this.ctx.sessions.get(sessionId) : undefined
+    // Profile first: a session pinned to customer A must resolve to A's root
+    // even when the active profile or the default root says otherwise.
+    const profile = resolveProfile(this.settingsData(), session?.meta.profile)
+    const workspace = profile?.workspace?.root ?? session?.meta.workspace
     return workspace ? resolve(workspace) : this.root
+  }
+
+  private settingsData() {
+    const settings = this.ctx.get('settings', false) as { raw?(): SettingsData } | undefined
+    return settings?.raw?.()
   }
 
   resolvePath(path: unknown, root = this.root) {

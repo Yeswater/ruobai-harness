@@ -91,7 +91,7 @@ function remember(
 }
 
 /** Routes a read-only token may reach. Everything else is 403, not 401. */
-const AUDIT_PREFIXES = ['/api/audit/', '/api/handoff/', '/api/export/session/']
+const AUDIT_PREFIXES = ['/api/audit/', '/api/handoff/', '/api/export/session/', '/audit/']
 
 function auditAllowed(req: IncomingMessage, url: URL) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false

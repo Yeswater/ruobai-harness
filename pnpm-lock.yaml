@@ -1706,6 +1706,9 @@ importers:
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
 
   packages/workspace-web:
     dependencies:

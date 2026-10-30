@@ -181,7 +181,7 @@ export function apply(ctx: Context, config: Config = {}) {
           },
         })
         : await applyRules(ctx, sessionId, slice, maxConfidence)
-      ctx.sessions.append(sessionId, COMMIT_EVENT, {
+      appendSafe(ctx, sessionId, COMMIT_EVENT, {
         at: Date.now(),
         fromSeq,
         toSeq,
@@ -196,7 +196,7 @@ export function apply(ctx: Context, config: Config = {}) {
       if (failures >= 3) disabledUntil = Date.now() + breakerMinutes * 60_000
       ctx.logger('memory-distill').warn('commit failed: %s',
         error instanceof Error ? error.message : String(error))
-      ctx.sessions.append(sessionId, COMMIT_EVENT, {
+      appendSafe(ctx, sessionId, COMMIT_EVENT, {
         at: Date.now(),
         fromSeq,
         toSeq,
@@ -210,6 +210,22 @@ export function apply(ctx: Context, config: Config = {}) {
     } finally {
       running.delete(sessionId)
     }
+  }
+}
+
+/**
+ * Append a commit event only while the plugin's context is still alive.
+ *
+ * A distill run can finish after the plugin was unloaded; writing then throws
+ * from an inactive context and surfaces as an unhandled rejection. The log is
+ * gone at that point, so dropping the write is the correct outcome.
+ */
+function appendSafe(ctx: Context, sessionId: string, type: string, data: unknown) {
+  try {
+    if (!ctx.sessions.has(sessionId)) return
+    ctx.sessions.append(sessionId, type, data)
+  } catch {
+    // Unloaded from under us; there is nothing left to report to.
   }
 }
 

@@ -87,4 +87,21 @@ describe('client audit view', () => {
     expect((await fetch(`${ctx.web.url}/api/audit/nope/summary`)).status).toBe(404)
     await dispose()
   })
+
+  it('serves a standalone read-only page for the customer', async () => {
+    const { ctx, meta, dispose } = await mount()
+    const response = await fetch(`${ctx.web.url}/audit/${meta.id}`)
+    expect(response.status).toBe(200)
+
+    const html = await response.text()
+    expect(html).toContain('交付审计')
+    expect(html).toContain(meta.id)
+    // No forms and no buttons: the page cannot mutate anything.
+    expect(html).not.toContain('<form')
+    expect(html).not.toContain('<button')
+
+    expect((await fetch(`${ctx.web.url}/audit/${meta.id}`, { method: 'POST' })).status).toBe(405)
+    expect((await fetch(`${ctx.web.url}/audit/nope`)).status).toBe(404)
+    await dispose()
+  })
 })

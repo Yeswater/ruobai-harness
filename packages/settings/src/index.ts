@@ -169,6 +169,38 @@ export interface PublicMcpSettings {
   servers: PublicMcpServer[]
 }
 
+/**
+ * One environment (customer A, staging, production) with the settings that
+ * differ between them.
+ *
+ * Secrets are not stored here: `keyRef` names an entry in `ctx.secrets`, so a
+ * profile can be exported or copied without carrying a key with it.
+ */
+export interface EnvironmentProfile {
+  id: string
+  label: string
+  llm?: { provider?: string; baseUrl?: string; keyRef?: string }
+  sandbox?: { network?: { mode: 'deny' | 'allowlist'; allow?: Array<{ host: string; port: number }> } }
+  workspace?: { root?: string }
+}
+
+/**
+ * The profile in force for a session.
+ *
+ * The profile pinned on the session wins over the currently selected one, so
+ * switching the active profile never silently moves an open session to another
+ * environment.
+ */
+export function resolveProfile(
+  settings: SettingsData | undefined,
+  profileId?: string,
+): EnvironmentProfile | undefined {
+  if (!settings) return undefined
+  const id = profileId?.trim() || settings.activeProfile?.trim()
+  if (!id) return undefined
+  return settings.profiles?.find(profile => profile.id === id)
+}
+
 export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
@@ -179,6 +211,10 @@ export interface SettingsData {
   mcp?: McpSettings
   hooks?: HookSettings
   gitee?: GiteeSettings
+  /** Named environments; a session pins one via `session.meta.profile`. */
+  profiles?: EnvironmentProfile[]
+  /** Default profile for new sessions; switching it does not move open ones. */
+  activeProfile?: string
 }
 
 export type HookFailurePolicy = 'open' | 'close'
@@ -453,6 +489,8 @@ export class SettingsService extends Service {
     ui?: UiSettings
     agent?: AgentSettings
     sandbox?: SandboxSettings
+    profiles?: EnvironmentProfile[]
+    activeProfile?: string
   }): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
     if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || 'mock'
@@ -479,6 +517,12 @@ export class SettingsService extends Service {
     if (patch.sandbox) {
       const sandbox = this.data.sandbox ??= {}
       if (patch.sandbox.enabled !== undefined) sandbox.enabled = Boolean(patch.sandbox.enabled)
+    }
+    if (patch.profiles !== undefined) {
+      this.data.profiles = patch.profiles.map(profile => ({ ...profile }))
+    }
+    if (patch.activeProfile !== undefined) {
+      this.data.activeProfile = patch.activeProfile.trim() || undefined
     }
     return this.commit()
   }
