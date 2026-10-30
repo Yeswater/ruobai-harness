@@ -39,9 +39,31 @@ describe('contribution weeks', () => {
     expect(weeks.flatMap(week => week.cells).filter(Boolean)).toHaveLength(14)
   })
 
-  it('labels the first week of each month', () => {
-    const weeks = buildContributionWeeks(daysFrom('2026-05-25', 21), 3)
-    expect(weeks.map(week => week.label)).toEqual(['5月', undefined, '6月', undefined])
+  it('labels the column that holds the first day of each month', () => {
+    // 2026-05-31 is a Sunday, so its column starts in May but the label sits on
+    // the next column, where 6月 1日 lands.
+    const weeks = buildContributionWeeks(daysFrom('2026-05-31', 35), 3)
+    expect(weeks.map(week => week.label)).toEqual(['6月', undefined, undefined, undefined, '7月'])
+  })
+
+  it('never anchors two labels closer than a month apart', () => {
+    // A year of columns: 28 days is the shortest month, four columns of twelve
+    // pixels against a 22px widest label, so no label can reach its neighbour.
+    const weeks = buildContributionWeeks(daysFrom('2025-10-31', 365), 3)
+    const anchored = weeks.flatMap((week, index) => week.label ? [index] : [])
+    expect(anchored.length).toBeGreaterThanOrEqual(12)
+    for (let index = 1; index < anchored.length; index += 1) {
+      expect(anchored[index]! - anchored[index - 1]!).toBeGreaterThanOrEqual(4)
+    }
+  })
+
+  it('drops the stub month at the window start', () => {
+    // The window opens on 1月 15日, so 1月 1日 is outside it: the first label
+    // is 2月, and the stub columns keep their cells and lose only their label.
+    const weeks = buildContributionWeeks(daysFrom('2026-01-15', 120), 3)
+    expect(weeks.map(week => week.label)).not.toContain('1月')
+    expect(weeks.findIndex(week => week.label) ).toBe(3)
+    expect(weeks[3]!.label).toBe('2月')
   })
 
   it('returns nothing for an empty window', () => {

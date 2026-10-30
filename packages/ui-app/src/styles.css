@@ -11858,6 +11858,10 @@ body.resizing .file-side-resizer::after {
   font-size: 10px;
   line-height: 13px;
   white-space: nowrap;
+  /* The label is wider than its 9px column and must spill over the empty
+     label row of the following weeks; the model keeps two labels apart. */
+  overflow: visible;
+  pointer-events: none;
 }
 
 .contrib-cell {
