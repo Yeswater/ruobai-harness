@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, type SkillDraft } from '../../api.ts'
-import { SettingsGroup, SettingsScroll } from './SettingsLayout.tsx'
+import { SettingsGroup } from './SettingsLayout.tsx'
+import { Button, EmptyState } from '../ui/index.tsx'
 
 /**
  * Skill drafts distilled from finished sessions.
@@ -45,38 +46,46 @@ export function SkillDraftsSettings() {
 
   return (
     <div className="settings-panel">
-      <SettingsScroll>
-        <SettingsGroup label="技能草稿">
-          {drafts.length === 0
-            ? <div className="settings-note">还没有草稿。会话空闲后会把可复用的步骤写到这里，等你确认。</div>
-            : (
-              <ul className="profile-list">
-                {drafts.map(draft => (
-                  <li key={draft.slug} className="profile-row">
-                    <span className="profile-label">{draft.name}</span>
-                    <span className="profile-root">{draft.description || draft.slug}</span>
-                    <button
-                      className="btn ghost compact"
+      <SettingsGroup label="技能草稿">
+        {drafts.length === 0
+          ? (
+            <div className="settings-group-card-note">
+              <EmptyState title="还没有技能草稿">
+                会话空闲后会把可复用的步骤写到这里，等你确认后才会进入项目技能。
+              </EmptyState>
+            </div>
+          )
+          : (
+            <ul className="profile-list">
+              {drafts.map(draft => (
+                <li key={draft.slug} className="profile-row profile-row-skill">
+                  <span className="profile-label">{draft.name}</span>
+                  <span className="profile-root">{draft.description || draft.slug}</span>
+                  <span className="profile-row-actions">
+                    <Button
+                      variant="primary"
+                      small
                       disabled={busy === draft.slug}
                       onClick={() => void act(draft.slug, 'approve')}
                     >
                       批准
-                    </button>
-                    <button
-                      className="btn ghost compact"
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      small
                       disabled={busy === draft.slug}
                       onClick={() => void act(draft.slug, 'discard')}
                     >
                       丢弃
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          {error ? <div className="settings-note danger">{error}</div> : null}
-          {notice ? <div className="settings-note">{notice}</div> : null}
-        </SettingsGroup>
-      </SettingsScroll>
+                    </Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        {error ? <div className="ui-notice error">{error}</div> : null}
+        {notice ? <div className="ui-notice ok">{notice}</div> : null}
+      </SettingsGroup>
     </div>
   )
 }

@@ -13,6 +13,7 @@ import { formatTokens } from '../ContextCard.tsx'
 import { CloseIcon, PlusIcon } from '../Icons.tsx'
 import { Select } from '../Select.tsx'
 import { TokenAmountInput } from '../TokenAmountInput.tsx'
+import { Button, Disclosure } from '../ui/index.tsx'
 
 interface ProvidersSettingsProps {
   settings: PublicSettings | null
@@ -530,87 +531,97 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
               <div className="settings-form-section">
                 <div className="settings-form-title-row">
                   <h3 className="settings-form-title">模型</h3>
-                  <button className="btn ghost compact" onClick={fetchModels} disabled={busy !== null}>
+                  <Button variant="ghost" small onClick={fetchModels} disabled={busy !== null}>
                     {busy === 'models' ? '获取中…' : '获取模型列表'}
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="model-editor">
                   {draft.models.map((model, index) => (
-                    <div className="model-card" key={index}>
-                      <div className="model-card-head">
-                        <input
-                          className="model-id-input mono"
-                          value={model.id}
-                          onChange={event => updateModel(index, { id: event.target.value })}
-                          placeholder="模型 ID，例如 deepseek-chat"
-                          aria-label="Model id"
-                        />
-                        <input
-                          className="model-name-input"
-                          value={model.name ?? ''}
-                          onChange={event => updateModel(index, { name: event.target.value })}
-                          placeholder="显示名称，例如 DeepSeek-V4.1-Flash"
-                          aria-label="Model display name"
-                        />
-                        <button
-                          className="icon-btn subtle"
-                          onClick={() => removeModel(index)}
-                          aria-label={`删除模型 ${model.id || index + 1}`}
-                        >
-                          <CloseIcon size={13} />
-                        </button>
-                      </div>
-                      <div className="model-card-row">
-                        <label className="model-mini-field">
-                          <span>上下文窗口</span>
-                          <TokenAmountInput
-                            value={model.contextWindow}
-                            onChange={contextWindow => updateModel(index, { contextWindow })}
-                            ariaLabel="上下文窗口"
+                    <Disclosure
+                      key={index}
+                      defaultOpen={!model.id}
+                      title={model.name || model.id || '新模型'}
+                      meta={model.contextWindow ? `${formatTokens(model.contextWindow)} 上下文` : '未设置窗口'}
+                    >
+                      <div className="model-card">
+                        <div className="model-card-row">
+                          <input
+                            className="model-id-input mono"
+                            value={model.id}
+                            onChange={event => updateModel(index, { id: event.target.value })}
+                            placeholder="模型 ID，例如 deepseek-chat"
+                            aria-label="Model id"
                           />
-                        </label>
-                        <label className="model-mini-field">
-                          <span>最大输出 token</span>
-                          <TokenAmountInput
-                            value={model.maxOutputTokens}
-                            onChange={maxOutputTokens => updateModel(index, { maxOutputTokens })}
-                            ariaLabel="最大输出 token"
+                          <input
+                            className="model-name-input"
+                            value={model.name ?? ''}
+                            onChange={event => updateModel(index, { name: event.target.value })}
+                            placeholder="显示名称，例如 DeepSeek-V4.1-Flash"
+                            aria-label="Model display name"
                           />
-                        </label>
-                      </div>
-                      {model.contextWindow || model.inputTypes?.length ? (
-                        <div className="model-capabilities">
-                          {model.contextWindow ? <span>{formatTokens(model.contextWindow)} 上下文</span> : null}
-                          {model.maxOutputTokens ? <span>输出 {formatTokens(model.maxOutputTokens)}</span> : null}
-                          <span>{model.inputTypes?.includes('image') ? '支持图片' : '纯文本'}</span>
+                          <Button
+                            variant="ghost"
+                            small
+                            onClick={() => removeModel(index)}
+                            aria-label={`删除模型 ${model.id || index + 1}`}
+                          >
+                            <CloseIcon size={13} />
+                          </Button>
                         </div>
-                      ) : null}
-                      <div className="model-types">
-                        <span>输入类型</span>
-                        {(['text', 'image'] as const).map(type => (
-                          <label key={type}>
-                            <input
-                              type="checkbox"
-                              checked={(model.inputTypes ?? ['text']).includes(type)}
-                              onChange={(event) => {
-                                const current = model.inputTypes ?? ['text']
-                                const next = event.target.checked
-                                  ? [...new Set([...current, type])]
-                                  : current.filter(item => item !== type)
-                                updateModel(index, { inputTypes: next })
-                              }}
+                        <div className="model-card-row two">
+                          <label className="model-mini-field">
+                            <span>上下文窗口</span>
+                            <TokenAmountInput
+                              value={model.contextWindow}
+                              onChange={contextWindow => updateModel(index, { contextWindow })}
+                              ariaLabel="上下文窗口"
                             />
-                            {type === 'image' ? '图片' : '文本'}
                           </label>
-                        ))}
+                          <label className="model-mini-field">
+                            <span>最大输出 token</span>
+                            <TokenAmountInput
+                              value={model.maxOutputTokens}
+                              onChange={maxOutputTokens => updateModel(index, { maxOutputTokens })}
+                              ariaLabel="最大输出 token"
+                            />
+                          </label>
+                        </div>
+                        {model.contextWindow || model.inputTypes?.length ? (
+                          <div className="model-capabilities">
+                            {model.contextWindow ? <span className="model-chip">{formatTokens(model.contextWindow)} 上下文</span> : null}
+                            {model.maxOutputTokens ? <span className="model-chip">输出 {formatTokens(model.maxOutputTokens)}</span> : null}
+                            <span className="model-chip">
+                              {model.inputTypes?.includes('image') ? '支持图片' : '纯文本'}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="model-types">
+                          <span>输入类型</span>
+                          {(['text', 'image'] as const).map(type => (
+                            <label key={type}>
+                              <input
+                                type="checkbox"
+                                checked={(model.inputTypes ?? ['text']).includes(type)}
+                                onChange={(event) => {
+                                  const current = model.inputTypes ?? ['text']
+                                  const next = event.target.checked
+                                    ? [...new Set([...current, type])]
+                                    : current.filter(item => item !== type)
+                                  updateModel(index, { inputTypes: next })
+                                }}
+                              />
+                              {type === 'image' ? '图片' : '文本'}
+                            </label>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    </Disclosure>
                   ))}
-                  <button className="btn ghost model-add" onClick={addModel}>
+                  <Button variant="ghost" small className="model-add" onClick={addModel}>
                     <PlusIcon size={14} />
                     添加模型
-                  </button>
+                  </Button>
                 </div>
 
                 <p className="field-help">
@@ -621,7 +632,7 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
 
               <div className="provider-actions">
                 {draft.id ? (
-                  <button type="button" className="btn ghost danger" onClick={remove} disabled={busy !== null}>删除</button>
+                  <Button variant="danger" onClick={remove} disabled={busy !== null}>删除</Button>
                 ) : null}
                 <span
                   className={`provider-action-status ${error ? 'error' : ''}`}
@@ -631,18 +642,17 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
                   {error ?? notice ?? ''}
                 </span>
                 {draft.id ? (
-                  <button
-                    type="button"
-                    className="btn ghost"
+                  <Button
+                    variant="ghost"
                     onClick={activate}
                     disabled={busy !== null || activeProvider === draft.id}
                   >
                     {activeProvider === draft.id ? '当前供应商' : '设为当前'}
-                  </button>
+                  </Button>
                 ) : null}
-                <button type="button" className="btn" onClick={save} disabled={busy !== null}>
+                <Button variant="primary" onClick={save} disabled={busy !== null}>
                   {busy === 'save' ? '保存中…' : '保存'}
-                </button>
+                </Button>
               </div>
             </>
           )

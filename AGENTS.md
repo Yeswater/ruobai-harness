@@ -81,6 +81,13 @@ cordis.yml     插件的组合方式（唯一应用定义）
   - `ui-app` 的 tsconfig 不包含 `vendor/`；浏览器侧不要 import 会带出 Cordis 的入口，类型走 `@ruobai/<pkg>/types`。
   - 客户端插件自带样式时注入 `<style id="...">`，不要依赖宿主 CSS 类名。
 
+### UI 规范（渐进式发现）
+
+- **入口**：`.claude/skills/ui-design/SKILL.md`。Claude Code 与 RuoBai 的 skills 插件都会从项目 `.claude/skills` 发现它：会话开始时只读取 description，做 UI 改动时才加载正文，需要细则再打开文档。
+- **细则**：`docs/ui-design-system.md`（token、皮肤契约、基础组件、设置页布局、保存策略、检查清单）。
+- **硬规则**：只用 token 与 `components/ui` 的基础组件；皮肤只覆盖 CSS 变量，不在组件里写死颜色；设置页只有一个滚动容器；偏好自动保存、实体表单显式保存；CC / DeepSeek × 明 / 暗四组都要检查。
+- **优先级**：本仓库的 UI 以 `ui-design` 技能与 `docs/ui-design-system.md` 为准。`.ruobai/skills` 下若存在通用 UI 技能（例如 Material/Pinterest 风格的生成器），不得覆盖这里的 token、组件与皮肤契约。
+
 ## 7. 测试
 
 - `pnpm test`（vitest）；全栈测试用 `tests/harness.ts`，新宿主插件记得挂进去。

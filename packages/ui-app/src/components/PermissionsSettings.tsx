@@ -8,6 +8,7 @@ import {
 } from '../api.ts'
 import { PlusIcon } from './Icons.tsx'
 import { Select } from './Select.tsx'
+import { Button, Disclosure } from './ui/index.tsx'
 
 interface Draft {
   id?: string
@@ -59,6 +60,7 @@ export function PermissionsSettings() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [policyNotice, setPolicyNotice] = useState<string | null>(null)
+  const [builtinQuery, setBuiltinQuery] = useState('')
 
   const applyList = (list: ApprovalRule[], target?: ApprovalRule | null) => {
     setRules(list)
@@ -214,21 +216,35 @@ export function PermissionsSettings() {
       </p>
 
       {guardEnabled && builtin.length ? (
-        <details className="permission-builtins">
-          <summary>查看内置保护规则（{builtin.length} 条，按“询问”处理）</summary>
-          <div className="permission-builtin-body">
-            <div className="model-chips">
-              {builtin.map(rule => (
-                <span className="model-chip" key={rule.id} title={rule.sample}>{rule.label}</span>
-              ))}
+        <div className="permission-builtins">
+          <Disclosure
+            title="查看内置保护规则"
+            meta={`${builtin.length} 条 · 按「询问」处理`}
+          >
+            <input
+              className="ui-input builtin-search"
+              value={builtinQuery}
+              onChange={event => setBuiltinQuery(event.target.value)}
+              placeholder="搜索规则，例如 chmod、force、clean"
+              aria-label="搜索内置保护规则"
+            />
+            <div className="permission-builtin-body">
+              <div className="model-chips">
+                {builtin
+                  .filter(rule => !builtinQuery.trim()
+                    || `${rule.label} ${rule.id} ${rule.sample}`.toLowerCase().includes(builtinQuery.trim().toLowerCase()))
+                  .map(rule => (
+                    <span className="model-chip" key={rule.id} title={rule.sample}>{rule.label}</span>
+                  ))}
+              </div>
             </div>
-          </div>
-        </details>
+          </Disclosure>
+        </div>
       ) : null}
 
       <div className="settings-grid">
         <aside className="provider-list">
-          <button className="new-session provider-add" onClick={addRule}>
+          <button className="provider-add" onClick={addRule}>
             <PlusIcon size={15} />
             <span>添加权限规则</span>
           </button>
@@ -335,16 +351,16 @@ export function PermissionsSettings() {
 
           <div className="provider-actions">
             {draft.id ? (
-              <button className="btn ghost danger" onClick={remove} disabled={busy !== null}>删除</button>
+              <Button variant="danger" onClick={remove} disabled={busy !== null}>删除</Button>
             ) : null}
             <span className="spacer" />
-            <button
-              className="btn"
+            <Button
+              variant="primary"
               onClick={save}
               disabled={busy !== null || !draft.tool.trim() || !draft.pattern.trim()}
             >
-              {busy === 'save' ? '保存中…' : '保存'}
-            </button>
+              {busy === 'save' ? '保存中…' : '保存规则'}
+            </Button>
           </div>
         </section>
       </div>

@@ -5,6 +5,7 @@ import { useClientPlugins } from './useClientPlugins.ts'
 import { browserBus } from './panel-events.ts'
 import { api, type ActivitySummary, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
+import { applySkin, loadSkin, saveSkin, type UiSkin } from './preferences.ts'
 import { withDraftRow } from './draft-session.ts'
 import {
   isExpandShortcut, isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut,
@@ -91,6 +92,7 @@ export function App() {
   useClientPlugins()
   const contextMenu = useContextMenu()
   const [preference, setPreference] = useState<ThemePreference>(initialPreference)
+  const [skin, setSkin] = useState<UiSkin>(loadSkin)
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [fileOpen, setFileOpen] = useState(false)
@@ -198,6 +200,11 @@ export function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('rbh-theme', preference)
   }, [theme, preference])
+
+  useEffect(() => {
+    applySkin(skin)
+    saveSkin(skin)
+  }, [skin])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0')
@@ -823,6 +830,8 @@ export function App() {
         sessionId={sessionId}
         themePreference={preference}
         onThemeChange={setPreference}
+        skin={skin}
+        onSkinChange={setSkin}
         onSaved={() => {
           // Provider edits change the model list, so the pickers need a re-read
           // as well as the command prefix.
