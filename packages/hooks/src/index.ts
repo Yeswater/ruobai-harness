@@ -336,7 +336,11 @@ export class HooksService extends Service {
       return { blocked: false, diagnostics: [] }
     }
 
-    return this.blockDelivery(sessionId, outcome, settings.deliver?.maxRounds ?? 3)
+    return this.blockDelivery(
+      sessionId,
+      outcome,
+      settings.deliver?.maxRounds ?? 3,
+    )
   }
 
   /**
@@ -352,12 +356,13 @@ export class HooksService extends Service {
   ): StopDecision {
     const key = this.turnKey(sessionId)
     const current = this.deliverRounds.get(sessionId)
-    const state: RoundState = current && current.key === key ? current : { key, round: 0, last: '' }
+    const state: RoundState =
+      current && current.key === key ? current : { key, round: 0, last: '' }
     this.deliverRounds.set(sessionId, state)
 
-    const missing = outcome.checks.filter(check => check.status !== 'passed')
+    const missing = outcome.checks.filter((check) => check.status !== 'passed')
     const fingerprint = missing
-      .map(check => `${check.acceptanceId}:${check.status}`)
+      .map((check) => `${check.acceptanceId}:${check.status}`)
       .sort()
       .join('|')
 
@@ -373,7 +378,7 @@ export class HooksService extends Service {
       this.append(sessionId, 'hooks/escalated', {
         at: Date.now(),
         reason,
-        acceptance: missing.map(check => check.acceptanceId),
+        acceptance: missing.map((check) => check.acceptanceId),
       })
       this.ctx.emit('hooks/escalated', { sessionId, reason })
       return { blocked: false, escalated: true, diagnostics: [] }
@@ -388,7 +393,9 @@ export class HooksService extends Service {
       diagnostics: [],
       feedback: [
         `<delivery-gate round="${state.round}" missing="${missing.length}">`,
-        ...missing.map(check => `${check.acceptanceId} [${check.status}] ${check.reason}`),
+        ...missing.map(
+          (check) => `${check.acceptanceId} [${check.status}] ${check.reason}`,
+        ),
         '</delivery-gate>',
       ].join('\n'),
     }

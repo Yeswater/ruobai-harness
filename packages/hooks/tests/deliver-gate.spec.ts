@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { Context } from '@ruobai/cordis'
 import ContractService from '@ruobai/contract'
+import { Context } from '@ruobai/cordis'
 import DeliveryService from '@ruobai/delivery'
 import SessionService from '@ruobai/session'
 import ToolRegistry from '@ruobai/tools'
+import { describe, expect, it } from 'vitest'
 import HooksService from '../src/index.ts'
 
 const acceptance = [
@@ -11,9 +11,17 @@ const acceptance = [
     id: 'A1',
     criterion: '首页首屏在 2 秒内渲染完成',
     kind: 'auto' as const,
-    check: { tool: 'bash' as const, command: 'curl -s localhost:3000', expectExit: 0 },
+    check: {
+      tool: 'bash' as const,
+      command: 'curl -s localhost:3000',
+      expectExit: 0,
+    },
   },
-  { id: 'A2', criterion: '客户能按 runbook 独立重启服务', kind: 'manual' as const },
+  {
+    id: 'A2',
+    criterion: '客户能按 runbook 独立重启服务',
+    kind: 'manual' as const,
+  },
 ]
 
 async function mount(options: { delivery?: boolean } = {}) {
@@ -24,7 +32,8 @@ async function mount(options: { delivery?: boolean } = {}) {
   await tools
   const contract = ctx.plugin(ContractService)
   await contract
-  const delivery = options.delivery === false ? undefined : ctx.plugin(DeliveryService)
+  const delivery =
+    options.delivery === false ? undefined : ctx.plugin(DeliveryService)
   if (delivery) await delivery
   const hooks = ctx.plugin(HooksService)
   await hooks
@@ -43,12 +52,16 @@ async function mount(options: { delivery?: boolean } = {}) {
 }
 
 async function openContract(ctx: Context, sessionId: string) {
-  await ctx.tools.invoke('contract_open', {
-    title: '交付 V1',
-    goals: ['上线'],
-    nonGoals: [],
-    acceptance,
-  }, { sessionId })
+  await ctx.tools.invoke(
+    'contract_open',
+    {
+      title: '交付 V1',
+      goals: ['上线'],
+      nonGoals: [],
+      acceptance,
+    },
+    { sessionId },
+  )
 }
 
 describe('delivery gate wiring', () => {
@@ -57,7 +70,9 @@ describe('delivery gate wiring', () => {
     const decision = await ctx.hooks.beforeDeliver(meta.id)
 
     expect(decision.blocked).toBe(false)
-    const skipped = ctx.sessions.get(meta.id)!.events.find(event => event.type === 'gate/skipped')
+    const skipped = ctx.sessions
+      .get(meta.id)!
+      .events.find((event) => event.type === 'gate/skipped')
     expect(skipped?.data.reason).toBe('no-contract')
 
     await dispose()
@@ -80,19 +95,43 @@ describe('delivery gate wiring', () => {
     const { ctx, meta, dispose } = await mount()
     await openContract(ctx, meta.id)
 
-    const ok = ctx.sessions.append(meta.id, 'tool/result', { callId: 'c1', name: 'bash', content: 'ok', isError: false })
-    await ctx.tools.invoke('delivery_claim', {
-      items: [{
-        acceptanceId: 'A1',
-        claim: 'curl returned 200',
-        evidence: [{ kind: 'tool', ref: String(ok.seq), seq: ok.seq, summary: 'bash exit 0' }],
-      }],
-    }, { sessionId: meta.id })
-    await ctx.tools.invoke('delivery_waive', { acceptanceId: 'A2', reason: '客户口头确认' }, { sessionId: meta.id })
+    const ok = ctx.sessions.append(meta.id, 'tool/result', {
+      callId: 'c1',
+      name: 'bash',
+      content: 'ok',
+      isError: false,
+    })
+    await ctx.tools.invoke(
+      'delivery_claim',
+      {
+        items: [
+          {
+            acceptanceId: 'A1',
+            claim: 'curl returned 200',
+            evidence: [
+              {
+                kind: 'tool',
+                ref: String(ok.seq),
+                seq: ok.seq,
+                summary: 'bash exit 0',
+              },
+            ],
+          },
+        ],
+      },
+      { sessionId: meta.id },
+    )
+    await ctx.tools.invoke(
+      'delivery_waive',
+      { acceptanceId: 'A2', reason: '客户口头确认' },
+      { sessionId: meta.id },
+    )
 
     const decision = await ctx.hooks.beforeDeliver(meta.id)
     expect(decision.blocked).toBe(false)
-    const verdict = ctx.sessions.get(meta.id)!.events.find(event => event.type === 'delivery/verdict')
+    const verdict = ctx.sessions
+      .get(meta.id)!
+      .events.find((event) => event.type === 'delivery/verdict')
     expect(verdict?.data.verdict).toBe('pass')
 
     await dispose()
@@ -109,9 +148,14 @@ describe('delivery gate wiring', () => {
     expect(first.blocked).toBe(true)
     expect(second.blocked).toBe(false)
     expect(second.escalated).toBe(true)
-    const escalated = ctx.sessions.get(meta.id)!.events.find(event => event.type === 'hooks/escalated')
+    const escalated = ctx.sessions
+      .get(meta.id)!
+      .events.find((event) => event.type === 'hooks/escalated')
     expect(escalated).toBeTruthy()
-    const verdict = ctx.sessions.get(meta.id)!.events.filter(event => event.type === 'delivery/verdict').at(-1)
+    const verdict = ctx.sessions
+      .get(meta.id)!
+      .events.filter((event) => event.type === 'delivery/verdict')
+      .at(-1)
     expect(verdict?.data.verdict).toBe('unsure')
 
     await dispose()
@@ -123,7 +167,9 @@ describe('delivery gate wiring', () => {
 
     const decision = await ctx.hooks.beforeDeliver(meta.id)
     expect(decision.blocked).toBe(false)
-    const skipped = ctx.sessions.get(meta.id)!.events.find(event => event.type === 'gate/skipped')
+    const skipped = ctx.sessions
+      .get(meta.id)!
+      .events.find((event) => event.type === 'gate/skipped')
     expect(skipped?.data.reason).toBe('delivery-not-mounted')
 
     await dispose()
