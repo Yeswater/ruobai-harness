@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -73,6 +73,44 @@ describe('session jsonl', () => {
     expect(events.find(event => event.type === 'message/user')?.visibility).toBe('client')
     expect(events.find(event => event.type === 'tool/result')?.visibility).toBe('internal')
     expect(events.find(event => event.type === 'session/title')?.visibility).toBe('internal')
+
+    await store.dispose()
+    await sessions.dispose()
+  })
+
+  it('records a persist error when the log cannot be written', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rbh-sessions-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+
+    const ctx = new Context()
+    const sessions = ctx.plugin(SessionService)
+    await sessions
+    const store = ctx.plugin(SessionJsonl, { root })
+    await store
+
+    const meta = ctx.sessions.create({ title: 'x' })
+    await ctx.sessionJsonl.flush()
+
+    // The directory stays writable; the already-created log file is what turns
+    // read-only, which is the realistic "disk went read-only" failure.
+    const file = join(root, `${meta.id}.jsonl`)
+    await chmod(file, 0o400)
+    ctx.sessions.append(meta.id, 'message/user', { id: 'm', text: 'hi', at: 1 })
+    await ctx.sessionJsonl.flush()
+
+    const failure = ctx.sessions.get(meta.id)!.events.find(event => event.type === 'session/persist-error')
+    expect(failure?.data.phase).toBe('enter')
+    expect(ctx.sessionJsonl.status().failing).toBe(true)
+
+    await chmod(file, 0o600)
+    ctx.sessions.append(meta.id, 'message/user', { id: 'm2', text: 'again', at: 2 })
+    await ctx.sessionJsonl.flush()
+
+    const recovered = ctx.sessions.get(meta.id)!.events
+      .filter(event => event.type === 'session/persist-error')
+      .at(-1)
+    expect(recovered?.data.phase).toBe('recover')
+    expect(ctx.sessionJsonl.status().failing).toBe(false)
 
     await store.dispose()
     await sessions.dispose()

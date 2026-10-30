@@ -39,6 +39,13 @@ export class SessionJsonl extends Service {
   private readonly root: string
   private readonly queues = new Map<string, Promise<void>>()
   private readonly logger
+  private readonly persist = {
+    pending: 0,
+    failed: 0,
+    lastError: undefined as string | undefined,
+    lastOkAt: 0,
+    failing: false,
+  }
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'sessionJsonl')
@@ -75,6 +82,18 @@ export class SessionJsonl extends Service {
   /** Wait for every queued write; used by tests and shutdown paths. */
   async flush() {
     await Promise.allSettled(this.queues.values())
+  }
+
+  /** Whether the log on disk is keeping up; surfaced in the session panel. */
+  status() {
+    return {
+      root: this.root,
+      pending: this.persist.pending,
+      failed: this.persist.failed,
+      lastError: this.persist.lastError,
+      lastOkAt: this.persist.lastOkAt,
+      failing: this.persist.failing,
+    }
   }
 
   private fileFor(id: string) {
@@ -138,11 +157,38 @@ export class SessionJsonl extends Service {
 
   private enqueue(id: string, task: () => Promise<unknown>) {
     const previous = this.queues.get(id) ?? Promise.resolve()
-    const next = previous.then(task).then(() => undefined).catch((error) => {
-      this.logger.error(error)
+    const next = previous.then(task).then(() => {
+      this.markPersisted(id)
+    }).catch((error) => {
+      this.reportPersistError(id, error instanceof Error ? error.message : String(error))
     })
     this.queues.set(id, next)
     return next
+  }
+
+  private markPersisted(id: string) {
+    this.persist.pending = Math.max(0, this.persist.pending - 1)
+    this.persist.lastOkAt = Date.now()
+    if (!this.persist.failing) return
+    this.persist.failing = false
+    if (!this.ctx.sessions.has(id)) return
+    this.ctx.sessions.append(id, 'session/persist-error', { phase: 'recover', at: Date.now() })
+  }
+
+  /**
+   * A lost write must be visible, not just logged: the log is the only source
+   * of truth, so "the session looked saved" is the one failure we cannot hide.
+   * Only the healthy → failing edge writes an event, and that event itself is
+   * never persisted (it would retry the write that just failed).
+   */
+  private reportPersistError(id: string, message: string) {
+    this.persist.pending = Math.max(0, this.persist.pending - 1)
+    this.persist.failed += 1
+    this.persist.lastError = message
+    if (this.persist.failing) return
+    this.persist.failing = true
+    if (!this.ctx.sessions.has(id)) return
+    this.ctx.sessions.append(id, 'session/persist-error', { phase: 'enter', message, at: Date.now() })
   }
 
   private writeHeader(meta: SessionMeta) {
@@ -154,6 +200,10 @@ export class SessionJsonl extends Service {
   }
 
   private writeEvent(id: string, event: SessionEvent) {
+    // Persist failures are reported in memory only: writing them to disk would
+    // retry the very operation that just failed.
+    if (event.type === 'session/persist-error') return
+    this.persist.pending += 1
     void this.enqueue(id, () => appendFile(this.fileFor(id), JSON.stringify(event) + '\n'))
   }
 
