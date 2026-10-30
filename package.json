@@ -94,6 +94,8 @@
     "@ruobai/shell": "workspace:*",
     "@ruobai/shell-direct": "workspace:*",
     "@ruobai/shell-sandboxed": "workspace:*",
+    "@ruobai/skill-distiller": "workspace:*",
+    "@ruobai/skill-distiller-web": "workspace:*",
     "@ruobai/skills": "workspace:*",
     "@ruobai/skills-web": "workspace:*",
     "@ruobai/terminal": "workspace:*",

@@ -233,6 +233,12 @@ importers:
       '@ruobai/shell-sandboxed':
         specifier: workspace:*
         version: link:packages/shell-sandboxed
+      '@ruobai/skill-distiller':
+        specifier: workspace:*
+        version: link:packages/skill-distiller
+      '@ruobai/skill-distiller-web':
+        specifier: workspace:*
+        version: link:packages/skill-distiller-web
       '@ruobai/skills':
         specifier: workspace:*
         version: link:packages/skills
@@ -1328,6 +1334,30 @@ importers:
       '@ruobai/sandbox-escalation':
         specifier: workspace:*
         version: link:../sandbox-escalation
+
+  packages/skill-distiller:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/skill-distiller-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
 
   packages/skills:
     dependencies:

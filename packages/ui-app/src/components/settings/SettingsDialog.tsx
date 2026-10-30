@@ -5,6 +5,7 @@ import {
   BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
 } from '../Icons.tsx'
 import { PermissionsSettings } from '../PermissionsSettings.tsx'
+import { SkillDraftsSettings } from './SkillDraftsSettings.tsx'
 import { ProtocolsSettings } from '../ProtocolsSettings.tsx'
 import { Slot } from '../Slot.tsx'
 import { GeneralSettings } from './GeneralSettings.tsx'
@@ -22,7 +23,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki'
+export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki' | 'skills'
 
 interface NavItem {
   id: SettingsTab
@@ -84,6 +85,13 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
         description: '自动检索与空闲提案。',
         icon: <FolderTreeIcon size={15} />,
         keywords: '知识库 wiki 自动检索 提案 召回 recall 提案 distill',
+      },
+      {
+        id: 'skills',
+        label: '技能',
+        description: '会话沉淀的技能草稿，批准后进入项目技能。',
+        icon: <PuzzleIcon size={15} />,
+        keywords: '技能 skill 草稿 沉淀 批准 SKILL.md',
       },
     ],
   },
@@ -290,6 +298,8 @@ export function SettingsDialog({
                         )
                         : tab === 'wiki'
                           ? <WikiSettings />
+                          : tab === 'skills'
+                            ? <SkillDraftsSettings />
                           : tab === 'sandbox'
                           ? (
                             <div className="settings-page-body scroll">

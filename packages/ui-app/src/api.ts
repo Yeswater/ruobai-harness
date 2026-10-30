@@ -234,6 +234,15 @@ export interface ProfileSummary {
   workspace?: { root?: string }
 }
 
+/** A skill draft distilled from a finished session, waiting for review. */
+export interface SkillDraft {
+  slug: string
+  name: string
+  description: string
+  bytes: number
+  updatedAt: number
+}
+
 export interface PublicSettings {
   llm?: {
     activeProvider?: string
@@ -785,6 +794,21 @@ export const api = {
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
     return response.text()
   },
+
+  skillDrafts: async () =>
+    (await request<{ drafts: SkillDraft[] }>('/api/skill-drafts')).drafts,
+
+  approveSkillDraft: async (slug: string) =>
+    request<{ ok: true }>('/api/skill-drafts/approve', {
+      method: 'POST',
+      body: JSON.stringify({ slug }),
+    }),
+
+  discardSkillDraft: async (slug: string) =>
+    request<{ ok: true }>('/api/skill-drafts/discard', {
+      method: 'POST',
+      body: JSON.stringify({ slug }),
+    }),
 
   getCommits: async (id: string) =>
     (await request<{ proposals: CommitProposal[] }>(

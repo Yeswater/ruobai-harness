@@ -412,6 +412,17 @@
 - id: skills-web
   name: '@ruobai/skills-web'
 
+# Skill drafts: when a session goes idle, extract a reusable SKILL.md into
+# .ruobai/skills-drafts — deliberately *not* a skill root, so nothing loads
+# until a human approves it through the drafts API. Off by default.
+- id: skill-distiller
+  name: '@ruobai/skill-distiller'
+  config:
+    enabled: !!js "process.env.RBU_DISTILL === '1'"
+
+- id: skill-distiller-web
+  name: '@ruobai/skill-distiller-web'
+
 # Cross-session memory and the project wiki. Both contribute prompt sections
 # through `context` and keep their state under .ruobai/ (see
 # docs/memory-and-wiki.md). Removing either row drops the feature cleanly.
