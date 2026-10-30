@@ -8,8 +8,9 @@
   },
   "dependencies": {
     "@ruobai/cordis": "workspace:*",
+    "@ruobai/net": "workspace:*",
     "@ruobai/provider-catalog": "workspace:*",
-    "@ruobai/settings": "workspace:*",
-    "@ruobai/session": "workspace:*"
+    "@ruobai/session": "workspace:*",
+    "@ruobai/settings": "workspace:*"
   }
 }

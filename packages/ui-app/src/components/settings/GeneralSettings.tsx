@@ -11,7 +11,7 @@ import {
 import { AlertIcon, MonitorIcon, MoonIcon, SunIcon } from '../Icons.tsx'
 import { PERMISSION_OPTIONS } from '../PermissionSelect.tsx'
 import { Select } from '../Select.tsx'
-import { Button, Field, Notice, Segmented, useAutosave } from '../ui/index.tsx'
+import { Button, Field, Notice, Segmented, useAutosave, type SaveState } from '../ui/index.tsx'
 import { SKINS, type UiSkin } from '../../preferences.ts'
 import { useEscapeKey } from '../../useEscapeKey.ts'
 import { SettingRow, SettingsGroup } from './SettingsLayout.tsx'
@@ -23,6 +23,7 @@ interface GeneralSettingsProps {
   skin: UiSkin
   onSkinChange: (skin: UiSkin) => void
   onSaved: (settings: PublicSettings) => void
+  onSaveState?: (state: SaveState) => void
 }
 
 interface AgentDefaults {
@@ -60,20 +61,13 @@ function clampPercent(value: number) {
   return Number.isFinite(value) ? Math.min(100, Math.max(1, Math.round(value))) : 80
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  dirty: '未保存',
-  saving: '保存中…',
-  saved: '已保存',
-  error: '保存失败',
-}
-
 const SKIN_PREVIEW: Record<UiSkin, { base: string; accent: string; panel: string }> = {
   cc: { base: '#f2f1ee', accent: '#c96442', panel: '#ffffff' },
   deepseek: { base: '#f0f3ff', accent: '#4d6bfe', panel: '#ffffff' },
 }
 
 export function GeneralSettings({
-  settings, themePreference, onThemeChange, skin, onSkinChange, onSaved,
+  settings, themePreference, onThemeChange, skin, onSkinChange, onSaved, onSaveState,
 }: GeneralSettingsProps) {
   const [draft, setDraft] = useState<AgentDefaults>(() => defaultsOf(settings))
   const [modes, setModes] = useState<ModeInfo[]>([])
@@ -157,19 +151,16 @@ export function GeneralSettings({
     await persistProfiles(next, active ?? '')
   }
 
+  useEffect(() => {
+    onSaveState?.(autosave.state)
+    return () => onSaveState?.('idle')
+  }, [autosave.state, onSaveState])
+
   const profiles = settings?.profiles ?? []
 
   return (
     <>
       <div className="settings-panel">
-        {autosave.state !== 'idle'
-          ? (
-            <div className={`ui-status ${autosave.state}`} role="status" aria-live="polite">
-              {STATUS_LABEL[autosave.state] ?? ''}
-            </div>
-          )
-          : null}
-
         <SettingsGroup label="环境">
           <SettingRow
             title="当前环境"

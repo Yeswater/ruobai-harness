@@ -182,6 +182,9 @@ importers:
       '@ruobai/modes':
         specifier: workspace:*
         version: link:packages/modes
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:packages/net
       '@ruobai/permissions':
         specifier: workspace:*
         version: link:packages/permissions
@@ -680,6 +683,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1064,6 +1070,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1196,6 +1205,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/provider-catalog':
         specifier: workspace:*
         version: link:../provider-catalog
@@ -1229,6 +1241,9 @@ importers:
       '@ruobai/llm-openai':
         specifier: workspace:*
         version: link:../llm-openai
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1410,6 +1425,21 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+
+  packages/net:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      undici:
+        specifier: ^7.30.1
+        version: 7.30.1
 
   packages/permissions:
     dependencies:
@@ -1686,6 +1716,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/provider-catalog':
         specifier: workspace:*
         version: link:../provider-catalog
@@ -1707,6 +1740,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1792,6 +1828,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
@@ -2113,6 +2152,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -7271,8 +7313,7 @@ snapshots:
 
   undici@6.29.1: {}
 
-  undici@7.30.1:
-    optional: true
+  undici@7.30.1: {}
 
   unified@11.0.0:
     dependencies:

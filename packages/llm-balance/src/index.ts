@@ -3,6 +3,7 @@ import z from '@ruobai/schemastery'
 import { balanceApiFor, type BalanceApi } from '@ruobai/provider-catalog'
 import type { SettingsService } from '@ruobai/settings'
 import type { SessionService } from '@ruobai/session'
+import type {} from '@ruobai/net'
 import { BalanceError, queryBalance, type ProviderBalance } from './balances.ts'
 
 export type * from './balances.ts'
@@ -62,7 +63,7 @@ interface CacheEntry {
  * no figure instead of guessing one.
  */
 export class LlmBalanceService extends Service {
-  static inject = ['settings', 'sessions']
+  static inject = ['settings', 'sessions', 'net']
 
   static Config: z<Config> = z.object({
     refreshMs: z.number().default(300_000),
@@ -114,7 +115,7 @@ export class LlmBalanceService extends Service {
 
     let value: ProviderOverview
     try {
-      const balance = await queryBalance(api, entry.baseUrl, settings.apiKeyFor(id)!)
+      const balance = await queryBalance(api, entry.baseUrl, settings.apiKeyFor(id)!, undefined, this.ctx.net.fetch)
       value = { ...base, state: 'ok', balance }
     } catch (error) {
       value = {

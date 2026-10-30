@@ -493,6 +493,11 @@
   config:
     path: .ruobai/settings.json
 
+# Outbound HTTP for model calls, balance, skillhub, wiki embeddings and A2A.
+# The proxy comes from Settings → 网络: application-level HTTP(S)_PROXY/NO_PROXY.
+- id: net
+  name: '@ruobai/net'
+
 - id: settings-web
   name: '@ruobai/settings-web'
 

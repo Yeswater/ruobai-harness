@@ -167,6 +167,9 @@ function toOpenAiTools(request: ModelRequest) {
   }))
 }
 
+/** HTTP surface the adapter needs; `ctx.net.fetch` supplies the proxy-aware one. */
+export type FetchImplementation = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
 /** OpenAI-compatible `/chat/completions` adapter (DeepSeek, OpenAI, Ollama, vLLM). */
 export class OpenAiProvider implements LlmProvider {
   name: string
@@ -175,6 +178,7 @@ export class OpenAiProvider implements LlmProvider {
   constructor(
     private readonly config: Config,
     private readonly resolve?: () => Partial<Config>,
+    private readonly fetchImpl: FetchImplementation = fetch as unknown as FetchImplementation,
   ) {
     this.name = config.name ?? 'openai'
     this.models = config.model ? [config.model] : []
@@ -248,7 +252,7 @@ export class OpenAiProvider implements LlmProvider {
     armIdle()
 
     try {
-      const post = (payload: Record<string, unknown>) => fetch(`${baseUrl}/chat/completions`, {
+      const post = (payload: Record<string, unknown>) => this.fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         signal: controller.signal,
         headers: {

@@ -15,12 +15,16 @@ export interface A2aCard {
   skills: A2aSkill[]
 }
 
+export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
 export interface A2aFetchOptions {
   headers?: Record<string, string>
   timeoutMs?: number
   signal?: AbortSignal
   allowPrivateHosts?: boolean
   maxBytes?: number
+  /** Proxy-aware fetch; defaults to the global one. */
+  fetch?: FetchLike
 }
 
 const CARD_PATHS = ['/.well-known/agent-card.json', '/.well-known/agent.json']
@@ -85,13 +89,14 @@ function parseCard(raw: string, cardUrl: string, configuredUrl: string): A2aCard
 
 export async function safeFetchText(url: string, options: A2aFetchOptions = {}): Promise<{ text: string; url: string }> {
   const maxBytes = options.maxBytes ?? 65_536
+  const fetchImpl = options.fetch ?? fetch
   let current = new URL(url)
   for (let hop = 0; hop <= 3; hop += 1) {
     assertSafeUrl(current, options.allowPrivateHosts === true)
     const timeoutMs = options.timeoutMs ?? 15_000
     const signals = [AbortSignal.timeout(timeoutMs)]
     if (options.signal) signals.push(options.signal)
-    const response = await fetch(current, {
+    const response = await fetchImpl(current, {
       headers: options.headers,
       redirect: 'manual',
       signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0],

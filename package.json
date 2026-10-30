@@ -76,6 +76,7 @@
     "@ruobai/mode-goal": "workspace:*",
     "@ruobai/mode-plan": "workspace:*",
     "@ruobai/modes": "workspace:*",
+    "@ruobai/net": "workspace:*",
     "@ruobai/permissions": "workspace:*",
     "@ruobai/plan": "workspace:*",
     "@ruobai/plan-web": "workspace:*",

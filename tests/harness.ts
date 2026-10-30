@@ -52,6 +52,7 @@ import PreviewWeb from '@ruobai/preview-web'
 import SessionService from '@ruobai/session'
 import SessionExport from '@ruobai/session-export'
 import SecretsService from '@ruobai/secrets'
+import NetService from '@ruobai/net'
 import SettingsService from '@ruobai/settings'
 import ShellService from '@ruobai/shell'
 import DirectShell from '@ruobai/shell-direct'
@@ -131,6 +132,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(FsTools, { root: process.cwd() }))
   await mount(ctx.plugin(BashTools, { root: process.cwd() }))
   await mount(ctx.plugin(SettingsService, { path: join(dir, 'settings.json') }))
+  // Tests never configure a proxy; requests stay direct.
+  await mount(ctx.plugin(NetService))
   // File backend: tests must never touch the developer's login keychain.
   await mount(ctx.plugin(SecretsService, { provider: 'file', path: join(dir, 'secrets.json') }))
   // Deterministic tests: ignore ambient keys and the seeded provider.

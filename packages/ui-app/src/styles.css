@@ -13202,14 +13202,16 @@ body.resizing .file-side-resizer::after {
 
 /* settings v2: autosave status, stacked rows, percent control */
 
-.settings-panel > .ui-status {
-  align-self: flex-end;
-  min-height: 16px;
-  margin-bottom: -18px;
+.settings-page-actions {
+  position: relative;
 }
 
-.ui-status.idle {
-  visibility: hidden;
+.settings-save-slot {
+  position: absolute;
+  top: 50%;
+  right: 38px;
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .setting-row.stacked {
@@ -13524,4 +13526,89 @@ body.resizing .file-side-resizer::after {
 
 .env-form .ui-input {
   height: 34px;
+}
+
+/* network settings */
+
+.network-detect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.network-value {
+  max-width: 240px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.network-input {
+  width: 250px;
+}
+
+.network-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.network-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.network-state.on i {
+  background: var(--ok);
+}
+
+.settings-check-result {
+  padding: 0 16px 14px;
+}
+
+@media (max-width: 820px) {
+  .network-input {
+    width: 100%;
+  }
+
+  .network-detect {
+    flex-wrap: wrap;
+  }
+}
+
+.network-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.network-vars .ui-input {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+
+.network-vars-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.network-effective {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  text-align: right;
+  max-width: 360px;
+  overflow-wrap: anywhere;
 }

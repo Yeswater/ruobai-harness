@@ -3,17 +3,18 @@ import { useEscapeKey } from '../../useEscapeKey.ts'
 import { api, type PublicSettings, type ThemePreference } from '../../api.ts'
 import type { UiSkin } from '../../preferences.ts'
 import {
-  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
+  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, GlobeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
 } from '../Icons.tsx'
 import { PermissionsSettings } from '../PermissionsSettings.tsx'
 import { SkillDraftsSettings } from './SkillDraftsSettings.tsx'
 import { ProtocolsSettings } from '../ProtocolsSettings.tsx'
 import { Slot } from '../Slot.tsx'
 import { GeneralSettings } from './GeneralSettings.tsx'
+import { NetworkSettings } from './NetworkSettings.tsx'
 import { PluginsSettings } from './PluginsSettings.tsx'
 import { ProvidersSettings } from './ProvidersSettings.tsx'
 import { WikiSettings } from './WikiSettings.tsx'
-import { IconButton } from '../ui/index.tsx'
+import { IconButton, Toast, type SaveState } from '../ui/index.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -27,7 +28,7 @@ interface SettingsDialogProps {
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki' | 'skills'
+export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'network' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki' | 'skills'
 
 interface NavItem {
   id: SettingsTab
@@ -110,6 +111,13 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
         keywords: '沙箱 守卫 拒绝 升级 seatbelt 审批',
       },
       {
+        id: 'network',
+        label: '网络',
+        description: '代理开关、系统代理检测与外发连接测试。',
+        icon: <GlobeIcon size={15} />,
+        keywords: '网络 代理 proxy 端口 系统代理 7890 直连 测试 连接',
+      },
+      {
         id: 'gitee',
         label: 'Gitee',
         description: 'Gitee 账号、仓库与发布。',
@@ -129,6 +137,14 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
 
 const NAV_ITEMS = NAV_GROUPS.flatMap(group => group.items)
 
+const SAVE_LABEL: Record<SaveState, string> = {
+  idle: '',
+  dirty: '未保存',
+  saving: '保存中…',
+  saved: '已保存',
+  error: '保存失败',
+}
+
 function matchesItem(item: NavItem, term: string) {
   if (!term) return true
   return item.label.toLowerCase().includes(term)
@@ -143,7 +159,16 @@ export function SettingsDialog({
   const [query, setQuery] = useState('')
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
   const bodyRef = useRef<HTMLDivElement | null>(null)
+
+  // Autosave feedback floats over the header; it disappears on its own so it
+  // never takes space or lingers across pages. Errors keep their inline notice.
+  useEffect(() => {
+    if (saveState !== 'saved' && saveState !== 'error') return
+    const timer = window.setTimeout(() => setSaveState('idle'), 2400)
+    return () => window.clearTimeout(timer)
+  }, [saveState])
 
   useEffect(() => {
     if (!open) return
@@ -164,9 +189,11 @@ export function SettingsDialog({
     }
   }, [open, initialTab])
 
-  // Each tab is a page, not a scroll position: start it at the top.
+  // Each tab is a page, not a scroll position: start it at the top and drop
+  // the previous page's save hint.
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 })
+    setSaveState('idle')
   }, [tab])
 
   // Esc leaves settings; a nested dropdown consumes the first press instead.
@@ -256,6 +283,15 @@ export function SettingsDialog({
                 <p className="settings-page-sub">{active.description}</p>
               </div>
               <div className="settings-page-actions">
+                {saveState !== 'idle'
+                  ? (
+                    <span className="settings-save-slot">
+                      <Toast tone={saveState === 'saved' ? 'ok' : saveState === 'error' ? 'error' : 'neutral'}>
+                        {SAVE_LABEL[saveState]}
+                      </Toast>
+                    </span>
+                  )
+                  : null}
                 {tab === 'providers'
                   ? (
                     <div className="settings-page-current">
@@ -283,6 +319,7 @@ export function SettingsDialog({
                     skin={skin}
                     onSkinChange={onSkinChange}
                     onSaved={handleSettingsChange}
+                    onSaveState={setSaveState}
                   />
                 )
                 : tab === 'providers'
@@ -296,7 +333,15 @@ export function SettingsDialog({
                     ? <PluginsSettings />
                     : tab === 'protocols'
                       ? <ProtocolsSettings sessionId={sessionId} />
-                      : tab === 'permissions'
+                      : tab === 'network'
+                        ? (
+                          <NetworkSettings
+                            settings={settings}
+                            onSettingsChange={handleSettingsChange}
+                            onSaveState={setSaveState}
+                          />
+                        )
+                        : tab === 'permissions'
                         ? <PermissionsSettings />
                         : tab === 'memory'
                           ? <div className="settings-slot"><Slot name="settings.memory" props={{ sessionId }} /></div>

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ruobai/cordis": "workspace:*",
+    "@ruobai/net": "workspace:*",
     "@ruobai/schemastery": "workspace:*"
   }
 }

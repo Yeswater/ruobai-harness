@@ -1,9 +1,10 @@
 import type { Context } from '@ruobai/cordis'
 import { OpenAiProvider } from '@ruobai/llm-openai'
 import type {} from '@ruobai/settings'
+import type {} from '@ruobai/net'
 
 export const name = 'llm-catalog'
-export const inject = ['llm', 'settings']
+export const inject = ['llm', 'settings', 'net']
 
 /**
  * Keeps `ctx.llm` in sync with the provider entries stored in settings.
@@ -46,6 +47,7 @@ export function apply(ctx: Context) {
             model: current.models[0]?.id,
           }
         },
+        ctx.net.fetch,
       )
 
       registered.set(entry.id, ctx.llm.register(provider))

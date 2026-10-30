@@ -63,6 +63,15 @@ export interface UiSettings {
   theme?: 'light' | 'dark'
 }
 
+export interface NetworkSettings {
+  /** Route outbound traffic through a proxy. Off by default. */
+  enabled?: boolean
+  /** Application-level overrides; empty fields inherit the system proxy. */
+  httpProxy?: string
+  httpsProxy?: string
+  noProxy?: string
+}
+
 export interface SandboxSettings {
   /** Seatbelt confinement for agent commands. Off keeps approvals, drops the OS boundary. */
   enabled?: boolean
@@ -208,6 +217,7 @@ export function resolveProfile(
 export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
+  network?: NetworkSettings
   agent?: AgentSettings
   sandbox?: SandboxSettings
   wiki?: WikiAutomationSettings
@@ -301,6 +311,7 @@ export interface PublicSettings {
     providers: PublicProvider[]
   }
   ui?: UiSettings
+  network?: NetworkSettings
   agent?: AgentSettings
   sandbox?: SandboxSettings
   wiki?: WikiAutomationSettings
@@ -464,6 +475,7 @@ export class SettingsService extends Service {
       }
     }
     if (this.data.ui) result.ui = { ...this.data.ui }
+    if (this.data.network) result.network = { ...this.data.network }
     if (this.data.agent) result.agent = { ...this.data.agent }
     if (this.data.sandbox) result.sandbox = { ...this.data.sandbox }
     if (this.data.wiki) result.wiki = { ...this.data.wiki }
@@ -512,6 +524,7 @@ export class SettingsService extends Service {
   async update(patch: {
     llm?: { activeProvider?: string; activeModel?: string }
     ui?: UiSettings
+    network?: NetworkSettings
     agent?: AgentSettings
     sandbox?: SandboxSettings
     profiles?: EnvironmentProfile[]
@@ -521,6 +534,16 @@ export class SettingsService extends Service {
     if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || undefined
     if (patch.llm?.activeModel !== undefined) llm.activeModel = patch.llm.activeModel || undefined
     if (patch.ui) this.data.ui = { ...this.data.ui, ...patch.ui }
+    if (patch.network) {
+      const network = this.data.network ??= {}
+      if (patch.network.enabled !== undefined) network.enabled = Boolean(patch.network.enabled)
+      if (patch.network.httpProxy !== undefined) network.httpProxy = patch.network.httpProxy.trim() || undefined
+      if (patch.network.httpsProxy !== undefined) network.httpsProxy = patch.network.httpsProxy.trim() || undefined
+      if (patch.network.noProxy !== undefined) network.noProxy = patch.network.noProxy.trim() || undefined
+      // The first shape of this setting used `proxy`/`url`.
+      delete (network as { proxy?: unknown }).proxy
+      delete (network as { url?: unknown }).url
+    }
     if (patch.agent) {
       const agent = this.data.agent ??= {}
       if (patch.agent.defaultMode !== undefined) agent.defaultMode = patch.agent.defaultMode || undefined

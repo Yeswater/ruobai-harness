@@ -1,12 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
+import type {} from '@ruobai/net'
 import { builtinDangerRules } from '@ruobai/approval'
 import type { CommandPrefix, PermissionMode, ProviderEntry, ProviderInput } from '@ruobai/settings'
 import { modelsFromPayload, presetById, PROVIDER_PRESETS } from '@ruobai/provider-catalog'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'settings-web'
-export const inject = ['web', 'settings']
+export const inject = ['web', 'settings', 'net']
 
 /** Provider management + settings API. Secrets never leave the server. */
 export function apply(ctx: Context) {
@@ -14,6 +15,11 @@ export function apply(ctx: Context) {
     prefix: '/api/settings',
     handler: (req, res, url) => handleSettings(ctx, req, res, url),
   }), 'settings-web.settings')
+
+  ctx.effect(() => ctx.web.register({
+    prefix: '/api/network',
+    handler: (req, res, url) => handleNetwork(ctx, req, res, url),
+  }), 'settings-web.network')
 
   ctx.effect(() => ctx.web.register({
     prefix: '/api/providers',
@@ -47,6 +53,14 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
         ui: body?.ui && typeof body.ui === 'object' && (body.ui.theme === 'light' || body.ui.theme === 'dark')
           ? { theme: body.ui.theme }
           : undefined,
+        network: body?.network && typeof body.network === 'object'
+          ? {
+              enabled: typeof body.network.enabled === 'boolean' ? body.network.enabled : undefined,
+              httpProxy: typeof body.network.httpProxy === 'string' ? body.network.httpProxy.slice(0, 300) : undefined,
+              httpsProxy: typeof body.network.httpsProxy === 'string' ? body.network.httpsProxy.slice(0, 300) : undefined,
+              noProxy: typeof body.network.noProxy === 'string' ? body.network.noProxy.slice(0, 500) : undefined,
+            }
+          : undefined,
         agent: body?.agent && typeof body.agent === 'object'
           ? {
               defaultMode: typeof body.agent.defaultMode === 'string' ? body.agent.defaultMode : undefined,
@@ -68,6 +82,34 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
     fail(ctx, res, error, 'settings-web')
   }
   return true
+}
+
+/** Read the current proxy picture and probe it. */
+async function handleNetwork(ctx: Context, req: IncomingMessage, res: ServerResponse, url: URL) {
+  try {
+    if (url.pathname === '/api/network' && req.method === 'GET') {
+      sendJson(res, 200, { status: await ctx.net.status(url.searchParams.has('refresh')) })
+      return true
+    }
+    if (url.pathname === '/api/network/test' && req.method === 'POST') {
+      const body = await readJson(req) as { url?: unknown }
+      const target = typeof body.url === 'string' && body.url.trim() ? body.url.trim() : defaultProbe(ctx)
+      sendJson(res, 200, { result: await ctx.net.check(target) })
+      return true
+    }
+    throw new HttpError(404, 'not found')
+  } catch (error) {
+    fail(ctx, res, error, 'settings-web')
+  }
+  return true
+}
+
+/** Probe the active provider's /models; without one, a neutral connectivity URL. */
+function defaultProbe(ctx: Context) {
+  const active = ctx.settings.get().llm?.activeProvider
+  const provider = active ? ctx.settings.findProvider(active) : undefined
+  const base = provider?.baseUrl?.replace(/\/+$/, '')
+  return base ? `${base}/models` : 'https://www.gstatic.com/generate_204'
 }
 
 /**
@@ -203,7 +245,7 @@ async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: stri
 
   let response: Response
   try {
-    response = await fetch(`${baseUrl}/models`, {
+    response = await ctx.net.fetch(`${baseUrl}/models`, {
       headers: key ? { Authorization: `Bearer ${key}` } : {},
       signal: AbortSignal.timeout(15_000),
     })

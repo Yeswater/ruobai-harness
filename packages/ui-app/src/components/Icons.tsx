@@ -419,6 +419,16 @@ export function RefreshIcon({ size }: IconProps) {
   )
 }
 
+export function GlobeIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.4 2.4 3.7 5.4 3.7 9s-1.3 6.6-3.7 9c-2.4-2.4-3.7-5.4-3.7-9S9.6 5.4 12 3Z" />
+    </svg>
+  )
+}
+
 export function WalletIcon({ size }: IconProps) {
   return (
     <svg {...base(size)}>

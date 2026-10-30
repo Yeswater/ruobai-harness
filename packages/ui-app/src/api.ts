@@ -244,6 +244,48 @@ export interface SkillDraft {
   updatedAt: number
 }
 
+export interface NetworkSettings {
+  enabled?: boolean
+  httpProxy?: string
+  httpsProxy?: string
+  noProxy?: string
+}
+
+export interface ProxyValues {
+  http?: string
+  https?: string
+  noProxy?: string
+}
+
+export interface DetectedProxy extends ProxyValues {
+  source: 'scutil' | 'environment' | 'none'
+  supported: boolean
+  socks?: string
+  detail?: string
+}
+
+export interface NetworkStatus {
+  enabled: boolean
+  overrides: {
+    httpProxy?: string
+    httpsProxy?: string
+    noProxy?: string
+  }
+  detected: DetectedProxy
+  effective: ProxyValues
+  bypass: string[]
+  error?: string
+}
+
+export interface NetworkCheck {
+  ok: boolean
+  status?: number
+  latencyMs?: number
+  viaProxy: boolean
+  proxy?: string
+  error?: string
+}
+
 export interface PublicSettings {
   llm?: {
     activeProvider?: string
@@ -253,6 +295,7 @@ export interface PublicSettings {
   ui?: {
     theme?: 'light' | 'dark'
   }
+  network?: NetworkSettings
   agent?: {
     defaultMode?: string
     defaultPermission?: PermissionMode
@@ -341,6 +384,7 @@ export interface SettingsPatch {
   ui?: {
     theme?: 'light' | 'dark'
   }
+  network?: NetworkSettings
   agent?: {
     defaultMode?: string
     defaultPermission?: PermissionMode
@@ -1337,6 +1381,15 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     })).settings,
+
+  getNetworkStatus: async (refresh = false) =>
+    (await request<{ status: NetworkStatus }>(`/api/network${refresh ? '?refresh=1' : ''}`)).status,
+
+  testNetwork: async (url?: string) =>
+    (await request<{ result: NetworkCheck }>('/api/network/test', {
+      method: 'POST',
+      body: JSON.stringify(url ? { url } : {}),
+    })).result,
 
   createProvider: async (input: ProviderInput) =>
     (await request<{ settings: PublicSettings }>('/api/providers', {

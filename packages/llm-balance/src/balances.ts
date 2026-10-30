@@ -16,6 +16,8 @@ export interface ProviderBalance {
 
 const TIMEOUT_MS = 10_000
 
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
 export class BalanceError extends Error {}
 
 /** Query one vendor's official balance endpoint. */
@@ -24,22 +26,23 @@ export async function queryBalance(
   baseUrl: string,
   apiKey: string,
   signal?: AbortSignal,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
 ): Promise<ProviderBalance> {
   const base = baseUrl.trim().replace(/\/+$/, '')
   const timeout = AbortSignal.timeout(TIMEOUT_MS)
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
   const fetchedAt = Date.now()
 
-  if (api === 'deepseek') return deepseek(base, apiKey, combined, fetchedAt)
-  if (api === 'moonshot') return moonshot(base, apiKey, combined, fetchedAt)
-  if (api === 'openrouter') return openrouter(base, apiKey, combined, fetchedAt)
-  return siliconflow(base, apiKey, combined, fetchedAt)
+  if (api === 'deepseek') return deepseek(base, apiKey, combined, fetchedAt, fetchImpl)
+  if (api === 'moonshot') return moonshot(base, apiKey, combined, fetchedAt, fetchImpl)
+  if (api === 'openrouter') return openrouter(base, apiKey, combined, fetchedAt, fetchImpl)
+  return siliconflow(base, apiKey, combined, fetchedAt, fetchImpl)
 }
 
-async function getJson(url: string, apiKey: string, signal: AbortSignal): Promise<any> {
+async function getJson(url: string, apiKey: string, signal: AbortSignal, fetchImpl: FetchLike): Promise<any> {
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await fetchImpl(url, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
       signal,
     })
@@ -67,8 +70,8 @@ function deepseekRoot(baseUrl: string) {
   return baseUrl.replace(/\/(v1|beta|anthropic)$/i, '')
 }
 
-async function deepseek(baseUrl: string, apiKey: string, signal: AbortSignal, at: number) {
-  const payload = await getJson(`${deepseekRoot(baseUrl)}/user/balance`, apiKey, signal)
+async function deepseek(baseUrl: string, apiKey: string, signal: AbortSignal, at: number, fetchImpl: FetchLike) {
+  const payload = await getJson(`${deepseekRoot(baseUrl)}/user/balance`, apiKey, signal, fetchImpl)
   const infos: any[] = Array.isArray(payload?.balance_infos) ? payload.balance_infos : []
   const items: BalanceLine[] = []
   for (const info of infos) {
@@ -91,8 +94,8 @@ async function deepseek(baseUrl: string, apiKey: string, signal: AbortSignal, at
   }
 }
 
-async function moonshot(baseUrl: string, apiKey: string, signal: AbortSignal, at: number) {
-  const payload = await getJson(`${baseUrl}/users/me/balance`, apiKey, signal)
+async function moonshot(baseUrl: string, apiKey: string, signal: AbortSignal, at: number, fetchImpl: FetchLike) {
+  const payload = await getJson(`${baseUrl}/users/me/balance`, apiKey, signal, fetchImpl)
   const data = payload?.data ?? payload
   const available = data?.available_balance
   if (available === undefined) throw new BalanceError('余额接口没有返回账户信息')
@@ -108,8 +111,8 @@ async function moonshot(baseUrl: string, apiKey: string, signal: AbortSignal, at
   }
 }
 
-async function openrouter(baseUrl: string, apiKey: string, signal: AbortSignal, at: number) {
-  const payload = await getJson(`${baseUrl}/credits`, apiKey, signal)
+async function openrouter(baseUrl: string, apiKey: string, signal: AbortSignal, at: number, fetchImpl: FetchLike) {
+  const payload = await getJson(`${baseUrl}/credits`, apiKey, signal, fetchImpl)
   const data = payload?.data ?? payload
   const credits = Number(data?.total_credits)
   const used = Number(data?.total_usage)
@@ -127,8 +130,8 @@ async function openrouter(baseUrl: string, apiKey: string, signal: AbortSignal, 
   }
 }
 
-async function siliconflow(baseUrl: string, apiKey: string, signal: AbortSignal, at: number) {
-  const payload = await getJson(`${baseUrl}/user/info`, apiKey, signal)
+async function siliconflow(baseUrl: string, apiKey: string, signal: AbortSignal, at: number, fetchImpl: FetchLike) {
+  const payload = await getJson(`${baseUrl}/user/info`, apiKey, signal, fetchImpl)
   const data = payload?.data ?? payload
   const total = data?.totalBalance ?? data?.balance
   if (total === undefined) throw new BalanceError('余额接口没有返回账户信息')

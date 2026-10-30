@@ -567,38 +567,50 @@ html[data-skin="deepseek"][data-theme="dark"] {
   min-height: 34px;
 }
 
-.ui-status {
+.ui-toast {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  color: var(--faint);
+  padding: 3px 9px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--panel);
+  color: var(--muted);
   font-size: var(--fs-xs);
-  transition: color var(--dur-2) var(--ease);
+  line-height: 1.45;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+  animation: toast-in var(--dur-2) var(--ease);
 }
 
-.ui-status::before {
+.ui-toast::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentColor;
-  opacity: .5;
+  opacity: .55;
 }
 
-.ui-status.dirty {
-  color: var(--accent);
-}
-
-.ui-status.dirty::before {
-  opacity: 1;
-}
-
-.ui-status.saved {
+.ui-toast.ok {
+  border-color: color-mix(in srgb, var(--ok) 34%, var(--border));
   color: var(--ok);
 }
 
-.ui-status.error {
+.ui-toast.error {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
   color: var(--danger);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .ui-kbd {

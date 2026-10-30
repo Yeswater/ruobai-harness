@@ -120,6 +120,21 @@ export function Notice({ tone = 'neutral', children }: {
   return <div className={`ui-notice ${tone === 'neutral' ? '' : tone}`.trim()}>{children}</div>
 }
 
+export type ToastTone = 'neutral' | 'ok' | 'error'
+
+/**
+ * Transient, layout-neutral feedback (saved, copied, failed). Placement is the
+ * caller's job — the settings shell pins it to the page header — while tone,
+ * dot, radius and motion stay identical everywhere.
+ */
+export function Toast({ tone = 'neutral', children }: { tone?: ToastTone; children: ReactNode }) {
+  return (
+    <span className={`ui-toast ${tone}`} role="status" aria-live="polite">
+      {children}
+    </span>
+  )
+}
+
 export function EmptyState({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
     <div className="ui-empty">
