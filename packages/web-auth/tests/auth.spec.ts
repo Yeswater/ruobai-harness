@@ -40,4 +40,40 @@ describe('web auth', () => {
 
     await auth.dispose()
   })
+
+  it('confines a read-only token to audit, handoff and export', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+    const auth = harness.ctx.plugin(WebAuth, { token: 'secret', auditTokens: ['reader'] })
+    await auth
+    const base = harness.ctx.web.url
+    const session = harness.ctx.sessions.create({ title: 'audit' })
+
+    // Allowed: the handoff bundle is exactly what a customer should read.
+    const handoff = await fetch(`${base}/api/handoff/${session.id}/manifest`, {
+      headers: { Authorization: 'Bearer reader' },
+    })
+    expect(handoff.status).toBe(200)
+
+    // Refused: the console API is a full-scope surface.
+    const sessions = await fetch(`${base}/api/sessions`, {
+      headers: { Authorization: 'Bearer reader' },
+    })
+    expect(sessions.status).toBe(403)
+
+    // Refused: a write, even to an allowlisted prefix.
+    const write = await fetch(`${base}/api/handoff/${session.id}/manifest`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer reader', Origin: base },
+    })
+    expect(write.status).toBe(403)
+
+    // The full token keeps working.
+    const full = await fetch(`${base}/api/sessions`, {
+      headers: { Authorization: 'Bearer secret' },
+    })
+    expect(full.status).toBe(200)
+
+    await auth.dispose()
+  })
 })

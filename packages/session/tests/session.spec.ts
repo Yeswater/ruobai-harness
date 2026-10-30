@@ -100,4 +100,30 @@ describe('session service', () => {
 
     await fiber.dispose()
   })
+
+  it('keeps a broken projection from failing the append', async () => {
+    const ctx = new Context()
+    const fiber = ctx.plugin(SessionService)
+    await fiber
+
+    ctx.sessions.registerProjection('broken', {
+      init: () => 0,
+      apply: () => {
+        throw new Error('boom')
+      },
+    })
+
+    const meta = ctx.sessions.create()
+    const event = ctx.sessions.append(meta.id, 'message/user', { id: 'm', text: 'hi', at: 1 })
+
+    // The event is a fact; a derivative view must not make the append fail.
+    expect(event.seq).toBeTypeOf('number')
+    const events = ctx.sessions.get(meta.id)!.events
+    expect(events.some(candidate => candidate.type === 'message/user')).toBe(true)
+    const failure = events.find(candidate => candidate.type === 'projection/error')
+    expect(failure?.data.key).toBe('broken')
+    expect(failure?.data.message).toContain('boom')
+
+    await fiber.dispose()
+  })
 })

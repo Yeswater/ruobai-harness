@@ -44,6 +44,9 @@ importers:
       '@ruobai/checkpoints-web':
         specifier: workspace:*
         version: link:packages/checkpoints-web
+      '@ruobai/client-audit':
+        specifier: workspace:*
+        version: link:packages/client-audit
       '@ruobai/client-fixture':
         specifier: workspace:*
         version: link:packages/client-modules/tests/fixtures/client-fixture
@@ -101,6 +104,9 @@ importers:
       '@ruobai/gitee-web':
         specifier: workspace:*
         version: link:packages/gitee-web
+      '@ruobai/handoff':
+        specifier: workspace:*
+        version: link:packages/handoff
       '@ruobai/hooks':
         specifier: workspace:*
         version: link:packages/hooks
@@ -529,6 +535,24 @@ importers:
         specifier: ^19.0.0
         version: 19.3.0
 
+  packages/client-audit:
+    dependencies:
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:../contract
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/delivery':
+        specifier: workspace:*
+        version: link:../delivery
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
   packages/client-modules:
     dependencies:
       '@ruobai/cordis':
@@ -719,6 +743,21 @@ importers:
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
+
+  packages/handoff:
+    dependencies:
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:../contract
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/delivery':
+        specifier: workspace:*
+        version: link:../delivery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
 
   packages/hooks:
     dependencies:

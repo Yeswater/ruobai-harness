@@ -22,6 +22,7 @@ import GitService from '@ruobai/git'
 import GitWeb from '@ruobai/git-web'
 import GiteeService from '@ruobai/gitee'
 import GiteeWeb from '@ruobai/gitee-web'
+import HandoffService from '@ruobai/handoff'
 import HooksService from '@ruobai/hooks'
 import HooksWeb from '@ruobai/hooks-web'
 import LintService from '@ruobai/lint'
@@ -235,6 +236,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(McpWeb))
   await mount(ctx.plugin(TodoWeb))
   await mount(ctx.plugin(SessionExport))
+  await mount(ctx.plugin(HandoffService))
 
   return {
     ctx,

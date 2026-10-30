@@ -6,6 +6,8 @@ import { sendJson } from '@ruobai/web-server'
 export interface Config {
   /** Shared secret. When empty, auth is disabled (loopback development). */
   token?: string
+  /** Read-only tokens: GET only, and only on audit, handoff and export routes. */
+  auditTokens?: string[]
   cookieName?: string
   /** Cookie lifetime in seconds. */
   maxAge?: number
@@ -16,6 +18,7 @@ export const inject = ['web']
 
 export const Config: z<Config> = z.object({
   token: z.string(),
+  auditTokens: z.array(z.string()).default([]),
   cookieName: z.string().default('rbu_token'),
   maxAge: z.number().min(1).default(7 * 24 * 3600),
 })
@@ -29,6 +32,7 @@ export const Config: z<Config> = z.object({
  */
 export function apply(ctx: Context, config: Config) {
   const token = config.token?.trim()
+  const auditTokens = (config.auditTokens ?? []).map(value => value.trim()).filter(Boolean)
   const cookieName = config.cookieName ?? 'rbu_token'
   const maxAge = config.maxAge ?? 7 * 24 * 3600
 
@@ -38,17 +42,16 @@ export function apply(ctx: Context, config: Config) {
 
     const supplied = bearer(req) ?? cookie(req, cookieName) ?? url.searchParams.get('token')
     if (supplied === token) {
-      if (url.searchParams.has('token') && (req.method === 'GET' || req.method === 'HEAD')) {
-        const target = new URL(url)
-        target.searchParams.delete('token')
-        res.writeHead(302, {
-          'Set-Cookie': `${cookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`,
-          Location: `${target.pathname}${target.search}`,
-        })
-        res.end()
+      return remember(req, res, url, token, cookieName, maxAge)
+    }
+    if (supplied && auditTokens.includes(supplied)) {
+      // A read-only token may look at the audit, handoff and export surfaces
+      // and nothing else: no writes, no settings, no git, no terminal.
+      if (!auditAllowed(req, url)) {
+        sendJson(res, 403, { error: 'read-only token' })
         return true
       }
-      return
+      return remember(req, res, url, supplied, cookieName, maxAge)
     }
 
     if (url.pathname.startsWith('/api/')) {
@@ -65,6 +68,34 @@ function bearer(req: IncomingMessage) {
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) return
   return header.slice(7).trim()
+}
+
+/** Remember a `?token=` visit in a cookie and redirect to the clean URL. */
+function remember(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  value: string,
+  cookieName: string,
+  maxAge: number,
+) {
+  if (!url.searchParams.has('token') || (req.method !== 'GET' && req.method !== 'HEAD')) return
+  const target = new URL(url)
+  target.searchParams.delete('token')
+  res.writeHead(302, {
+    'Set-Cookie': `${cookieName}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`,
+    Location: `${target.pathname}${target.search}`,
+  })
+  res.end()
+  return true
+}
+
+/** Routes a read-only token may reach. Everything else is 403, not 401. */
+const AUDIT_PREFIXES = ['/api/audit/', '/api/handoff/', '/api/export/session/']
+
+function auditAllowed(req: IncomingMessage, url: URL) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false
+  return AUDIT_PREFIXES.some(prefix => url.pathname.startsWith(prefix))
 }
 
 function cookie(req: IncomingMessage, name: string) {

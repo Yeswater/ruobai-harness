@@ -57,6 +57,7 @@ export class SessionService extends Service {
   private readonly records = new Map<string, SessionRecord>()
   private readonly projections = new Map<string, ProjectionDefinition>()
   private readonly views = new Map<string, SessionView>()
+  private readonly projectionFailures: Array<{ key: string; seq: number; message: string }> = []
 
   constructor(ctx: Context) {
     super(ctx, 'sessions')
@@ -141,6 +142,9 @@ export class SessionService extends Service {
     this.applyProjections(id, event)
     this.ctx.emit('session/event', id, event)
     this.ctx.emit('session/updated', record.meta)
+    // Report projection failures only after the event is fully applied, and
+    // never for the failure event itself: a broken projection must not loop.
+    if (event.type !== 'projection/error') this.flushProjectionFailures(id)
     return event
   }
 
@@ -263,7 +267,26 @@ export class SessionService extends Service {
       this.views.set(id, view)
     }
     for (const [key, definition] of this.projections) {
-      view[key] = definition.apply((view[key] ?? definition.init()) as never, event)
+      try {
+        view[key] = definition.apply((view[key] ?? definition.init()) as never, event)
+      } catch (error) {
+        // The event is already a fact; the view is a derivative. Keep the last
+        // good value and report the failure instead of failing the append.
+        this.projectionFailures.push({
+          key,
+          seq: event.seq,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+  }
+
+  /** Append one `projection/error` per failed projection, capped per event. */
+  private flushProjectionFailures(sessionId: string) {
+    if (!this.projectionFailures.length) return
+    const failures = this.projectionFailures.splice(0, 5)
+    for (const failure of failures) {
+      this.append(sessionId, 'projection/error', { ...failure, at: Date.now() })
     }
   }
 

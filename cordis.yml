@@ -321,6 +321,11 @@
 - id: session-export
   name: '@ruobai/session-export'
 
+# Handoff bundle: acceptance, changes, runbook and the evidence index, folded
+# from existing projections. Read-only, like export: no model, no writes.
+- id: handoff
+  name: '@ruobai/handoff'
+
 # Gate status API, SSE channel and the Settings → 门禁 panel.
 - id: hooks-web
   name: '@ruobai/hooks-web'

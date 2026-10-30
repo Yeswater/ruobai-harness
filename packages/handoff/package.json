@@ -1,0 +1,15 @@
+{
+  "name": "@ruobai/handoff",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ruobai/contract": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/delivery": "workspace:*",
+    "@ruobai/session": "workspace:*"
+  }
+}
