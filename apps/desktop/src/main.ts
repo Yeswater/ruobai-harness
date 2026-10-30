@@ -62,6 +62,8 @@ function findHarnessRoot(start: string): string {
 function harnessRoot() {
   const override = process.env.RUOBAI_HARNESS_ROOT
   if (override) return resolve(override)
+  // electron-builder copies the deployed runtime to Resources/harness.
+  if (app.isPackaged) return join(process.resourcesPath, 'harness')
   return findHarnessRoot(dirname(fileURLToPath(import.meta.url)))
 }
 
@@ -87,7 +89,9 @@ function initialWorkspace(root: string) {
   for (const candidate of [process.env.RUOBAI_WORKSPACE, state.workspace]) {
     if (candidate && existsSync(candidate)) return resolve(candidate)
   }
-  return root
+  // The checkout is the workspace in development; an installed app must not
+  // write sessions, checkpoints and sandbox roots into its own bundle.
+  return app.isPackaged ? app.getPath('documents') : root
 }
 
 function withToken(url: string) {
@@ -161,10 +165,23 @@ function createWindow(): BrowserWindow {
 async function launch(root: string, dir: string) {
   if (quitting) return
   try {
+    // A packaged app has no system Node/tsx to borrow: the harness runs on
+    // Electron's own Node (ELECTRON_RUN_AS_NODE) against the deployed runtime,
+    // and web-static reads the bundled UI from RUOBAI_UI_ROOT.
+    const packaged = app.isPackaged
     const url = await harness.start({
       root,
       workspace: dir,
-      env: childEnv(root),
+      ...(packaged ? {
+        node: process.execPath,
+        entry: join(root, 'node_modules/@ruobai/harness-cli/src/bin.ts'),
+        env: {
+          ...childEnv(root),
+          NODE_ENV: 'production',
+          ELECTRON_RUN_AS_NODE: '1',
+          RUOBAI_UI_ROOT: join(root, 'ui-app'),
+        },
+      } : { env: childEnv(root) }),
       onLog: line => process.stdout.write(`[harness] ${line}\n`),
       onExit: (code, signal) => {
         if (quitting) return

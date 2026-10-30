@@ -76,7 +76,9 @@ export const Config: z<Config> = z.object({
 })
 
 export async function apply(ctx: Context, config: Config) {
-  const root = config.root ?? fileURLToPath(new URL('../../ui-app/', import.meta.url))
+  // A packaged desktop ships the UI beside the deployed runtime, not in the
+  // repository's sibling package; the launcher points here.
+  const root = config.root ?? process.env.RUOBAI_UI_ROOT ?? fileURLToPath(new URL('../../ui-app/', import.meta.url))
   const serveDist = createStaticHandler(join(root, 'dist'))
 
   let vite: import('vite').ViteDevServer | undefined

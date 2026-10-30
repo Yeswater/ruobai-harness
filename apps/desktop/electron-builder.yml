@@ -1,0 +1,42 @@
+# Packages the Electron shell plus the deployed harness runtime.
+#
+# `extraResources` carries `apps/desktop-runtime/dist/harness`, produced by
+# `node apps/desktop/scripts/prepare-runtime.mjs` (pnpm deploy --prod): the
+# plugin closure without the dev toolchain. See docs/desktop.md.
+appId: com.yeswater.ruobai-harness
+productName: Ruobai Harness
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+extraResources:
+  # `from` must be the parent: electron-builder refuses to copy a directory
+  # whose *root* entry is node_modules, and the deployed runtime's deps would
+  # silently disappear. Copying `dist` gives `harness/node_modules` instead.
+  - from: ../desktop-runtime/dist
+    to: .
+    filter:
+      - harness/**
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  # CI has no signing identity; unsigned builds still run after the user
+  # allows them in Gatekeeper.
+  identity: null
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  category: Development
+  maintainer: yeswater
+  target:
+    - AppImage
+    - deb

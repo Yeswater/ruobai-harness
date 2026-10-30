@@ -9,7 +9,16 @@ packages:
 linkWorkspacePackages: true
 
 # pnpm 10+ refuses to run dependency install scripts unless they are listed.
-# esbuild's native binary is required by vite/vitest and tsx.
+# esbuild's native binary is required by vite/vitest and tsx. The Windows
+# Squirrel helper is only needed for that installer; the desktop ships NSIS.
 allowBuilds:
   esbuild: true
   electron: true
+  electron-winstaller: false
+
+# electron-builder 26.18 declares @electron/get ^3 but its downloader imports
+# ElectronDownloadCacheMode, which only exists in v5. Without the override pnpm
+# installs v3 and packaging dies with "Cannot read properties of undefined
+# (reading 'ReadWrite')".
+overrides:
+  '@electron/get': ^5.1.0

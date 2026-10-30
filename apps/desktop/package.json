@@ -2,14 +2,19 @@
   "name": "@ruobai/desktop",
   "version": "0.0.0",
   "private": true,
+  "description": "Ruobai Harness desktop shell",
   "type": "module",
   "main": "dist/main.mjs",
   "scripts": {
     "build": "node build.mjs",
+    "runtime": "node scripts/prepare-runtime.mjs",
+    "package": "node build.mjs && node scripts/prepare-runtime.mjs && electron-builder --config electron-builder.yml",
+    "package:dir": "node build.mjs && node scripts/prepare-runtime.mjs && electron-builder --config electron-builder.yml --dir",
     "start": "node build.mjs && electron ."
   },
   "devDependencies": {
     "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.25.0"
   }
 }

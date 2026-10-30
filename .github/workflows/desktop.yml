@@ -1,0 +1,60 @@
+name: desktop
+
+# Packages the Electron shell with the deployed harness runtime for each
+# platform. Run it from the Actions tab, or push a v* tag.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Intel Macs need an x64 runner (macos-13); its runtime carries the
+          # matching esbuild binary, so the two arches cannot share one build.
+          - name: macos-arm64
+            os: macos-14
+            args: --arm64
+          - name: windows
+            os: windows-latest
+            args: ''
+          - name: linux
+            os: ubuntu-latest
+            args: ''
+    steps:
+      - uses: actions/checkout@v4
+      # The version comes from package.json `packageManager`; passing it here
+      # as well makes action-setup fail with "Multiple versions of pnpm".
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:ui
+      # prepare-runtime verifies apps/desktop-runtime is in sync with cordis.yml,
+      # runs `pnpm deploy --prod`, and copies cordis.yml + the built UI.
+      - run: pnpm --filter @ruobai/desktop package ${{ matrix.args }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.name }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+          if-no-files-found: error

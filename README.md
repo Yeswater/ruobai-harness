@@ -31,6 +31,8 @@ pnpm desktop
 
 `pnpm --filter @ruobai/desktop start -- --workspace /path/to/project` 可以让桌面端打开另一个工作区，插件仍从本检出加载；也可以在「文件 → 打开工作区…」里切换。实现与取舍见 [`docs/desktop.md`](docs/desktop.md)。
 
+出安装包：GitHub Actions 的 `desktop` 工作流（手动触发或推 `v*` tag）会为 macOS(arm64)、Windows、Linux 各构建一份产物；本地等价命令是 `pnpm --filter @ruobai/desktop package`。
+
 提交前自检：
 
 ```bash

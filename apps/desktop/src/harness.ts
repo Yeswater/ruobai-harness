@@ -40,7 +40,12 @@ export function extractReadyUrl(line: string): string | undefined {
 }
 
 function findEntry(root: string): string {
-  for (const candidate of [join(root, 'apps/cli/src/bin.ts'), join(root, 'apps/cli/dist/bin.js')]) {
+  for (const candidate of [
+    join(root, 'apps/cli/src/bin.ts'),
+    join(root, 'apps/cli/dist/bin.js'),
+    // The packaged app ships a deployed runtime, not a checkout.
+    join(root, 'node_modules/@ruobai/harness-cli/src/bin.ts'),
+  ]) {
     if (existsSync(candidate)) return candidate
   }
   throw new Error(`harness entry not found under ${root}`)

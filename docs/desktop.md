@@ -124,9 +124,28 @@ BrowserWindow（无 nodeIntegration，sandbox）
 | 工作区切换 | 显式 `--workspace /tmp/rbu-desk-test` 与默认检出目录都写入 `desktop.json`，未把应用目录误当工作区 |
 | 退出 | Electron `exit 0`；harness 打印 `SIGTERM: stopped`，未留下本次子进程 |
 
-## 7. 尚未做
+## 7. 打包与分发
 
-- 打包、图标、签名与公证（需要 `electron-builder` / `@electron/packager` 与分发策略）。
-- 应用内原生文件夹选择器：目前由菜单重启 harness 实现；UI 内的目录选择仍走浏览器能力。
+`.github/workflows/desktop.yml` 在手动触发或推 `v*` tag 时为 macOS(arm64)、Windows、Linux 各出一份安装包，上传为 Actions artifact。
+
+打包不是把整个检出塞进 `.app`（Electron + Mermaid + Biome + TypeScript 的 `node_modules` 约 1 GB），而是先生成一份**生产运行时**：
+
+- `apps/desktop/scripts/sync-runtime.mjs` 把 `cordis.yml` 里出现的插件包、CLI 与加载器写成 `apps/desktop-runtime/package.json` 的直接依赖。必须是直接依赖：Loader 从配置目录按包名解析，pnpm 只把直接依赖链接到根部 `node_modules`。
+- `prepare-runtime.mjs` 先校验这份清单与 `cordis.yml` 同步（不同步直接失败，提示重跑脚本），再 `pnpm deploy --prod --legacy` 出 `apps/desktop-runtime/dist/harness`（约 46 MB，含 tsx），并把 `cordis.yml` 与 `packages/ui-app/dist` 复制进去。
+- electron-builder 把该目录放进 `Resources/harness`。`extraResources.from` 必须是 `dist`（父目录）而不是 `harness`：builder 会无条件跳过复制源根部的 `node_modules`，写成后者时依赖会静默丢失。
+- 打包运行时没有系统 Node：主进程用 `process.execPath + ELECTRON_RUN_AS_NODE=1` 启动 CLI，`RUOBAI_UI_ROOT` 指到 `Resources/harness/ui-app`；开发时仍走检出里的 `apps/cli` 与 Vite。
+
+实测（2026-10-30，macOS arm64）：未压缩 app 321 MB，dmg 129 MB，zip 127 MB；安装后双击能启动 harness 并加载内置 UI（`ui:` 地址 + HTTP 200）。
+
+已知限制：
+
+- 只构建 arm64；Intel Mac 需要在 x64 runner 上单独构建（运行时的 esbuild 二进制是平台/架构相关的，不能通用）。
+- 未配置图标与签名/公证，macOS 首次打开需在 Gatekeeper 放行。
+- 非 macOS 包能打开界面，但没有 Seatbelt 沙箱提供方，命令执行会 fail-closed；需要手动切到 `shell-direct` 才有 bash。
+
+## 8. 尚未做
+
+- 图标、签名与公证。
 - 自动更新、通知、协议关联（`ruobai://`）。
+- 应用内原生文件夹选择器：目前由菜单重启 harness 实现；UI 内的目录选择仍走浏览器能力。
 - 若未来客户端需要脱离 HTTP（例如远程桌面或权限隔离），再按 dsh 的方式引入 `doFetch` 切面与 IPC 载体；当前不预留空抽象。
