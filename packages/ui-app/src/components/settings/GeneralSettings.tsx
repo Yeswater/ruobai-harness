@@ -4,6 +4,7 @@ import {
   type CommandPrefix,
   type ModeInfo,
   type PermissionMode,
+  type ProfileSummary,
   type PublicSettings,
   type ThemePreference,
 } from '../../api.ts'
@@ -24,6 +25,21 @@ interface AgentDefaults {
   defaultPermission: PermissionMode
   commandPrefix: CommandPrefix
   compactPercent: number
+}
+
+/** Stable, readable id from a label; never collides with an existing profile. */
+export function uniqueProfileId(label: string, existing: ProfileSummary[]): string {
+  const base = label
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'env'
+  let id = base
+  let index = 2
+  while (existing.some(profile => profile.id === id)) {
+    id = `${base}-${index}`
+    index += 1
+  }
+  return id
 }
 
 function defaultsOf(settings: PublicSettings | null): AgentDefaults {
@@ -49,6 +65,7 @@ export function GeneralSettings({
   const [notice, setNotice] = useState<string | null>(null)
   const [confirmFullAccess, setConfirmFullAccess] = useState(false)
   const [activeProfile, setActiveProfile] = useState(settings?.activeProfile ?? '')
+  const [editing, setEditing] = useState<{ id: string; label: string; root: string } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -78,6 +95,43 @@ export function GeneralSettings({
     || commandPrefix !== saved.commandPrefix
     || compactPercent !== saved.compactPercent
 
+  const persistProfiles = async (next: ProfileSummary[], active?: string) => {
+    setError(null)
+    try {
+      const saved = await api.updateSettings({
+        profiles: next,
+        ...(active !== undefined ? { activeProfile: active } : {}),
+      })
+      onSaved(saved)
+      setNotice('环境档案已保存')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+
+  const saveProfile = async () => {
+    if (!editing) return
+    const label = editing.label.trim()
+    if (!label) {
+      setError('请填写环境名称')
+      return
+    }
+    const id = editing.id || uniqueProfileId(label, settings?.profiles ?? [])
+    const root = editing.root.trim()
+    const next: ProfileSummary[] = [
+      ...(settings?.profiles ?? []).filter(profile => profile.id !== id),
+      { id, label, ...(root ? { workspace: { root } } : {}) },
+    ]
+    await persistProfiles(next, settings?.activeProfile || id)
+    setEditing(null)
+  }
+
+  const removeProfile = async (id: string) => {
+    const next = (settings?.profiles ?? []).filter(profile => profile.id !== id)
+    const active = settings?.activeProfile === id ? '' : settings?.activeProfile
+    await persistProfiles(next, active ?? '')
+  }
+
   const save = async () => {
     setBusy(true)
     setError(null)
@@ -106,8 +160,8 @@ export function GeneralSettings({
       <SettingsScroll>
         <SettingsGroup label="环境">
           <SettingRow
-            title="环境档案"
-            description="新建会话钉住的客户/环境；切换不会移动已开的会话。密钥只存 keyRef，不随档案导出。"
+            title="当前环境"
+            description="新建会话使用的客户/环境；切换不会移动已打开的会话。"
           >
             <select
               className="settings-select"
@@ -130,8 +184,59 @@ export function GeneralSettings({
               ))}
             </select>
           </SettingRow>
+
+          <SettingRow
+            title="环境档案"
+            description="每个档案是一套客户环境；密钥只存引用名，不随档案导出。"
+          >
+            <button className="btn ghost compact" onClick={() => setEditing({ id: '', label: '', root: '' })}>
+              新建环境
+            </button>
+          </SettingRow>
+
           {(settings?.profiles ?? []).length === 0
-            ? <div className="settings-note">还没有环境档案：在 settings.json 的 profiles 里添加，字段为 id / label / workspace.root / llm.keyRef。</div>
+            ? <div className="settings-note">还没有环境档案。点「新建环境」添加一个。</div>
+            : (
+              <ul className="profile-list">
+                {(settings?.profiles ?? []).map(profile => (
+                  <li key={profile.id} className="profile-row">
+                    <span className="profile-label">{profile.label}</span>
+                    <span className="profile-root">{profile.workspace?.root ?? '跟随当前工作区'}</span>
+                    <button
+                      className="btn ghost compact"
+                      onClick={() => setEditing({ id: profile.id, label: profile.label, root: profile.workspace?.root ?? '' })}
+                    >
+                      编辑
+                    </button>
+                    <button className="btn ghost compact" onClick={() => void removeProfile(profile.id)}>
+                      删除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+          {editing
+            ? (
+              <div className="profile-form">
+                <input
+                  className="settings-input"
+                  placeholder="名称，例如 客户 A"
+                  value={editing.label}
+                  onChange={event => setEditing({ ...editing, label: event.target.value })}
+                />
+                <input
+                  className="settings-input"
+                  placeholder="工作区路径（留空则跟随当前工作区）"
+                  value={editing.root}
+                  onChange={event => setEditing({ ...editing, root: event.target.value })}
+                />
+                <div className="profile-form-actions">
+                  <button className="btn primary compact" onClick={() => void saveProfile()}>保存</button>
+                  <button className="btn ghost compact" onClick={() => setEditing(null)}>取消</button>
+                </div>
+              </div>
+            )
             : null}
         </SettingsGroup>
 
