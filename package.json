@@ -50,6 +50,8 @@
     "@ruobai/cordis-plugin-timer": "workspace:*",
     "@ruobai/git": "workspace:*",
     "@ruobai/git-web": "workspace:*",
+    "@ruobai/eval": "workspace:*",
+    "@ruobai/eval-web": "workspace:*",
     "@ruobai/gitee": "workspace:*",
     "@ruobai/gitee-web": "workspace:*",
     "@ruobai/handoff": "workspace:*",

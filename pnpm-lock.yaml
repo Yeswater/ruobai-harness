@@ -95,6 +95,12 @@ importers:
       '@ruobai/delivery-web':
         specifier: workspace:*
         version: link:packages/delivery-web
+      '@ruobai/eval':
+        specifier: workspace:*
+        version: link:packages/eval
+      '@ruobai/eval-web':
+        specifier: workspace:*
+        version: link:packages/eval-web
       '@ruobai/git':
         specifier: workspace:*
         version: link:packages/git
@@ -710,6 +716,30 @@ importers:
       '@ruobai/delivery':
         specifier: workspace:*
         version: link:../delivery
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
+  packages/eval:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+
+  packages/eval-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/eval':
+        specifier: workspace:*
+        version: link:../eval
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session

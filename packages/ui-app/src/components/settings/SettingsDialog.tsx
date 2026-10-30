@@ -299,7 +299,12 @@ export function SettingsDialog({
                         : tab === 'wiki'
                           ? <WikiSettings />
                           : tab === 'skills'
-                            ? <SkillDraftsSettings />
+                            ? (
+                              <>
+                                <SkillDraftsSettings />
+                                <Slot name="settings.eval" props={{ sessionId }} />
+                              </>
+                            )
                           : tab === 'sandbox'
                           ? (
                             <div className="settings-page-body scroll">

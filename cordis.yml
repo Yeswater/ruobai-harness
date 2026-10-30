@@ -285,6 +285,13 @@
 - id: rubric-web
   name: '@ruobai/rubric-web'
 
+# Evaluation gate: task definitions under .ruobai/evals, recorded results, and
+# a baseline-versus-candidate judgement. It never runs a command and never
+# writes cordis.yml — an accepted proposal is an event, applying it is a human
+# action. `@ruobai/eval` is a pure module (judge/loadTasks), not a plugin.
+- id: eval-web
+  name: '@ruobai/eval-web'
+
 # System prompt assembly, token estimate, and LLM compaction.
 - id: context
   name: '@ruobai/context'
