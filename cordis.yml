@@ -203,6 +203,12 @@
 - id: plan-web
   name: '@ruobai/plan-web'
 
+# Delivery contract: what is being delivered and how it will be accepted.
+# acceptance is the only input of the delivery gate; the projection registers a
+# system-prompt section that compaction does not fold away.
+- id: contract
+  name: '@ruobai/contract'
+
 # Human approval for mutating tools.
 - id: approval
   name: '@ruobai/approval'

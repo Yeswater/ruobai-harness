@@ -38,6 +38,7 @@
     "@ruobai/commit-prompt-web": "workspace:*",
     "@ruobai/context": "workspace:*",
     "@ruobai/context-search": "workspace:*",
+    "@ruobai/contract": "workspace:*",
     "@ruobai/cordis": "workspace:*",
     "@ruobai/cordis-plugin-group": "workspace:*",
     "@ruobai/cordis-plugin-include": "workspace:*",

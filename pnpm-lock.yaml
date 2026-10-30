@@ -65,6 +65,9 @@ importers:
       '@ruobai/context-search':
         specifier: workspace:*
         version: link:packages/context-search
+      '@ruobai/contract':
+        specifier: workspace:*
+        version: link:packages/contract
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:vendor/cordis
@@ -620,6 +623,21 @@ importers:
       '@ruobai/workspace':
         specifier: workspace:*
         version: link:../workspace
+
+  packages/contract:
+    dependencies:
+      '@ruobai/context':
+        specifier: workspace:*
+        version: link:../context
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/git:
     dependencies:

@@ -1,0 +1,16 @@
+{
+  "name": "@ruobai/contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "@ruobai/context": "workspace:*",
+    "@ruobai/cordis": "workspace:*",
+    "@ruobai/session": "workspace:*",
+    "@ruobai/tools": "workspace:*"
+  }
+}
