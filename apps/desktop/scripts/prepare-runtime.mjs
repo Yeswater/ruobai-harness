@@ -32,7 +32,16 @@ const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const deploy = spawnSync(pnpm, [
   '--filter', '@ruobai/desktop-runtime',
   'deploy', '--prod', '--legacy', out,
-], { cwd: root, stdio: 'inherit' })
+], {
+  cwd: root,
+  stdio: 'inherit',
+  // Node refuses to spawn .cmd shims without a shell on Windows.
+  shell: process.platform === 'win32',
+})
+if (deploy.error) {
+  console.error(deploy.error)
+  process.exit(1)
+}
 if (deploy.status !== 0) process.exit(deploy.status ?? 1)
 
 cpSync(join(root, 'cordis.yml'), join(out, 'cordis.yml'))

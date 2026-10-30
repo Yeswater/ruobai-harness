@@ -35,6 +35,9 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
+  # The workspace package name (`@ruobai/desktop`) is not a legal executable
+  # name; AppImage refuses to build without an explicit one.
+  executableName: ruobai-harness
   category: Development
   maintainer: yeswater
   target:
