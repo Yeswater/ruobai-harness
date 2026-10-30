@@ -41,7 +41,7 @@ interface ComposerProps {
   onStop: () => void
   onNewSession: () => void
   onOpenConnectors: () => void
-  /** File reference from the files panel: insert a short token and attach its content. */
+  /** File reference from the files panel: insert the path token into the draft. */
   reference?: { path: string; token: number } | null
   /** A queued message taken back: its body goes ahead of whatever is typed. */
   restore?: { text: string; attachments?: AttachmentMeta[]; token: number } | null
@@ -106,28 +106,6 @@ export function Composer({
     }
   }
 
-  const attachFile = useCallback(async (path: string, name: string) => {
-    if (!sessionId) return false
-    const target = sessionId
-    try {
-      const file = await api.readWorkspaceFile(path, sessionId)
-      // The session may change while the file is being read.
-      if (sessionRef.current !== target) return false
-      attachments.addOne({
-        id: globalThis.crypto?.randomUUID?.() ?? `a-${Date.now()}`,
-        kind: 'file',
-        name,
-        mime: 'text/plain',
-        size: new TextEncoder().encode(file.content).length,
-        text: file.content,
-        path,
-      })
-      return true
-    } catch {
-      return false
-    }
-  }, [sessionId, attachments.addOne])
-
   const trigger = useMemo(
     () => detectTrigger(text, caret, commandPrefix),
     [text, caret, commandPrefix],
@@ -187,18 +165,12 @@ export function Composer({
   useEffect(() => {
     if (!reference || handledReference.current === reference.token) return
     handledReference.current = reference.token
-    const name = reference.path.split('/').filter(Boolean).at(-1) ?? reference.path
-    const token = `@${name} `
+    // A reference is a pointer for the agent's tools, not an upload: the
+    // content stays in the workspace and is read only if the turn needs it.
+    const token = `@${reference.path} `
     setText(current => {
       const base = current.replace(/\s+$/, '')
       return base ? `${base} ${token}` : token
-    })
-    void attachFile(reference.path, name).then((attached) => {
-      if (attached) return
-      // Binary or oversized files fall back to the full path as plain text.
-      setText(current => current.includes(token)
-        ? current.replace(token, `@${reference.path} `)
-        : current)
     })
     const frame = requestAnimationFrame(() => {
       const textarea = textareaRef.current
@@ -209,7 +181,7 @@ export function Composer({
       setCaret(end)
     })
     return () => cancelAnimationFrame(frame)
-  }, [reference, attachFile])
+  }, [reference])
 
   useEffect(() => {
     if (!restore || handledRestore.current === restore.token) return
@@ -359,22 +331,14 @@ export function Composer({
 
   const acceptMention = (match: WorkspaceMatch) => {
     if (!trigger) return
-    const isFile = match.type === 'file'
-    // Files show their name in the draft; the attachment carries the content
-    // and the full path for the model.
-    const replacement = isFile ? `@${match.name} ` : `@${match.path}/ `
+    // Both files and directories become a path reference; nothing is uploaded.
+    // The agent reads the workspace through its own tools when it needs to.
+    const replacement = match.type === 'directory' ? `@${match.path}/ ` : `@${match.path} `
     const next = applyCompletion(text, caret, trigger, replacement)
     setText(next.text)
     setCaret(next.caret)
     setDismissed(true)
     focusAt(next.caret)
-    if (!isFile) return
-    void attachFile(match.path, match.name).then((attached) => {
-      if (attached) return
-      setText(current => current.includes(replacement)
-        ? current.replace(replacement, `@${match.path} `)
-        : current)
-    })
   }
 
   const pickActive = () => {

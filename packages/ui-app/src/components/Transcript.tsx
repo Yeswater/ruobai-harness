@@ -13,6 +13,7 @@ import { MarkdownPreview } from './MarkdownPreview.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { TurnNav } from './TurnNav.tsx'
 import { toolDetail, toolEdit, type ToolEdit } from '../tool-summary.ts'
+import { tokenizeComposer } from '../composer-tokens.ts'
 import { addedLines, diffLines } from '../tool-diff.ts'
 import {
   buildPlan, formatDuration, groupSummary, isGroupRunning, itemDuration, shouldGroupRun,
@@ -224,6 +225,23 @@ export function Transcript({
   )
 }
 
+/**
+ * User prose with the operators the harness acts on highlighted.
+ *
+ * `@path` is a reference the agent resolves with its tools, and a leading
+ * `/name` or `～name` is a command; both get a pill so the message reads the
+ * same way as the composer (Claude Code's inline mention style).
+ */
+function OperatorText({ text }: { text: string }) {
+  return (
+    <>
+      {tokenizeComposer(text).map((token, index) => token.kind === 'text'
+        ? <span key={index}>{token.text}</span>
+        : <span key={index} className={`msg-token ${token.kind}`}>{token.text}</span>)}
+    </>
+  )
+}
+
 function UserMessage({ message, queued, onEdit, onWithdraw }: {
   message: ChatMessage
   queued?: boolean
@@ -285,7 +303,7 @@ function UserMessage({ message, queued, onEdit, onWithdraw }: {
         )
         : null}
       {attachments.length ? <AttachmentRail attachments={attachments} /> : null}
-      {text ? <div className="bubble">{text}</div> : null}
+      {text ? <div className="bubble"><OperatorText text={text} /></div> : null}
     </div>
   )
 }

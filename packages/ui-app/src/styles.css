@@ -789,6 +789,24 @@ body.resizing .sidebar-resizer::after {
   line-height: 1.65;
 }
 
+/* `@path` references and `/name`-style commands read as pills in messages,
+   matching the composer's inline tokens. */
+.msg-token {
+  padding: 0 3px;
+  border-radius: 4px;
+  font-weight: 550;
+}
+
+.msg-token.mention {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.msg-token.command {
+  color: #7aa2f7;
+  background: color-mix(in srgb, #7aa2f7 16%, transparent);
+}
+
 .msg-role {
   display: none;
 }

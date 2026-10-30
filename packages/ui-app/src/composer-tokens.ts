@@ -19,6 +19,9 @@ export function tokenizeComposer(input: string): ComposerToken[] {
   let match: RegExpExecArray | null
   while ((match = pattern.exec(input))) {
     const start = match.index + (match[1]?.length ?? 0)
+    // `~/code` and `/usr/bin` are paths, not commands (the trigger uses the
+    // same rule); leave them as plain text.
+    if (match[2] !== '@' && /[/\\]/.test(match[3]!)) continue
     if (start > last) {
       tokens.push({ kind: 'text', text: input.slice(last, start), start: last, end: start })
     }
