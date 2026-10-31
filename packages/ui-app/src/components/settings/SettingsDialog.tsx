@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEscapeKey } from '../../useEscapeKey.ts'
 import { api, type PublicSettings, type ThemePreference } from '../../api.ts'
-import type { UiSkin } from '../../preferences.ts'
+import type { CollapsedSidebar, UiSkin } from '../../preferences.ts'
 import {
   BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, GlobeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
 } from '../Icons.tsx'
@@ -24,6 +24,10 @@ interface SettingsDialogProps {
   onThemeChange: (value: ThemePreference) => void
   skin: UiSkin
   onSkinChange: (skin: UiSkin) => void
+  showBrand: boolean
+  onShowBrandChange: (show: boolean) => void
+  collapsedMode: CollapsedSidebar
+  onCollapsedModeChange: (mode: CollapsedSidebar) => void
   onClose: () => void
   onSaved?: () => void
 }
@@ -153,7 +157,8 @@ function matchesItem(item: NavItem, term: string) {
 }
 
 export function SettingsDialog({
-  open, initialTab, sessionId, themePreference, onThemeChange, skin, onSkinChange, onClose, onSaved,
+  open, initialTab, sessionId, themePreference, onThemeChange, skin, onSkinChange,
+  showBrand, onShowBrandChange, collapsedMode, onCollapsedModeChange, onClose, onSaved,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>('behavior')
   const [query, setQuery] = useState('')
@@ -318,6 +323,10 @@ export function SettingsDialog({
                     onThemeChange={onThemeChange}
                     skin={skin}
                     onSkinChange={onSkinChange}
+                    showBrand={showBrand}
+                    onShowBrandChange={onShowBrandChange}
+                    collapsedMode={collapsedMode}
+                    onCollapsedModeChange={onCollapsedModeChange}
                     onSaved={handleSettingsChange}
                     onSaveState={setSaveState}
                   />

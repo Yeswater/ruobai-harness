@@ -70,6 +70,7 @@ BrowserWindow（无 nodeIntegration，sandbox）
 | `apps/desktop/src/harness.ts` | 启动/停止 harness 子进程，解析就绪 URL，回收进程组 |
 | `apps/desktop/src/bounds.ts` | 窗口位置与工作区约束（纯函数） |
 | `apps/desktop/build.mjs` | 用 esbuild 把主进程打成 `dist/main.mjs` |
+| `apps/desktop/build/icon.*` | 应用图标：`icon.svg` 是源文件，其余为生成物 |
 
 启动链：
 
@@ -88,6 +89,38 @@ BrowserWindow（无 nodeIntegration，sandbox）
 - `boot()` 的 `ctx.baseUrl` 改为**配置文件所在目录**，而不是进程 cwd；否则 Loader 会去工作区里找 `@ruobai/*` 包（实测报 `Cannot find package '@ruobai/cordis-plugin-include'`）。
 
 实测：在 `/tmp/rbu-desk-test` 启动后，该目录出现 `.ruobai/` 与 `.sessions/`。
+
+### 窗口外观：没有系统标题栏
+
+macOS 上 `BrowserWindow` 用 `titleBarStyle: 'hiddenInset'`，与 Claude Code 桌面端一致：窗口顶部不再有一条系统标题栏，红绿灯直接浮在侧栏上。
+
+- 主进程把红绿灯放到 `{ x: 16, y: 18 }`；`ui-app` 在 Electron 里给 `<html>` 加 `.desktop-shell` / `.desktop-mac`，后者让 `.sidebar-head` 多留 34px 顶部内边距避让红绿灯。
+- 拖动窗口靠 `.sidebar-head` 与 `.main-head` 的 `-webkit-app-region: drag`；其中所有按钮、输入框、tab 再声明 `no-drag`，否则它们收不到点击。
+- 侧栏收起时 `.main` 顶到窗口左边，`.main-head` 额外留 92px 左边距，避免标题压在红绿灯下。
+- 这条规则来自渲染层自己判断 UA 里的 `Electron`：同一份 `ui-app` 产物在浏览器里打开时行为不变。Windows / Linux 仍用原生边框——UI 里没有对应的窗口控件覆盖层，改成无边框会让用户失去关闭与最小化按钮。
+
+### 图标
+
+源文件 `apps/desktop/build/icon.svg`（1024×1024，与网页 favicon 同一套图形），由它生成三份产物：
+
+```bash
+cd apps/desktop/build
+# QuickLook 走 WebKit，能渲染渐变；ImageMagick 自带的 SVG 渲染器会把它画成黑色。
+# 缩略图是白底，所以再用同位置的圆角矩形抠一次透明度。
+qlmanage -t -s 1024 -o . icon.svg && mv icon.svg.png raw.png
+magick -size 1024x1024 xc:none -fill white -draw "roundrectangle 100,100 924,924 185,185" mask.png
+magick raw.png mask.png -alpha off -compose CopyOpacity -composite icon.png && rm raw.png mask.png
+
+mkdir icon.iconset
+for s in 16 32 128 256 512; do
+  magick icon.png -resize ${s}x${s} icon.iconset/icon_${s}x${s}.png
+  magick icon.png -resize $((s*2))x$((s*2)) icon.iconset/icon_${s}x${s}@2x.png
+done
+iconutil -c icns icon.iconset -o icon.icns && rm -rf icon.iconset
+magick icon.png -define icon:auto-resize=256,128,64,48,32,16 icon.ico
+```
+
+`electron-builder.yml` 的 `mac/win/linux.icon` 指向 `build/` 下的产物。开发模式（`pnpm desktop`）没有应用包，主进程用 `app.dock.setIcon()` 给 Dock 换成同一张图，否则显示的是 Electron 的默认图标。
 
 ## 4. 安全边界
 
@@ -140,12 +173,13 @@ BrowserWindow（无 nodeIntegration，sandbox）
 已知限制：
 
 - 只构建 arm64；Intel Mac 需要在 x64 runner 上单独构建（运行时的 esbuild 二进制是平台/架构相关的，不能通用）。
-- 未配置图标与签名/公证，macOS 首次打开需在 Gatekeeper 放行。
+- 未配置签名/公证，macOS 首次打开需在 Gatekeeper 放行。
+- 打包运行时跑在 Electron 自带的 Node 上（Electron 45 实测 22.22.3），不是系统 Node。仓库的 `engines` 是 `>=24`，所以 harness 里用 Node 24 独有的 API 前，要先确认 Electron 的 Node 版本，否则只有安装包会挂。
 - 非 macOS 包能打开界面，但没有 Seatbelt 沙箱提供方，命令执行会 fail-closed；需要手动切到 `shell-direct` 才有 bash。
 
 ## 8. 尚未做
 
-- 图标、签名与公证。
+- 签名与公证。
 - 自动更新、通知、协议关联（`ruobai://`）。
 - 应用内原生文件夹选择器：目前由菜单重启 harness 实现；UI 内的目录选择仍走浏览器能力。
 - 若未来客户端需要脱离 HTTP（例如远程桌面或权限隔离），再按 dsh 的方式引入 `doFetch` 切面与 IPC 载体；当前不预留空抽象。

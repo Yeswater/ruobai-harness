@@ -21,6 +21,7 @@ extraResources:
 asar: true
 npmRebuild: false
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   # CI has no signing identity; unsigned builds still run after the user
   # allows them in Gatekeeper.
@@ -29,12 +30,14 @@ mac:
     - dmg
     - zip
 win:
+  icon: build/icon.ico
   target:
     - nsis
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
 linux:
+  icon: build/icon.png
   # The workspace package name (`@ruobai/desktop`) is not a legal executable
   # name; AppImage refuses to build without an explicit one, and fpm derives a
   # `release/@ruobai/...` path for the deb that does not exist.

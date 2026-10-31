@@ -6,7 +6,7 @@
 
 ## 约束
 
-- Node 22 的 `fetch` 不认环境变量，必须在请求层带 dispatcher。
+- Node 的 `fetch`（含 24）不认环境变量，必须在请求层带 dispatcher。
 - 命令与 `git` 子进程读的是环境变量，必须显式注入，且不能把 harness 的密钥带出去。
 - 本地服务（UI、MCP、preview）必须始终直连。
 - 用户要求配置的是应用级 `HTTP_PROXY / HTTPS_PROXY / NO_PROXY`：默认继承系统值，可覆盖，可恢复；应用级在 harness 内优先于系统级。

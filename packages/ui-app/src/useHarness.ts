@@ -658,6 +658,16 @@ export function useHarness() {
   }, [fail])
 
   /**
+   * Point an unsent session at another folder. Only a draft can move: a saved
+   * session's workspace is fixed on the host.
+   */
+  const setDraftWorkspace = useCallback((workspace: string) => {
+    if (!draftRef.current) return
+    draftRef.current = { ...draftRef.current, workspace }
+    setSession(previous => previous ? { ...previous, workspace } : previous)
+  }, [])
+
+  /**
    * Take a queued message back before its turn starts. Resolves with the
    * withdrawn entry so the caller can put its text back in the input box.
    */
@@ -762,6 +772,7 @@ export function useHarness() {
     setMode,
     setModel,
     setPermission,
+    setDraftWorkspace,
     withdrawQueued,
     resolveApproval,
     answerAsk,

@@ -75,7 +75,7 @@ pnpm test:baseline packages/tool-fs/tests/fs.spec.ts
 
 实现取舍：
 
-- **不引入依赖**：通过 Chrome DevTools Protocol 直连，使用 Node 22 自带的全局 `WebSocket`。
+- **不引入依赖**：通过 Chrome DevTools Protocol 直连，使用 Node 24 自带的全局 `WebSocket`。
 - **页面按（会话, URL）复用**：首次调用启动 `--headless=new` 与独立临时 profile；之后沿用同一页面，空闲 `idleMs`（默认 120 s）关闭，每会话最多 `maxPages`（默认 4）个页面，按最久未用回收；进程内仍串行，避免多个 Chrome 同时跑。
 - **不带尺寸的调用不改视口**：只有显式传 `width`/`height`/`colorScheme` 或 `browser_resize` 才会改，之前切换的尺寸不会在下一步被悄悄重置。
 - **默认只允许 loopback**（`127.0.0.1` / `localhost` / `::1`）。要截远程页面，必须在 `cordis.yml` 的 `allowedHosts` 里显式添加——边界写在代码里，而不是让工具自己决定。

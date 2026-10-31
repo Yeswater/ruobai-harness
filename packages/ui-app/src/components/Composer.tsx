@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from 'react'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import {
   api, type CommandPrefix, type ContextInfo, type ModeInfo, type ModelProvider, type PermissionMode,
@@ -45,6 +45,10 @@ interface ComposerProps {
   reference?: { path: string; token: number } | null
   /** A queued message taken back: its body goes ahead of whatever is typed. */
   restore?: { text: string; attachments?: AttachmentMeta[]; token: number } | null
+  /** Sits above the box: the empty screen's workspace chip. */
+  header?: ReactNode
+  /** Replaces the default hint, e.g. while the empty screen waits for a folder. */
+  placeholder?: string
 }
 
 type OpenMenu = 'plus' | 'permission' | 'model' | 'knowledge' | null
@@ -59,7 +63,7 @@ const FILE_ACCEPT = [
 export function Composer({
   disabled, streaming, sessionId, workspace, provider, model, models, modes, skills = [], mode, permission,
   commandPrefix, contextInfo, stats, onModeChange, onModelChange, onPermissionChange, onSend,
-  onStop, onNewSession, onOpenConnectors, reference, restore,
+  onStop, onNewSession, onOpenConnectors, reference, restore, header, placeholder,
 }: ComposerProps) {
   const [text, setText] = useState(() => readDraft(sessionId).text)
   const [caret, setCaret] = useState(0)
@@ -387,6 +391,7 @@ export function Composer({
 
   return (
     <div className="composer-wrap">
+      {header}
       <form
         className={`composer ${dragActive ? 'drop-active' : ''}`}
         onSubmit={(event) => {
@@ -442,11 +447,11 @@ export function Composer({
             ref={textareaRef}
             value={text}
             rows={2}
-            placeholder={disabled
-              ? '正在加载会话…'
-              : streaming
-                ? '运行中：回车把消息排到下一轮'
-                : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`}
+            placeholder={streaming
+              ? '运行中：回车把消息排到下一轮'
+              : placeholder ?? (disabled
+                ? '正在加载会话…'
+                : `发送消息…  输入 / 或 ${commandPrefix} 命令，@ 引用文件`)}
             onChange={(event) => {
               setText(event.target.value)
               setCaret(event.target.selectionStart ?? 0)

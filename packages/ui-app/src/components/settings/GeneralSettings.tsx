@@ -11,10 +11,11 @@ import {
 import { AlertIcon, MonitorIcon, MoonIcon, SunIcon } from '../Icons.tsx'
 import { PERMISSION_OPTIONS } from '../PermissionSelect.tsx'
 import { Select } from '../Select.tsx'
-import { Button, Field, Notice, Segmented, useAutosave, type SaveState } from '../ui/index.tsx'
-import { SKINS, type UiSkin } from '../../preferences.ts'
+import { Button, Field, Notice, Segmented, Switch, useAutosave, type SaveState } from '../ui/index.tsx'
+import { SKINS, type CollapsedSidebar, type UiSkin } from '../../preferences.ts'
 import { useEscapeKey } from '../../useEscapeKey.ts'
 import { SettingRow, SettingsGroup } from './SettingsLayout.tsx'
+import { ShortcutSettings } from './ShortcutSettings.tsx'
 
 interface GeneralSettingsProps {
   settings: PublicSettings | null
@@ -22,6 +23,10 @@ interface GeneralSettingsProps {
   onThemeChange: (value: ThemePreference) => void
   skin: UiSkin
   onSkinChange: (skin: UiSkin) => void
+  showBrand: boolean
+  onShowBrandChange: (show: boolean) => void
+  collapsedMode: CollapsedSidebar
+  onCollapsedModeChange: (mode: CollapsedSidebar) => void
   onSaved: (settings: PublicSettings) => void
   onSaveState?: (state: SaveState) => void
 }
@@ -67,7 +72,8 @@ const SKIN_PREVIEW: Record<UiSkin, { base: string; accent: string; panel: string
 }
 
 export function GeneralSettings({
-  settings, themePreference, onThemeChange, skin, onSkinChange, onSaved, onSaveState,
+  settings, themePreference, onThemeChange, skin, onSkinChange, showBrand, onShowBrandChange,
+  collapsedMode, onCollapsedModeChange, onSaved, onSaveState,
 }: GeneralSettingsProps) {
   const [draft, setDraft] = useState<AgentDefaults>(() => defaultsOf(settings))
   const [modes, setModes] = useState<ModeInfo[]>([])
@@ -247,6 +253,26 @@ export function GeneralSettings({
               onChange={onThemeChange}
             />
           </SettingRow>
+          <SettingRow
+            title="侧栏品牌区"
+            description="关闭后侧栏只保留「新会话」按钮，会话列表能多放几行。"
+          >
+            <Switch checked={showBrand} label="侧栏品牌区" onChange={onShowBrandChange} />
+          </SettingRow>
+          <SettingRow
+            title="收起侧栏后"
+            description="隐藏：整栏让出空间，⌘B 再展开；功能按钮：留下一条只放图标的窄栏。"
+          >
+            <Segmented
+              value={collapsedMode}
+              label="收起侧栏后"
+              options={[
+                { value: 'hidden', label: '隐藏' },
+                { value: 'rail', label: '功能按钮' },
+              ]}
+              onChange={value => onCollapsedModeChange(value as CollapsedSidebar)}
+            />
+          </SettingRow>
           <div className="setting-row stacked">
             <div className="setting-row-copy">
               <div className="setting-row-title">界面皮肤</div>
@@ -331,6 +357,8 @@ export function GeneralSettings({
             />
           </SettingRow>
         </SettingsGroup>
+
+        <ShortcutSettings />
 
         <SettingsGroup label="上下文">
           <SettingRow

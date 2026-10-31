@@ -129,6 +129,16 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#101012',
     title: 'Ruobai Harness',
+    // No OS title bar on macOS, like Claude Code desktop: the traffic lights
+    // float over the sidebar header, which pads room for them and doubles as
+    // the window's drag handle (see .desktop-shell in ui-app styles). Other
+    // platforms keep their native frame — the UI has no overlay controls.
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 16, y: 18 },
+        }
+      : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -313,6 +323,13 @@ async function main() {
   }
 
   await app.whenReady()
+
+  // A packaged bundle carries its own icon; in development the dock would
+  // otherwise show Electron's.
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    const icon = join(app.getAppPath(), 'build/icon.png')
+    if (existsSync(icon)) app.dock?.setIcon(icon)
+  }
 
   const root = harnessRoot()
   workspace = initialWorkspace(root)

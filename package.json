@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "dev": "tsx apps/cli/src/bin.ts",
@@ -128,7 +128,7 @@
     "@ruobai/workspace": "workspace:*",
     "@ruobai/workspace-web": "workspace:*",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.10.0",
+    "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

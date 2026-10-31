@@ -13,7 +13,7 @@
 
 ## 快速开始
 
-需要 Node `^22.19` 或 `>=24`，以及 pnpm 11。
+需要 Node `>=24`（见 `.nvmrc`），以及 pnpm 11。
 
 ```bash
 pnpm install

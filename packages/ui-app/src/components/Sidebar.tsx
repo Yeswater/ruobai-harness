@@ -14,16 +14,23 @@ import { isDraftId } from '../draft-session.ts'
 import { BalanceCard } from './BalanceCard.tsx'
 import { useContextMenu } from './ContextMenu.tsx'
 import { SidebarViewMenu } from './SidebarViewMenu.tsx'
-import { shortcutLabel } from '../shortcuts.ts'
+import { useShortcutLabel } from '../useShortcuts.ts'
+import type { CollapsedSidebar } from '../preferences.ts'
 
 interface SidebarProps {
   sessions: SessionSummary[]
   activeId: string | null
   open: boolean
   collapsed: boolean
+  /** What the collapsed sidebar leaves behind: nothing, or an icon rail. */
+  collapsedMode: CollapsedSidebar
+  /** Hides the brand block; the new-session button stays. */
+  showBrand: boolean
   onToggleCollapse: () => void
   onSelect: (id: string) => void
   onCreate: () => void
+  /** Opens the folder picker: the sidebar's "add workspace" action. */
+  onAddWorkspace: () => void
   onCreateIn: (workspace?: string) => void
   onRename: (id: string, title: string) => void
   onFork: (id: string) => void
@@ -105,6 +112,8 @@ function functionIcon(id: FunctionView) {
 
 export function Sidebar(props: SidebarProps) {
   const contextMenu = useContextMenu()
+  const newSessionKey = useShortcutLabel('new-session')
+  const settingsKey = useShortcutLabel('settings')
   const [view, setView] = useState<SidebarView>(loadView)
   const [orders, setOrders] = useState<ManualOrder>(loadOrders)
   const [folded, setFolded] = useState<Set<string>>(loadFolded)
@@ -412,6 +421,75 @@ export function Sidebar(props: SidebarProps) {
     ? groups.filter(group => !collapsedAncestor(group))
     : groups
 
+  // Collapsed with an icon rail: the column stays, only clickable entries do.
+  // `open` is the narrow-screen overlay; there the full sidebar still wins.
+  if (props.collapsed && props.collapsedMode === 'rail' && !props.open) {
+    return (
+      <aside className="sidebar rail">
+        <div className="rail-top">
+          {props.showBrand
+            ? (
+              <button
+                type="button"
+                className="rail-btn rail-brand"
+                onClick={props.onCreate}
+                title={`新会话 (${newSessionKey})`}
+                aria-label="新会话"
+              >
+                <BrandMarkIcon size={22} />
+              </button>
+            )
+            : null}
+          <button
+            type="button"
+            className="rail-btn"
+            onClick={props.onCreate}
+            title={`新会话 (${newSessionKey})`}
+            aria-label="新会话"
+          >
+            <PlusIcon size={17} />
+          </button>
+        </div>
+
+        <nav className="rail-nav" aria-label="功能">
+          {FUNCTION_VIEWS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`rail-btn ${props.functionView === item.id ? 'active' : ''}`}
+              onClick={() => props.onOpenFunction(item.id)}
+              title={item.label}
+              aria-label={item.label}
+            >
+              {functionIcon(item.id)}
+            </button>
+          ))}
+        </nav>
+
+        <div className="rail-foot">
+          <button
+            type="button"
+            className="rail-btn"
+            onClick={props.onToggleCollapse}
+            title="展开工作区栏"
+            aria-label="展开工作区栏"
+          >
+            <PanelLeftIcon />
+          </button>
+          <button
+            type="button"
+            className="rail-btn"
+            onClick={props.onOpenSettings}
+            title={`打开设置 (${settingsKey})`}
+            aria-label="打开设置"
+          >
+            <GearIcon />
+          </button>
+        </div>
+      </aside>
+    )
+  }
+
   return (
     <>
       <aside className={`sidebar ${props.open ? 'open' : ''}`}>
@@ -442,34 +520,43 @@ export function Sidebar(props: SidebarProps) {
           )
           : null}
         <div className="sidebar-head">
-          <div className="sidebar-brand-row">
-            <div className="brand" title="RuoBai Harness">
-              <span className="brand-mark" aria-hidden="true"><BrandMarkIcon /></span>
-              <span className="brand-text">
-                <span className="brand-name">RuoBai</span>
-                <span className="brand-sub">Harness</span>
-              </span>
-            </div>
-            <div className="sidebar-head-actions">
-              <button
-                className="sidebar-new"
-                onClick={props.onCreate}
-                aria-label="新建会话"
-                title={`新建会话 (${shortcutLabel('N')})`}
-              >
-                <PlusIcon size={13} />
-                <span>新建</span>
-              </button>
-              <button
-                className="icon-btn subtle sidebar-collapse"
-                onClick={props.onToggleCollapse}
-                aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
-                title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
-              >
-                <PanelLeftIcon />
-              </button>
-            </div>
-          </div>
+          {/* The collapse button lives with the brand: turning the brand off
+              also removes the row (⌘B still toggles the sidebar). */}
+          {props.showBrand
+            ? (
+              <div className="sidebar-brand-row">
+                <button
+                  type="button"
+                  className="brand"
+                  onClick={props.onCreate}
+                  title={`新会话 (${newSessionKey})`}
+                >
+                  <span className="brand-mark" aria-hidden="true"><BrandMarkIcon /></span>
+                  <span className="brand-text">
+                    <span className="brand-name">RuoBai</span>
+                    <span className="brand-badge">HARNESS</span>
+                  </span>
+                </button>
+                <button
+                  className="icon-btn subtle sidebar-collapse"
+                  onClick={props.onToggleCollapse}
+                  aria-label={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+                  title={props.collapsed ? '展开工作区栏' : '收起工作区栏'}
+                >
+                  <PanelLeftIcon />
+                </button>
+              </div>
+            )
+            : null}
+          <button
+            type="button"
+            className="sidebar-new"
+            onClick={props.onCreate}
+            title={`新会话 (${newSessionKey})`}
+          >
+            <PlusIcon size={14} />
+            <span>新会话</span>
+          </button>
         </div>
 
         <nav className="function-rail" aria-label="功能">
@@ -529,7 +616,7 @@ export function Sidebar(props: SidebarProps) {
                     view={view}
                     onChange={patch => setView(current => ({ ...current, ...patch }))}
                   />
-                  <button className="icon-btn subtle" onClick={props.onCreate} aria-label="添加工作区">
+                  <button className="icon-btn subtle" onClick={props.onAddWorkspace} aria-label="添加工作区">
                     <FolderPlusIcon />
                   </button>
                 </div>
@@ -548,7 +635,7 @@ export function Sidebar(props: SidebarProps) {
                   ? '还没有归档的会话'
                   : props.sessions.length
                     ? '没有未归档的会话'
-                    : '还没有会话，点击左上角“新建”开始'}
+                    : '还没有会话，点击「新会话」开始'}
             </div>
           )}
         </div>
@@ -560,7 +647,7 @@ export function Sidebar(props: SidebarProps) {
           className="sidebar-foot"
           onClick={props.onOpenSettings}
           aria-label="打开设置"
-          title={`打开设置 (${shortcutLabel(',')})`}
+          title={`打开设置 (${settingsKey})`}
         >
           <GearIcon size={15} />
           <span>设置</span>

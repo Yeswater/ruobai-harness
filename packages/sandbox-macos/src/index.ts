@@ -307,8 +307,7 @@ export class SeatbeltProvider implements SandboxProvider {
   }
 
   async readFile(path: string, options: { encoding?: BufferEncoding }, _handle: SandboxHandle) {
-    const value = await readFileNode(path, options.encoding ? { encoding: options.encoding } : undefined)
-    return value
+    return options.encoding ? readFileNode(path, { encoding: options.encoding }) : readFileNode(path)
   }
 
   async writeFile(path: string, data: string | Uint8Array, options: { mode?: number }, _handle: SandboxHandle) {

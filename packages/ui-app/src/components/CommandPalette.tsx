@@ -4,7 +4,8 @@ import {
   buildPaletteGroups, flattenEntries,
   type PaletteCommand, type PaletteEntry, type PaletteGroup,
 } from '../command-palette-model.ts'
-import { modKeyLabel, shortcutLabel } from '../shortcuts.ts'
+import { shortcutLabel } from '../shortcuts.ts'
+import { useShortcutLabel } from '../useShortcuts.ts'
 import { useEscapeKey } from '../useEscapeKey.ts'
 import { ChatIcon, CommandIcon, SearchIcon } from './Icons.tsx'
 import { relativeTime } from './Sidebar.tsx'
@@ -38,6 +39,7 @@ function groupIcon(group: PaletteGroup) {
 }
 
 export function CommandPalette(props: CommandPaletteProps) {
+  const paletteKey = useShortcutLabel('palette')
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -155,7 +157,7 @@ export function CommandPalette(props: CommandPaletteProps) {
                 ×
               </button>
             )
-            : <span className="keycap">{modKeyLabel()}K</span>}
+            : <span className="keycap">{paletteKey}</span>}
         </div>
 
         <div className="palette-list" id="palette-list" role="listbox" aria-label="搜索结果" ref={listRef}>

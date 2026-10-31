@@ -168,25 +168,21 @@ body.resizing .sidebar-resizer::after {
   border-radius: 7px;
 }
 
-.sidebar-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* The one always-visible "new conversation" entry: it opens the workspace
-   dialog instead of silently creating a session in some default workspace. */
+/* The one always-visible "new conversation" entry. It reuses the folder the
+   user was last in; picking another one is the workspace chip's job. */
 .sidebar-new {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 9px 0 7px;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 38px;
+  padding: 0 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--panel);
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   transition: background .15s, border-color .15s;
 }
@@ -222,6 +218,13 @@ body.resizing .sidebar-resizer::after {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   user-select: none;
 }
 
@@ -239,23 +242,23 @@ body.resizing .sidebar-resizer::after {
 
 .brand-text {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: 6px;
   line-height: 1.1;
 }
 
-.brand-name {
-  font-family: var(--serif);
-  font-size: 14.5px;
+/* One wordmark: both halves share the same face, size and weight. */
+.brand-name,
+.brand-badge {
+  font-family: var(--sans);
+  font-size: 13.5px;
   font-weight: 600;
   letter-spacing: .01em;
 }
 
-.brand-sub {
-  margin-top: 3px;
-  font-size: 10px;
-  letter-spacing: .16em;
+.brand-badge {
+  letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--faint);
 }
 
 .new-session {
@@ -2868,18 +2871,6 @@ body {
 .brand-mark {
   width: 26px;
   height: 26px;
-}
-
-.brand-name {
-  font-family: var(--sans);
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.brand-sub {
-  margin-top: 2px;
-  font-size: 9px;
-  letter-spacing: .14em;
 }
 
 .new-session {
@@ -13629,4 +13620,173 @@ body.resizing .file-side-resizer::after {
   text-align: right;
   max-width: 360px;
   overflow-wrap: anywhere;
+}
+
+/* ===== Desktop shell (Electron) ===== */
+
+/* The window has no OS title bar, so the header rows are the drag handle and
+   the sidebar leaves room for the macOS traffic lights. Interactive children
+   must opt out, or they stop receiving clicks. */
+.desktop-shell .sidebar-head,
+.desktop-shell .main-head {
+  -webkit-app-region: drag;
+}
+
+.desktop-shell .sidebar-head :is(button, input, a, select, textarea, [role="tab"], [contenteditable]),
+.desktop-shell .main-head :is(button, input, a, select, textarea, [role="tab"], [role="menu"], [contenteditable]),
+.desktop-shell .main-tools {
+  -webkit-app-region: no-drag;
+}
+
+/* Traffic lights sit at the window's top-left; when the sidebar is hidden the
+   main column starts underneath them. */
+.desktop-mac .sidebar-head {
+  padding-top: 34px;
+}
+
+.desktop-mac .app.sidebar-collapsed .main-head {
+  padding-left: 92px;
+}
+
+.desktop-mac .app.sidebar-collapsed .main-head.minimal {
+  left: 92px;
+}
+
+/* New-session screen: the folder chip sits above the composer and only moves
+   the unsent session. */
+.new-session-meta {
+  display: flex;
+  justify-content: center;
+  max-width: 760px;
+  margin: 0 auto 8px;
+}
+
+.new-session-workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.new-session-workspace span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-session-workspace:hover {
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.new-session-workspace svg:first-child {
+  color: var(--muted);
+}
+
+/* Settings → 快捷键 */
+.shortcut-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shortcut-key {
+  min-width: 96px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  transition: border-color .15s, box-shadow .15s, color .15s;
+}
+
+.shortcut-key:hover {
+  border-color: var(--border-strong);
+}
+
+.shortcut-key.recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.shortcut-hint {
+  color: var(--warn);
+}
+
+/* Collapsed sidebar as an icon rail (rbh-collapsed-mode = rail). */
+@media (min-width: 761px) {
+  .app.sidebar-collapsed.sidebar-rail {
+    --sidebar-col: 56px;
+  }
+
+  .app.sidebar-collapsed.sidebar-rail .sidebar {
+    display: flex;
+  }
+}
+
+.sidebar.rail {
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 12px;
+}
+
+.rail-top,
+.rail-nav,
+.rail-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.rail-foot {
+  margin-top: auto;
+}
+
+.rail-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  transition: background .15s, color .15s;
+}
+
+.rail-btn:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.rail-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.rail-brand {
+  color: var(--text);
+}
+
+/* Traffic lights float over the rail's top too. */
+.desktop-mac .sidebar.rail {
+  padding-top: 44px;
 }

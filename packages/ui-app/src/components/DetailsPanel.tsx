@@ -1,6 +1,6 @@
 import { type PointerEvent as ReactPointerEvent } from 'react'
 import type { ChatSession } from '@ruobai/chat-protocol'
-import { modKeyLabel } from '../shortcuts.ts'
+import { useShortcutLabel } from '../useShortcuts.ts'
 import { FileBrowser } from './FileBrowser.tsx'
 import { GitPanel } from './git/GitPanel.tsx'
 import { PreviewPane } from './PreviewPane.tsx'
@@ -30,6 +30,7 @@ export function DetailsPanel({
   session, view, width, expanded, onToggleExpand, onResize, onClose, onReferenceFile,
   openPath, onOpenGit,
 }: DetailsPanelProps) {
+  const expandKey = useShortcutLabel('expand-panel')
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -51,7 +52,7 @@ export function DetailsPanel({
         className={`icon-btn subtle ${expanded ? 'active' : ''}`}
         onClick={onToggleExpand}
         aria-label={expanded ? '收起面板' : '展开面板'}
-        title={`${expanded ? '收起' : '展开'} (${modKeyLabel()}\\)`}
+        title={`${expanded ? '收起' : '展开'} (${expandKey})`}
       >
         {expanded ? <CollapseIcon size={14} /> : <ExpandIcon size={14} />}
       </button>
