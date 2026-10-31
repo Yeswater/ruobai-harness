@@ -224,6 +224,7 @@ export interface PublicProvider {
   mode: ProviderMode
   models: ProviderModel[]
   hasApiKey: boolean
+  preset?: string
 }
 
 /** One environment (customer / staging / prod); secrets stay behind keyRef. */
@@ -243,6 +244,48 @@ export interface SkillDraft {
   updatedAt: number
 }
 
+export interface NetworkSettings {
+  enabled?: boolean
+  httpProxy?: string
+  httpsProxy?: string
+  noProxy?: string
+}
+
+export interface ProxyValues {
+  http?: string
+  https?: string
+  noProxy?: string
+}
+
+export interface DetectedProxy extends ProxyValues {
+  source: 'scutil' | 'environment' | 'none'
+  supported: boolean
+  socks?: string
+  detail?: string
+}
+
+export interface NetworkStatus {
+  enabled: boolean
+  overrides: {
+    httpProxy?: string
+    httpsProxy?: string
+    noProxy?: string
+  }
+  detected: DetectedProxy
+  effective: ProxyValues
+  bypass: string[]
+  error?: string
+}
+
+export interface NetworkCheck {
+  ok: boolean
+  status?: number
+  latencyMs?: number
+  viaProxy: boolean
+  proxy?: string
+  error?: string
+}
+
 export interface PublicSettings {
   llm?: {
     activeProvider?: string
@@ -252,6 +295,7 @@ export interface PublicSettings {
   ui?: {
     theme?: 'light' | 'dark'
   }
+  network?: NetworkSettings
   agent?: {
     defaultMode?: string
     defaultPermission?: PermissionMode
@@ -273,8 +317,10 @@ export interface ProviderPreset {
   name: string
   note?: string
   website?: string
+  /** Console page that issues API keys. */
+  keyUrl?: string
   baseUrl: string
-  models: Array<{ id: string; inputTypes?: Array<'text' | 'image'> }>
+  models: ProviderModel[]
 }
 
 export interface ProviderInput {
@@ -285,6 +331,49 @@ export interface ProviderInput {
   apiKey?: string
   mode?: ProviderMode
   models?: Array<ProviderModel | string>
+  /** Built-in vendor preset; the server fills endpoint and models from it. */
+  preset?: string
+}
+
+export interface LlmBalanceLine {
+  label: string
+  amount: string
+  currency?: string
+}
+
+export interface LlmProviderBalance {
+  available: boolean
+  currency?: string
+  total?: string
+  items: LlmBalanceLine[]
+  updatedAt: number
+}
+
+export interface LlmProviderOverview {
+  id: string
+  name: string
+  preset?: string
+  active: boolean
+  hasKey: boolean
+  modelCount: number
+  state: 'ok' | 'no-key' | 'unsupported' | 'error'
+  balance?: LlmProviderBalance
+  message?: string
+}
+
+export interface LlmUsageToday {
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  cacheWriteInputTokens: number
+  totalTokens: number
+  calls: number
+}
+
+export interface LlmOverview {
+  providers: LlmProviderOverview[]
+  usage: LlmUsageToday
+  updatedAt: number
 }
 
 export interface SettingsPatch {
@@ -295,6 +384,7 @@ export interface SettingsPatch {
   ui?: {
     theme?: 'light' | 'dark'
   }
+  network?: NetworkSettings
   agent?: {
     defaultMode?: string
     defaultPermission?: PermissionMode
@@ -1292,6 +1382,15 @@ export const api = {
       body: JSON.stringify(patch),
     })).settings,
 
+  getNetworkStatus: async (refresh = false) =>
+    (await request<{ status: NetworkStatus }>(`/api/network${refresh ? '?refresh=1' : ''}`)).status,
+
+  testNetwork: async (url?: string) =>
+    (await request<{ result: NetworkCheck }>('/api/network/test', {
+      method: 'POST',
+      body: JSON.stringify(url ? { url } : {}),
+    })).result,
+
   createProvider: async (input: ProviderInput) =>
     (await request<{ settings: PublicSettings }>('/api/providers', {
       method: 'POST',
@@ -1318,11 +1417,14 @@ export const api = {
   providerPresets: async () =>
     (await request<{ presets: ProviderPreset[] }>('/api/providers/presets')).presets,
 
-  fetchProviderModels: async (input: { baseUrl: string; apiKey?: string; id?: string }) =>
+  fetchProviderModels: async (input: { baseUrl?: string; apiKey?: string; id?: string; preset?: string }) =>
     (await request<{ models: ProviderModel[] }>('/api/providers/models', {
       method: 'POST',
       body: JSON.stringify(input),
     })).models,
+
+  llmOverview: async (refresh = false) =>
+    request<LlmOverview>(`/api/llm/overview${refresh ? '?refresh=1' : ''}`),
 
   getMcpServers: async () =>
     (await request<{ servers: McpServer[] }>('/api/mcp')).servers,

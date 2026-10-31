@@ -31,6 +31,8 @@ export interface ProviderEntry {
   apiKey?: string
   mode: ProviderMode
   models: ProviderModel[]
+  /** Built-in vendor preset this provider was created from. */
+  preset?: string
 }
 
 export interface ProviderInput {
@@ -42,6 +44,8 @@ export interface ProviderInput {
   apiKey?: string
   mode?: ProviderMode
   models?: Array<ProviderModel | string>
+  /** Preset key; unspecified fields fall back to its endpoint and models. */
+  preset?: string
 }
 
 export interface LlmSettings {
@@ -59,9 +63,38 @@ export interface UiSettings {
   theme?: 'light' | 'dark'
 }
 
+export interface NetworkSettings {
+  /** Route outbound traffic through a proxy. Off by default. */
+  enabled?: boolean
+  /** Application-level overrides; empty fields inherit the system proxy. */
+  httpProxy?: string
+  httpsProxy?: string
+  noProxy?: string
+}
+
+export interface SandboxNetworkSettings {
+  /** Hosts a sandboxed command may reach through the local proxy. */
+  allowedDomains?: string[]
+  /** Permit localhost listening and connections (dev servers, tests). */
+  allowLocalBinding?: boolean
+}
+
+export interface SandboxFilesystemSettings {
+  /** Extra writable roots outside the workspace (`~` expands). */
+  allowWrite?: string[]
+}
+
 export interface SandboxSettings {
   /** Seatbelt confinement for agent commands. Off keeps approvals, drops the OS boundary. */
   enabled?: boolean
+  /** Bash commands that run inside the sandbox skip the approval prompt. */
+  autoAllowBashIfSandboxed?: boolean
+  /** Let a command retry outside the sandbox after the user approves it. */
+  allowUnsandboxedCommands?: boolean
+  /** Commands that always run outside the sandbox, with an approval. */
+  excludedCommands?: string[]
+  network?: SandboxNetworkSettings
+  filesystem?: SandboxFilesystemSettings
 }
 
 export interface WikiAutomationSettings {
@@ -204,6 +237,7 @@ export function resolveProfile(
 export interface SettingsData {
   llm?: LlmSettings
   ui?: UiSettings
+  network?: NetworkSettings
   agent?: AgentSettings
   sandbox?: SandboxSettings
   wiki?: WikiAutomationSettings
@@ -287,6 +321,7 @@ export interface PublicProvider {
   mode: ProviderMode
   models: ProviderModel[]
   hasApiKey: boolean
+  preset?: string
 }
 
 export interface PublicSettings {
@@ -296,6 +331,7 @@ export interface PublicSettings {
     providers: PublicProvider[]
   }
   ui?: UiSettings
+  network?: NetworkSettings
   agent?: AgentSettings
   sandbox?: SandboxSettings
   wiki?: WikiAutomationSettings
@@ -339,6 +375,20 @@ export interface SecretStore {
 }
 
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1'
+
+/** Environment fallback per built-in vendor preset. */
+const PRESET_ENV: Record<string, string> = {
+  deepseek: 'DEEPSEEK_API_KEY',
+  moonshot: 'MOONSHOT_API_KEY',
+  zhipu: 'ZHIPU_API_KEY',
+  dashscope: 'DASHSCOPE_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+  siliconflow: 'SILICONFLOW_API_KEY',
+  minimax: 'MINIMAX_API_KEY',
+  xai: 'XAI_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+}
 
 /** Shell control and expansion characters that make prefix matching unsafe. */
 const CONTROL_CHARACTERS = /[;&|<>`$()\\\n\r]/
@@ -387,9 +437,11 @@ export class SettingsService extends Service {
   /** Effective key: secret store, then stored value, then environment fallbacks. */
   apiKeyFor(id: string): string | undefined {
     const entry = this.findProvider(id)
+    const envName = entry?.preset ? PRESET_ENV[entry.preset] : PRESET_ENV[id]
     return this.secrets()?.get(`llm/${id}`)
       || entry?.apiKey
       || process.env.RBU_API_KEY
+      || (envName ? process.env[envName] : undefined)
       || (entry?.baseUrl?.includes('deepseek') || id === 'deepseek' ? process.env.DEEPSEEK_API_KEY : undefined)
   }
 
@@ -443,8 +495,9 @@ export class SettingsService extends Service {
       }
     }
     if (this.data.ui) result.ui = { ...this.data.ui }
+    if (this.data.network) result.network = { ...this.data.network }
     if (this.data.agent) result.agent = { ...this.data.agent }
-    if (this.data.sandbox) result.sandbox = { ...this.data.sandbox }
+    if (this.data.sandbox) result.sandbox = structuredClone(this.data.sandbox)
     if (this.data.wiki) result.wiki = { ...this.data.wiki }
     if (this.data.approval) {
       result.approval = {
@@ -491,15 +544,26 @@ export class SettingsService extends Service {
   async update(patch: {
     llm?: { activeProvider?: string; activeModel?: string }
     ui?: UiSettings
+    network?: NetworkSettings
     agent?: AgentSettings
     sandbox?: SandboxSettings
     profiles?: EnvironmentProfile[]
     activeProfile?: string
   }): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
-    if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || 'mock'
+    if (patch.llm?.activeProvider !== undefined) llm.activeProvider = patch.llm.activeProvider || undefined
     if (patch.llm?.activeModel !== undefined) llm.activeModel = patch.llm.activeModel || undefined
     if (patch.ui) this.data.ui = { ...this.data.ui, ...patch.ui }
+    if (patch.network) {
+      const network = this.data.network ??= {}
+      if (patch.network.enabled !== undefined) network.enabled = Boolean(patch.network.enabled)
+      if (patch.network.httpProxy !== undefined) network.httpProxy = patch.network.httpProxy.trim() || undefined
+      if (patch.network.httpsProxy !== undefined) network.httpsProxy = patch.network.httpsProxy.trim() || undefined
+      if (patch.network.noProxy !== undefined) network.noProxy = patch.network.noProxy.trim() || undefined
+      // The first shape of this setting used `proxy`/`url`.
+      delete (network as { proxy?: unknown }).proxy
+      delete (network as { url?: unknown }).url
+    }
     if (patch.agent) {
       const agent = this.data.agent ??= {}
       if (patch.agent.defaultMode !== undefined) agent.defaultMode = patch.agent.defaultMode || undefined
@@ -521,6 +585,32 @@ export class SettingsService extends Service {
     if (patch.sandbox) {
       const sandbox = this.data.sandbox ??= {}
       if (patch.sandbox.enabled !== undefined) sandbox.enabled = Boolean(patch.sandbox.enabled)
+      if (patch.sandbox.autoAllowBashIfSandboxed !== undefined) {
+        sandbox.autoAllowBashIfSandboxed = Boolean(patch.sandbox.autoAllowBashIfSandboxed)
+      }
+      if (patch.sandbox.allowUnsandboxedCommands !== undefined) {
+        sandbox.allowUnsandboxedCommands = Boolean(patch.sandbox.allowUnsandboxedCommands)
+      }
+      if (patch.sandbox.excludedCommands !== undefined) {
+        sandbox.excludedCommands = normalizeStringList(patch.sandbox.excludedCommands)
+      }
+      if (patch.sandbox.network) {
+        const network = sandbox.network ??= {}
+        if (patch.sandbox.network.allowedDomains !== undefined) {
+          network.allowedDomains = normalizeStringList(patch.sandbox.network.allowedDomains)
+        }
+        if (patch.sandbox.network.allowLocalBinding !== undefined) {
+          network.allowLocalBinding = Boolean(patch.sandbox.network.allowLocalBinding)
+        }
+      }
+      if (patch.sandbox.filesystem) {
+        const filesystem = sandbox.filesystem ??= {}
+        if (patch.sandbox.filesystem.allowWrite !== undefined) {
+          filesystem.allowWrite = normalizeStringList(patch.sandbox.filesystem.allowWrite)
+            .filter(path => path.length <= 500)
+            .slice(0, 50)
+        }
+      }
     }
     if (patch.profiles !== undefined) {
       this.data.profiles = patch.profiles.map(profile => ({ ...profile }))
@@ -553,6 +643,7 @@ export class SettingsService extends Service {
       models,
       ...(input.note !== undefined ? { note: input.note } : existing?.note ? { note: existing.note } : {}),
       ...(input.website !== undefined ? { website: input.website } : existing?.website ? { website: existing.website } : {}),
+      ...((input.preset ?? existing?.preset) ? { preset: (input.preset ?? existing?.preset)!.trim() } : {}),
     }
 
     const store = this.secrets()
@@ -584,7 +675,7 @@ export class SettingsService extends Service {
     llm.providers = (llm.providers ?? []).filter(entry => entry.id !== id)
     if (llm.activeProvider === id) {
       const next = llm.providers[0]
-      llm.activeProvider = next?.id ?? 'mock'
+      llm.activeProvider = next?.id
       llm.activeModel = next?.models[0]?.id
     }
     // A leftover key in the keychain is harmless; a failed deletion must not
@@ -600,11 +691,6 @@ export class SettingsService extends Service {
 
   async activate(providerId: string, model?: string): Promise<PublicSettings> {
     const llm = this.data.llm ??= {}
-    if (providerId === 'mock') {
-      llm.activeProvider = 'mock'
-      llm.activeModel = model || 'mock-1'
-      return this.commit()
-    }
 
     const entry = this.findProvider(providerId)
     if (!entry) throw new SettingsError(404, `unknown provider: ${providerId}`)
@@ -901,13 +987,14 @@ export class SettingsService extends Service {
           website: 'https://platform.deepseek.com',
           baseUrl: process.env.RBU_BASE_URL ?? DEEPSEEK_BASE,
           mode: 'direct',
+          preset: 'deepseek',
           models: [
             { id: 'deepseek-chat', inputTypes: ['text'] },
             { id: 'deepseek-reasoner', inputTypes: ['text'] },
           ],
         }]
-        llm.activeProvider = process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'mock'
-        llm.activeModel = process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : undefined
+        llm.activeProvider = 'deepseek'
+        llm.activeModel = 'deepseek-chat'
       }
       changed = true
     }
@@ -918,8 +1005,16 @@ export class SettingsService extends Service {
         changed = true
       }
     }
-    if (!llm.activeProvider) {
-      llm.activeProvider = 'mock'
+    // Mock is test-only; settings saved by older builds may still point at it.
+    const firstProvider = llm.providers?.[0]
+    if (llm.activeProvider === 'mock') {
+      llm.activeProvider = firstProvider?.id
+      llm.activeModel = firstProvider?.models[0]?.id
+      changed = true
+    }
+    if (!llm.activeProvider && firstProvider) {
+      llm.activeProvider = firstProvider.id
+      llm.activeModel ??= firstProvider.models[0]?.id
       changed = true
     }
 

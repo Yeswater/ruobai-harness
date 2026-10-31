@@ -110,6 +110,58 @@ describe('provider API', () => {
     expect(removed.settings.llm.providers.some(item => item.id === provider.id)).toBe(false)
   })
 
+  it('connects a preset from just a key after the last provider was removed', async () => {
+    const harness = await createHarness()
+    cleanups.push(() => harness.dispose())
+    const base = harness.ctx.web.url
+    const json = { 'Content-Type': 'application/json' }
+
+    // The harness switches to mock for offline tests; start from the seeded
+    // provider so deleting it leaves nothing active.
+    await fetch(`${base}/api/settings`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ llm: { activeProvider: 'deepseek', activeModel: 'deepseek-chat' } }),
+    })
+
+    const deleted = await (await fetch(`${base}/api/providers/deepseek`, { method: 'DELETE' })).json() as {
+      settings: { llm: { activeProvider?: string; providers: Array<{ id: string }> } }
+    }
+    expect(deleted.settings.llm.providers).toEqual([])
+    expect(deleted.settings.llm.activeProvider).toBeUndefined()
+
+    const created = await (await fetch(`${base}/api/providers`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ preset: 'moonshot', apiKey: 'sk-test' }),
+    })).json() as {
+      settings: {
+        llm: {
+          activeProvider?: string
+          activeModel?: string
+          providers: Array<{
+            id: string
+            preset?: string
+            baseUrl: string
+            hasApiKey: boolean
+            models: Array<{ id: string; contextWindow?: number }>
+          }>
+        }
+      }
+    }
+
+    const provider = created.settings.llm.providers[0]
+    expect(provider).toMatchObject({
+      id: 'moonshot',
+      preset: 'moonshot',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      hasApiKey: true,
+    })
+    expect(provider.models[0]).toMatchObject({ id: 'kimi-k2.6', contextWindow: 262_144 })
+    expect(created.settings.llm.activeProvider).toBe('moonshot')
+    expect(created.settings.llm.activeModel).toBe('kimi-k2.6')
+  })
+
   it('stores the command prefix and rejects an unknown one', async () => {
     const harness = await createHarness()
     cleanups.push(() => harness.dispose())

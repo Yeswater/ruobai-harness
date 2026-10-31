@@ -1,15 +1,14 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import ApprovalService from '@ruobai/approval'
-import { Context, Service } from '@ruobai/cordis'
+import { Context } from '@ruobai/cordis'
 import { SandboxUnavailableError } from '@ruobai/sandbox'
 import DenialService from '@ruobai/sandbox-denial'
 import SandboxPolicyService from '@ruobai/sandbox-policy'
-import EscalationService from '@ruobai/sandbox-escalation'
 import SandboxService from '@ruobai/sandbox'
+import DirectShell from '@ruobai/shell-direct'
 import ShellService from '@ruobai/shell'
 import SandboxedShell from '@ruobai/shell-sandboxed'
 import SandboxGuards from '@ruobai/sandbox-guards'
@@ -44,10 +43,9 @@ const nested = await canNestSandboxExec()
 
 interface SetupOptions {
   selfCheck?: boolean
-  withApproval?: boolean
-  escalate?: 'auto' | 'never'
   network?: 'deny' | 'allowlist'
-  decide?: 'allow' | 'deny' | 'always'
+  /** Mount the direct executor for retries outside the sandbox. */
+  withDirect?: boolean
   /** Reuse an existing directory (e.g. a linked worktree) instead of a temp one. */
   root?: string
 }
@@ -73,27 +71,14 @@ async function setup(options: SetupOptions = {}) {
   await denial
   const macos = ctx.plugin(SandboxMacOs, { selfCheck: options.selfCheck ?? true })
   await macos
-
-  let approval: { dispose(): Promise<void> } | undefined
-  let escalation: { dispose(): Promise<void> } | undefined
-  if (options.withApproval !== false) {
-    approval = ctx.plugin(ApprovalService)
-    await approval
-    escalation = ctx.plugin(EscalationService, {
-      maxAttempts: 2,
-      // With the service mounted it owns the default; `escalate` is the
-      // executor's fallback for deployments without one.
-      defaultMode: options.escalate ?? 'auto',
-    })
-    await escalation
-  }
-  const sandboxedShell = ctx.plugin(SandboxedShell, { escalate: options.escalate ?? 'auto' })
+  const direct = options.withDirect ? ctx.plugin(DirectShell, { default: false }) : undefined
+  await direct
+  const sandboxedShell = ctx.plugin(SandboxedShell, {})
   await sandboxedShell
 
   cleanups.push(
     () => sandboxedShell.dispose(),
-    () => escalation?.dispose() ?? Promise.resolve(),
-    () => approval?.dispose() ?? Promise.resolve(),
+    () => direct?.dispose() ?? Promise.resolve(),
     () => macos.dispose(),
     () => denial.dispose(),
     () => guards.dispose(),
@@ -101,17 +86,10 @@ async function setup(options: SetupOptions = {}) {
     () => sandbox.dispose(),
     () => shell.dispose(),
   )
-
-  // Answer approvals on demand, recording what the human was shown.
-  const seen: any[] = []
-  ctx.on('approval/requested', (request: any) => {
-    seen.push(request)
-    ctx.approval.resolve(request.id, options.decide ?? 'allow')
-  })
-  return { ctx, root, seen, macos }
+  return { ctx, root, macos }
 }
 
-function run(ctx: Context, command: string, cwd: string, sessionId = 's1') {
+function run(ctx: Context, command: string, cwd: string, sessionId = 's1', sandbox?: boolean) {
   return ctx.shell.run({
     command,
     cwd,
@@ -119,6 +97,7 @@ function run(ctx: Context, command: string, cwd: string, sessionId = 's1') {
     timeoutMs: 5_000,
     maxOutputBytes: 4_096,
     sessionId,
+    ...(sandbox === false ? { sandbox: false } : {}),
   })
 }
 
@@ -142,7 +121,7 @@ describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
 
   it('denies a guarded write and classifies it', async () => {
     // Escalation off: this asserts the hard boundary, not the retry path.
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     await mkdir(join(root, '.git'), { recursive: true })
     const result = await run(ctx, 'echo hacked >> .git/config', root)
     expect(result.exitCode).not.toBe(0)
@@ -151,7 +130,7 @@ describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
   })
 
   it('lets ordinary git add/commit run while keeping hooks and config read-only', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     // The repo is created outside the sandbox: `git init` writes sample hooks,
     // which the agent-facing boundary deliberately denies.
     execFileSync('git', ['init', '-q'], { cwd: root })
@@ -190,7 +169,7 @@ describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
     execFileSync('git', ['worktree', 'add', '-q', wt, '-b', 'probe'], { cwd: main })
     await writeFile(join(wt, 'file.txt'), 'hello\n')
 
-    const { ctx } = await setup({ root: wt, selfCheck: false, escalate: 'never' })
+    const { ctx } = await setup({ root: wt, selfCheck: false })
     const identity = 'GIT_AUTHOR_NAME=probe GIT_AUTHOR_EMAIL=probe@example.com '
       + 'GIT_COMMITTER_NAME=probe GIT_COMMITTER_EMAIL=probe@example.com'
 
@@ -201,7 +180,7 @@ describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
   })
 
   it('denies reading a guarded file', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     const secretDir = join(root, 'secrets')
     await mkdir(secretDir, { recursive: true })
     await writeFile(join(secretDir, 'key'), 'top-secret')
@@ -236,9 +215,9 @@ describe.skipIf(!darwin || !nested)('seatbelt provider', () => {
   })
 })
 
-describe.skipIf(!darwin || !nested)('sandbox → denial → approval → retry', () => {
-  it('escalates a guarded read and retries once after approval', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false, decide: 'allow' })
+describe.skipIf(!darwin || !nested)('sandbox boundary and the escape hatch', () => {
+  it('explains a denial and allows one explicit unsandboxed retry', async () => {
+    const { ctx, root } = await setup({ selfCheck: false, withDirect: true })
     const secretDir = join(root, 'secrets')
     await mkdir(secretDir, { recursive: true })
     await writeFile(join(secretDir, 'key'), 'top-secret')
@@ -246,79 +225,37 @@ describe.skipIf(!darwin || !nested)('sandbox → denial → approval → retry',
       id: 'local-secret', path: secretDir, match: 'subpath', access: 'read', reason: 'test secret',
     }))
 
-    const result = await run(ctx, `cat ${join(secretDir, 'key')}`, root)
-    expect(seen).toHaveLength(1)
-    expect(seen[0].kind).toBe('escalation')
-    expect(seen[0].escalation.guard).toBe('local-secret')
-    expect(seen[0].summary).toContain('fs-read-guarded')
-    expect(result.relaxed?.[0]).toContain('guard-read:local-secret')
-    expect(result.content).toContain('top-secret')
-    expect(result.exitCode).toBe(0)
+    const denied = await run(ctx, `cat ${join(secretDir, 'key')}`, root)
+    expect(denied.content).toContain('[sandbox]')
+    expect(denied.content).toContain('dangerouslyDisableSandbox')
+    expect(denied.content).not.toContain('top-secret')
+
+    const retried = await run(ctx, `cat ${join(secretDir, 'key')}`, root, 's1', false)
+    expect(retried.exitCode).toBe(0)
+    expect(retried.sandboxed).toBe(false)
+    expect(retried.executor).toBe('direct')
+    expect(retried.content).toContain('未经沙箱执行')
+    expect(retried.content).toContain('top-secret')
   })
 
-  it('returns a structured denial when the human refuses', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false, decide: 'deny' })
-    const secretDir = join(root, 'secrets')
-    await mkdir(secretDir, { recursive: true })
-    await writeFile(join(secretDir, 'key'), 'top-secret')
-    cleanups.push(ctx.sandboxPolicy.registerGuard({
-      id: 'local-secret', path: secretDir, match: 'subpath', access: 'read', reason: 'test secret',
-    }))
-
-    const result = await run(ctx, `cat ${join(secretDir, 'key')}`, root)
-    expect(seen).toHaveLength(1)
-    expect(result.content).toContain('[sandbox]')
-    expect(result.content).toContain('请勿重试')
-    expect(result.content).not.toContain('top-secret')
-  })
-
-  it('never escalates network denials', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false })
+  it('points network denials at the domain allowlist', async () => {
+    const { ctx, root } = await setup({ selfCheck: false })
     const result = await run(ctx, 'curl -s -m 2 http://127.0.0.1:1/', root)
-    expect(seen).toHaveLength(0)
     expect(result.content).toContain('[sandbox]')
+    expect(result.content).toContain('允许的域名')
   })
 
-  it('does not escalate when the executor is configured to only report', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false, escalate: 'never' })
-    await mkdir(join(root, '.git'), { recursive: true })
-    await run(ctx, 'echo x >> .git/config', root)
-    expect(seen).toHaveLength(0)
-  })
-
-  it('keeps the escalation out of bypassed approvals', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false, decide: 'allow' })
-    // A settings service that bypasses every tool approval.
-    class BypassedSettings extends Service {
-      constructor(inner: Context) {
-        super(inner, 'settings')
-      }
-
-      raw() {
-        return { agent: { bypassApprovals: true } }
-      }
-
-      approvalRules() {
-        return []
-      }
-    }
-    const settings = ctx.plugin(BypassedSettings)
-    await settings
-    cleanups.push(() => settings.dispose())
-    const secretDir = join(root, 'secrets')
-    await mkdir(secretDir, { recursive: true })
-    await writeFile(join(secretDir, 'key'), 'top-secret')
-    cleanups.push(ctx.sandboxPolicy.registerGuard({
-      id: 'local-secret', path: secretDir, match: 'subpath', access: 'read', reason: 'test secret',
-    }))
-    await run(ctx, `cat ${join(secretDir, 'key')}`, root)
-    expect(seen[0].kind).toBe('escalation')
+  it('fails closed when an unsandboxed retry is requested without a direct executor', async () => {
+    const { ctx, root } = await setup({ selfCheck: false })
+    await expect(run(ctx, 'echo hi', root, 's1', false)).rejects.toMatchObject({
+      name: 'ShellUnavailableError',
+    })
   })
 })
 
 describe.skipIf(!darwin || !nested)('threat model regressions', () => {
   it('blocks writing the harness settings that hold bypassApprovals', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     await mkdir(join(root, '.ruobai'), { recursive: true })
     await writeFile(join(root, '.ruobai', 'settings.json'), '{}')
     const result = await run(ctx, 'echo {"agent":{"bypassApprovals":true}} > .ruobai/settings.json', root)
@@ -331,7 +268,7 @@ describe.skipIf(!darwin || !nested)('threat model regressions', () => {
   })
 
   it('blocks shell rc writes and automation entry points', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     const home = process.env.HOME ?? ''
     if (!home) return
     const zshrc = await run(ctx, `echo evil >> ${join(home, '.zshrc')}`, root)
@@ -341,7 +278,7 @@ describe.skipIf(!darwin || !nested)('threat model regressions', () => {
   })
 
   it('refuses to exec the keychain CLI', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     const result = await run(ctx, 'security find-generic-password -w', root)
     expect(result.exitCode).not.toBe(0)
     expect(result.content).toContain('[sandbox]')
@@ -393,7 +330,7 @@ describe.skipIf(!darwin || !nested)('lifecycle', () => {
 
 describe.skipIf(!darwin || !nested)('toolchain and environment', () => {
   it('runs a real toolchain command: pipelines, forks and git', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     // Before the process-fork fix this failed with
     // `/bin/sh: fork: Operation not permitted` (appendix A18).
     const piped = await run(ctx, 'echo one | tr a-z A-Z', root)
@@ -412,18 +349,18 @@ describe.skipIf(!darwin || !nested)('toolchain and environment', () => {
     expect(git.content).toContain('git version')
   })
 
-  it('does not escalate a successful command that only produced noise', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false, decide: 'allow' })
+  it('does not attach a sandbox block to a successful quiet command', async () => {
+    const { ctx, root } = await setup({ selfCheck: false })
     // `echo` succeeds while dyld probes /dev/dtracehelper on every exec; that
-    // must never turn into an approval prompt.
+    // must never show up as a denial block.
     const result = await run(ctx, 'echo clean', root)
     expect(result.exitCode).toBe(0)
-    expect(seen).toHaveLength(0)
+    expect(result.denials).toHaveLength(0)
     expect(result.content).not.toContain('[sandbox]')
   })
 
   it('does not leak harness credentials into the sandbox environment', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     process.env.RBU_TOKEN = 'super-secret-token'
     try {
       const result = await run(ctx, 'echo "token=[$RBU_TOKEN]"', root)
@@ -434,23 +371,24 @@ describe.skipIf(!darwin || !nested)('toolchain and environment', () => {
     }
   })
 
-  it('relaxes one file on approval, not the whole workspace', async () => {
-    const { ctx, root, seen } = await setup({ selfCheck: false, decide: 'allow' })
-    const outside = join(tmpdir(), `rbh-outside-${process.pid}.txt`)
+  it('keeps an outside write denied without widening the workspace', async () => {
+    const { ctx, root } = await setup({ selfCheck: false })
+    // The temp directory is a granted write root; home is read-only.
+    const outside = join(homedir(), `.rbh-outside-${process.pid}-${Date.now()}.txt`)
     cleanups.push(() => rm(outside, { force: true }))
     const result = await run(ctx, `echo hi > ${outside}`, root)
-    if (seen.length) {
-      expect(seen[0].escalation.exemption).toEqual({ kind: 'write-file', path: outside, once: true })
-    }
-    // Either it was denied outright or relaxed for exactly this file; the
-    // workspace never becomes writable as a side effect.
-    expect(result.content.includes('[sandbox]') || result.exitCode === 0).toBe(true)
+    expect(result.exitCode).not.toBe(0)
+    expect(result.content).toContain('[sandbox]')
+    expect(await readFile(outside, 'utf8').catch(() => null)).toBeNull()
+    // The workspace itself stays writable; only the denial is confined.
+    const inside = await run(ctx, 'echo hi > ok.txt', root)
+    expect(inside.exitCode).toBe(0)
   })
 })
 
 describe.skipIf(!darwin || !nested)('hot unload', () => {
   it('kills the process group before dispose() resolves', async () => {
-    const { ctx, root } = await setup({ selfCheck: false, escalate: 'never' })
+    const { ctx, root } = await setup({ selfCheck: false })
     // A long-running command keeps a shell alive inside sandbox-exec.
     const pending = run(ctx, 'sleep 30', root).catch((error: Error) => error)
     await new Promise(resolve => setTimeout(resolve, 300))

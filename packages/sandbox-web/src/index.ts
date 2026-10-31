@@ -1,15 +1,50 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
+import { DEFAULT_ALLOWED_DOMAINS, DEFAULT_EXCLUDED_COMMANDS } from '@ruobai/sandbox'
 import type { SandboxService } from '@ruobai/sandbox'
 import type { DenialService } from '@ruobai/sandbox-denial'
 import type { EscalationService } from '@ruobai/sandbox-escalation'
 import type { SandboxPolicyService } from '@ruobai/sandbox-policy'
-import type { SettingsService } from '@ruobai/settings'
+import type { SandboxProxyService } from '@ruobai/sandbox-proxy'
+import type { SandboxSettings, SettingsService } from '@ruobai/settings'
 import type { ShellService } from '@ruobai/shell'
 
 export const name = 'sandbox-web'
 export const inject = ['web', 'sandbox', 'sandboxPolicy', 'denial', 'settings', 'shell']
+
+/** Effective sandbox settings, with defaults filled in for the panel. */
+export interface SandboxConfigView {
+  enabled: boolean
+  autoAllowBashIfSandboxed: boolean
+  allowUnsandboxedCommands: boolean
+  excludedCommands: string[]
+  network: {
+    allowedDomains: string[]
+    allowLocalBinding: boolean
+  }
+  filesystem: {
+    allowWrite: string[]
+  }
+}
+
+export function sandboxConfigOf(ctx: Context): SandboxConfigView {
+  const settings = ctx.get('settings', false) as SettingsService | undefined
+  const sandbox = settings?.get().sandbox
+  return {
+    enabled: sandbox?.enabled !== false,
+    autoAllowBashIfSandboxed: sandbox?.autoAllowBashIfSandboxed !== false,
+    allowUnsandboxedCommands: sandbox?.allowUnsandboxedCommands !== false,
+    excludedCommands: [...(sandbox?.excludedCommands ?? DEFAULT_EXCLUDED_COMMANDS)],
+    network: {
+      allowedDomains: [...(sandbox?.network?.allowedDomains ?? DEFAULT_ALLOWED_DOMAINS)],
+      allowLocalBinding: sandbox?.network?.allowLocalBinding !== false,
+    },
+    filesystem: {
+      allowWrite: [...(sandbox?.filesystem?.allowWrite ?? [])],
+    },
+  }
+}
 
 /**
  * Status projection for the sandbox.
@@ -34,13 +69,23 @@ export interface SandboxStatus {
   }
   /** Reason the sandbox is unavailable, when it is. */
   unavailable?: string
+  /** Effective, user-editable policy (defaults filled in). */
+  settings: SandboxConfigView
+  /** Loopback egress proxy state. Absent when the proxy plugin is not mounted. */
+  proxy?: {
+    active: boolean
+    port: number
+    domains: number
+    allowLocalBinding: boolean
+    upstream?: string
+  }
   policy: {
     version: number
     root: string
     read: Array<{ path: string; recursive: boolean }>
     write: Array<{ path: string; recursive: boolean }>
     exec: string[]
-    network: { mode: string; allow: unknown[] }
+    network: { mode: string; allow: unknown[]; allowLocalBinding?: boolean }
   }
   guards: Array<{ id: string; path: string; match: string; access: string; reason: string; owner?: string }>
   denials: {
@@ -78,20 +123,26 @@ function escalationOf(ctx: Context): EscalationService | undefined {
   return ctx.get('escalation', false) as EscalationService | undefined
 }
 
-function statusOf(ctx: Context, sessionId: string): SandboxStatus {
+async function statusOf(ctx: Context, sessionId: string): Promise<SandboxStatus> {
   const sandbox = ctx.get('sandbox') as SandboxService
   const policyService = ctx.get('sandboxPolicy') as SandboxPolicyService
   const denial = ctx.get('denial') as DenialService
   const escalation = escalationOf(ctx)
+  const proxy = ctx.get('sandboxProxy', false) as SandboxProxyService | undefined
 
   const provider = sandbox.provider()
-  const snapshot = policyService.forSession({ sessionId })
+  const snapshot = policyService.forSession({
+    sessionId,
+    ...(proxy?.active ? { proxyPort: proxy.port } : {}),
+  })
   const recent = denial.recent()
   const settings = ctx.get('settings', false) as SettingsService | undefined
 
   return {
     enabled: settings ? settings.sandboxEnabled() : true,
     active: Boolean(provider),
+    settings: sandboxConfigOf(ctx),
+    ...(proxy ? { proxy: await proxy.summary() } : {}),
     ...(provider
       ? {
         provider: {
@@ -110,7 +161,11 @@ function statusOf(ctx: Context, sessionId: string): SandboxStatus {
       read: snapshot.fs.read.map(grant => ({ path: grant.path, recursive: grant.recursive })),
       write: snapshot.fs.write.map(grant => ({ path: grant.path, recursive: grant.recursive })),
       exec: [...snapshot.exec.allowPaths],
-      network: { mode: snapshot.net.mode, allow: [...snapshot.net.allow] },
+      network: {
+        mode: snapshot.net.mode,
+        allow: [...snapshot.net.allow],
+        allowLocalBinding: snapshot.net.allowLocalBinding === true,
+      },
     },
     // The IR never carries SBPL: the panel shows intent, not the mechanism.
     guards: policyService.listGuards().map(guard => ({
@@ -173,12 +228,79 @@ async function bodyOf(req: SandboxRequest): Promise<any> {
   return {}
 }
 
+function booleanField(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') throw new HttpError(400, `${field} must be a boolean`)
+  return value
+}
+
+function stringList(value: unknown, field: string, limit: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) throw new HttpError(400, `${field} must be an array`)
+  if (value.length > limit) throw new HttpError(400, `${field} has too many entries (max ${limit})`)
+  const result: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') throw new HttpError(400, `${field} must contain strings`)
+    const text = item.trim()
+    if (!text) continue
+    if (text.length > maxLength) throw new HttpError(400, `${field} entry is too long`)
+    result.push(text)
+  }
+  return [...new Set(result)]
+}
+
+function domainList(value: unknown): string[] {
+  const entries = stringList(value, 'network.allowedDomains', 300, 200)
+  for (const entry of entries) {
+    if (entry === '*') continue
+    if (!/^(\*\.)?[a-z0-9][a-z0-9.-]*(:\d{1,5})?$/i.test(entry)) {
+      throw new HttpError(400, `invalid domain: ${entry}`)
+    }
+  }
+  return entries
+}
+
+/** Validate a partial settings patch; unknown fields are ignored. */
+export function sandboxPatch(body: any): SandboxSettings {
+  const patch: SandboxSettings = {}
+  if (body?.enabled !== undefined) patch.enabled = booleanField(body.enabled, 'enabled')
+  if (body?.autoAllowBashIfSandboxed !== undefined) {
+    patch.autoAllowBashIfSandboxed = booleanField(body.autoAllowBashIfSandboxed, 'autoAllowBashIfSandboxed')
+  }
+  if (body?.allowUnsandboxedCommands !== undefined) {
+    patch.allowUnsandboxedCommands = booleanField(body.allowUnsandboxedCommands, 'allowUnsandboxedCommands')
+  }
+  if (body?.excludedCommands !== undefined) {
+    patch.excludedCommands = stringList(body.excludedCommands, 'excludedCommands', 100, 200)
+  }
+  if (body?.network !== undefined) {
+    if (!body.network || typeof body.network !== 'object') {
+      throw new HttpError(400, 'network must be an object')
+    }
+    const network: NonNullable<SandboxSettings['network']> = {}
+    if (body.network.allowedDomains !== undefined) network.allowedDomains = domainList(body.network.allowedDomains)
+    if (body.network.allowLocalBinding !== undefined) {
+      network.allowLocalBinding = booleanField(body.network.allowLocalBinding, 'network.allowLocalBinding')
+    }
+    patch.network = network
+  }
+  if (body?.filesystem !== undefined) {
+    if (!body.filesystem || typeof body.filesystem !== 'object') {
+      throw new HttpError(400, 'filesystem must be an object')
+    }
+    const filesystem: NonNullable<SandboxSettings['filesystem']> = {}
+    if (body.filesystem.allowWrite !== undefined) {
+      filesystem.allowWrite = stringList(body.filesystem.allowWrite, 'filesystem.allowWrite', 50, 500)
+    }
+    patch.filesystem = filesystem
+  }
+  return patch
+}
+
 async function handle(ctx: Context, req: SandboxRequest, res: StatusResponse, url: URL) {
   const sessionId = url.searchParams.get('sessionId') ?? ''
 
   if (url.pathname === '/api/sandbox/status') {
     if (req.method !== 'GET') throw new HttpError(405, 'method not allowed')
-    json(res, 200, { status: statusOf(ctx, sessionId) })
+    json(res, 200, { status: await statusOf(ctx, sessionId) })
     return true
   }
 
@@ -187,19 +309,20 @@ async function handle(ctx: Context, req: SandboxRequest, res: StatusResponse, ur
     const shell = ctx.get('shell', false) as ShellService | undefined
     if (!settings) throw new HttpError(404, 'settings service is not loaded')
     if (req.method === 'GET') {
-      json(res, 200, { enabled: settings.sandboxEnabled(), executors: shell?.ids() ?? [] })
+      json(res, 200, { settings: sandboxConfigOf(ctx), executors: shell?.ids() ?? [] })
       return true
     }
     if (req.method === 'PATCH' || req.method === 'PUT') {
       const body = await bodyOf(req)
-      if (typeof body?.enabled !== 'boolean') throw new HttpError(400, 'enabled must be a boolean')
+      const patch = sandboxPatch(body)
+      if (!Object.keys(patch).length) throw new HttpError(400, 'nothing to update')
       // Turning the sandbox off is only possible when the escape hatch exists;
       // otherwise the next command would fail closed anyway.
-      if (!body.enabled && !shell?.ids().includes('direct')) {
+      if (patch.enabled === false && !shell?.ids().includes('direct')) {
         throw new HttpError(409, 'direct executor is not mounted')
       }
-      await settings.update({ sandbox: { enabled: body.enabled } })
-      json(res, 200, { enabled: settings.sandboxEnabled() })
+      await settings.update({ sandbox: patch })
+      json(res, 200, { settings: sandboxConfigOf(ctx) })
       return true
     }
     throw new HttpError(405, 'method not allowed')

@@ -187,6 +187,7 @@ export class ApprovalService extends Service {
           sessionId: string | undefined,
           toolName: string | undefined,
           subject?: ApprovalSubject,
+          args?: unknown,
         ): 'allow' | 'deny' | undefined
       }
       | undefined
@@ -215,7 +216,7 @@ export class ApprovalService extends Service {
 
     if (!forced) {
       if (kind === 'tool') {
-        const modeDecision = permissions?.approval(input.sessionId, input.tool, input.subject)
+        const modeDecision = permissions?.approval(input.sessionId, input.tool, input.subject, input.args)
         if (modeDecision === 'deny') return 'deny'
         if (modeDecision === 'allow') return 'allow'
         if (policy?.action === 'allow') return 'allow'

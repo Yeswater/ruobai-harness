@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import type { Context } from '@ruobai/cordis'
+import type { NetService } from '@ruobai/net'
+import type {} from '@ruobai/net'
 import z from '@ruobai/schemastery'
 import { SECRET_ENV, scrubbedEnv, type ShellRunSpec, type ShellRunResult } from '@ruobai/shell'
 
@@ -88,6 +90,7 @@ interface SpawnOptions {
   timeoutMs: number
   maxOutputBytes: number
   signal?: AbortSignal
+  env?: NodeJS.ProcessEnv
 }
 
 export interface SpawnOutcome {
@@ -108,7 +111,7 @@ export function spawnCaptured(
   options: SpawnOptions,
   spawnChild: (shellArgs: string[]) => ChildProcess = args => spawn(options.shell, args, {
     cwd: options.cwd,
-    env: scrubbedEnv(),
+    env: options.env ?? scrubbedEnv(),
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   }),
@@ -163,7 +166,10 @@ export function spawnCaptured(
 }
 
 /** Direct (unconfined) executor: the pre-sandbox behaviour, kept for opt-out. */
-export function createDirectExecutor(shell: string): {
+export function createDirectExecutor(
+  shell: string,
+  proxyEnv: () => Promise<Record<string, string>> = async () => ({}),
+): {
   id: string
   sandboxed: false
   run(spec: ShellRunSpec): Promise<ShellRunResult>
@@ -178,6 +184,7 @@ export function createDirectExecutor(shell: string): {
         timeoutMs: spec.timeoutMs,
         maxOutputBytes: spec.maxOutputBytes,
         signal: spec.signal,
+        env: { ...scrubbedEnv(), ...(await proxyEnv()) },
       })
       const content = render(outcome.captured, outcome.exitCode, outcome.signal, outcome.durationMs)
       if (outcome.failure) throw new Error(`${outcome.failure.message}\n\n${content}`)
@@ -209,8 +216,14 @@ export default class DirectShell {
 
   constructor(ctx: Context, config: Config) {
     const shell = config.shell ?? (process.platform === 'win32' ? 'cmd.exe' : '/bin/sh')
+    // Commands inherit the same proxy as the harness's own HTTP calls; local
+    // hosts stay direct through NO_PROXY.
+    const proxyEnv = async () => {
+      const net = ctx.get('net', false) as NetService | undefined
+      return net ? net.subprocessEnv() : {}
+    }
     ctx.effect(
-      () => ctx.shell.register(createDirectExecutor(shell), { default: config.default !== false }),
+      () => ctx.shell.register(createDirectExecutor(shell, proxyEnv), { default: config.default !== false }),
       'shell.direct',
     )
   }

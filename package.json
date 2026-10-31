@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "dev": "tsx apps/cli/src/bin.ts",
@@ -59,6 +59,8 @@
     "@ruobai/hooks-web": "workspace:*",
     "@ruobai/lint": "workspace:*",
     "@ruobai/llm": "workspace:*",
+    "@ruobai/llm-balance": "workspace:*",
+    "@ruobai/llm-balance-web": "workspace:*",
     "@ruobai/llm-catalog": "workspace:*",
     "@ruobai/llm-mock": "workspace:*",
     "@ruobai/llm-openai": "workspace:*",
@@ -74,11 +76,13 @@
     "@ruobai/mode-goal": "workspace:*",
     "@ruobai/mode-plan": "workspace:*",
     "@ruobai/modes": "workspace:*",
+    "@ruobai/net": "workspace:*",
     "@ruobai/permissions": "workspace:*",
     "@ruobai/plan": "workspace:*",
     "@ruobai/plan-web": "workspace:*",
     "@ruobai/preview": "workspace:*",
     "@ruobai/preview-web": "workspace:*",
+    "@ruobai/provider-catalog": "workspace:*",
     "@ruobai/rubric": "workspace:*",
     "@ruobai/rubric-web": "workspace:*",
     "@ruobai/sandbox": "workspace:*",
@@ -88,6 +92,7 @@
     "@ruobai/sandbox-macos": "workspace:*",
     "@ruobai/sandbox-native-log": "workspace:*",
     "@ruobai/sandbox-policy": "workspace:*",
+    "@ruobai/sandbox-proxy": "workspace:*",
     "@ruobai/sandbox-web": "workspace:*",
     "@ruobai/secrets": "workspace:*",
     "@ruobai/session": "workspace:*",
@@ -123,7 +128,7 @@
     "@ruobai/workspace": "workspace:*",
     "@ruobai/workspace-web": "workspace:*",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.10.0",
+    "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",

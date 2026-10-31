@@ -10,3 +10,4 @@ coverage/
 .ruobai/
 /.idea/
 apps/desktop/release/
+.rivet

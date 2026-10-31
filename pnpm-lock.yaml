@@ -131,6 +131,12 @@ importers:
       '@ruobai/llm':
         specifier: workspace:*
         version: link:packages/llm
+      '@ruobai/llm-balance':
+        specifier: workspace:*
+        version: link:packages/llm-balance
+      '@ruobai/llm-balance-web':
+        specifier: workspace:*
+        version: link:packages/llm-balance-web
       '@ruobai/llm-catalog':
         specifier: workspace:*
         version: link:packages/llm-catalog
@@ -176,6 +182,9 @@ importers:
       '@ruobai/modes':
         specifier: workspace:*
         version: link:packages/modes
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:packages/net
       '@ruobai/permissions':
         specifier: workspace:*
         version: link:packages/permissions
@@ -191,6 +200,9 @@ importers:
       '@ruobai/preview-web':
         specifier: workspace:*
         version: link:packages/preview-web
+      '@ruobai/provider-catalog':
+        specifier: workspace:*
+        version: link:packages/provider-catalog
       '@ruobai/rubric':
         specifier: workspace:*
         version: link:packages/rubric
@@ -218,6 +230,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:packages/sandbox-policy
+      '@ruobai/sandbox-proxy':
+        specifier: workspace:*
+        version: link:packages/sandbox-proxy
       '@ruobai/sandbox-web':
         specifier: workspace:*
         version: link:packages/sandbox-web
@@ -324,8 +339,8 @@ importers:
         specifier: ^4.0.9
         version: 4.0.9
       '@types/node':
-        specifier: ^22.10.0
-        version: 22.20.5
+        specifier: ^24.0.0
+        version: 24.19.2
       '@types/react':
         specifier: ^19.0.0
         version: 19.3.0
@@ -337,10 +352,10 @@ importers:
         version: 5.7.2
       vite-tsconfig-paths:
         specifier: ^5.0.0
-        version: 5.0.0(typescript@5.7.2)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15))
+        version: 5.0.0(typescript@5.7.2)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15))
       vitest:
         specifier: ^3.0.0
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
 
   apps/cli:
     dependencies:
@@ -671,6 +686,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1055,6 +1073,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1182,6 +1203,36 @@ importers:
         specifier: workspace:*
         version: link:../../vendor/schemastery
 
+  packages/llm-balance:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
+      '@ruobai/provider-catalog':
+        specifier: workspace:*
+        version: link:../provider-catalog
+      '@ruobai/session':
+        specifier: workspace:*
+        version: link:../session
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+
+  packages/llm-balance-web:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/llm-balance':
+        specifier: workspace:*
+        version: link:../llm-balance
+      '@ruobai/web-server':
+        specifier: workspace:*
+        version: link:../web-server
+
   packages/llm-catalog:
     dependencies:
       '@ruobai/cordis':
@@ -1193,6 +1244,9 @@ importers:
       '@ruobai/llm-openai':
         specifier: workspace:*
         version: link:../llm-openai
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1375,11 +1429,29 @@ importers:
         specifier: workspace:*
         version: link:../../vendor/cordis
 
+  packages/net:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/schemastery':
+        specifier: workspace:*
+        version: link:../../vendor/schemastery
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+      undici:
+        specifier: ^7.30.1
+        version: 7.30.1
+
   packages/permissions:
     dependencies:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
@@ -1446,6 +1518,8 @@ importers:
       '@ruobai/web-server':
         specifier: workspace:*
         version: link:../web-server
+
+  packages/provider-catalog: {}
 
   packages/rubric:
     dependencies:
@@ -1551,6 +1625,21 @@ importers:
       '@ruobai/sandbox':
         specifier: workspace:*
         version: link:../sandbox
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
+
+  packages/sandbox-proxy:
+    dependencies:
+      '@ruobai/cordis':
+        specifier: workspace:*
+        version: link:../../vendor/cordis
+      '@ruobai/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@ruobai/settings':
+        specifier: workspace:*
+        version: link:../settings
 
   packages/sandbox-web:
     dependencies:
@@ -1569,6 +1658,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:../sandbox-policy
+      '@ruobai/sandbox-proxy':
+        specifier: workspace:*
+        version: link:../sandbox-proxy
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1648,6 +1740,12 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
+      '@ruobai/provider-catalog':
+        specifier: workspace:*
+        version: link:../provider-catalog
       '@ruobai/settings':
         specifier: workspace:*
         version: link:../settings
@@ -1666,6 +1764,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1687,6 +1788,9 @@ importers:
       '@ruobai/sandbox-policy':
         specifier: workspace:*
         version: link:../sandbox-policy
+      '@ruobai/sandbox-proxy':
+        specifier: workspace:*
+        version: link:../sandbox-proxy
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -1700,9 +1804,6 @@ importers:
       '@ruobai/approval':
         specifier: workspace:*
         version: link:../approval
-      '@ruobai/sandbox-escalation':
-        specifier: workspace:*
-        version: link:../sandbox-escalation
 
   packages/skill-distiller:
     dependencies:
@@ -1751,6 +1852,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/session':
         specifier: workspace:*
         version: link:../session
@@ -1936,7 +2040,7 @@ importers:
         version: 19.3.0(@types/react@19.3.0)
       vite:
         specifier: ^7.0.0
-        version: 7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+        version: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
 
   packages/ui-server:
     dependencies:
@@ -1995,7 +2099,7 @@ importers:
         version: link:../web-server
       vite:
         specifier: ^7.0.0
-        version: 7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+        version: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
 
   packages/web-ws:
     dependencies:
@@ -2072,6 +2176,9 @@ importers:
       '@ruobai/cordis':
         specifier: workspace:*
         version: link:../../vendor/cordis
+      '@ruobai/net':
+        specifier: workspace:*
+        version: link:../net
       '@ruobai/schemastery':
         specifier: workspace:*
         version: link:../../vendor/schemastery
@@ -2974,9 +3081,6 @@ packages:
 
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
-
-  '@types/node@22.20.5':
-    resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
 
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
@@ -4484,9 +4588,6 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
-
   undici-types@7.24.6:
     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
 
@@ -5280,14 +5381,14 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 22.20.5
+      '@types/node': 24.19.2
 
   '@types/geojson@7946.0.16': {}
 
   '@types/glob@7.2.0':
     dependencies:
       '@types/minimatch': 6.0.0
-      '@types/node': 22.20.5
+      '@types/node': 24.19.2
     optional: true
 
   '@types/hast@3.0.5':
@@ -5306,10 +5407,6 @@ snapshots:
     optional: true
 
   '@types/ms@2.1.0': {}
-
-  '@types/node@22.20.5':
-    dependencies:
-      undici-types: 6.21.0
 
   '@types/node@24.19.2':
     dependencies:
@@ -5332,7 +5429,7 @@ snapshots:
 
   '@types/ws@8.18.2':
     dependencies:
-      '@types/node': 22.20.5
+      '@types/node': 24.19.2
 
   '@ungap/structured-clone@1.4.0': {}
 
@@ -5349,13 +5446,13 @@ snapshots:
       chai: 5.2.0
       tinyrainbow: 2.0.0
 
-  '@vitest/mocker@3.2.7(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15))':
+  '@vitest/mocker@3.2.7(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15))':
     dependencies:
       '@vitest/spy': 3.2.7
       estree-walker: 3.0.3
       magic-string: 0.30.17
     optionalDependencies:
-      vite: 7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+      vite: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
 
   '@vitest/pretty-format@3.2.7':
     dependencies:
@@ -7224,14 +7321,11 @@ snapshots:
 
   typescript@5.7.2: {}
 
-  undici-types@6.21.0: {}
-
   undici-types@7.24.6: {}
 
   undici@6.29.1: {}
 
-  undici@7.30.1:
-    optional: true
+  undici@7.30.1: {}
 
   unified@11.0.0:
     dependencies:
@@ -7296,13 +7390,13 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite-node@3.2.4(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15):
+  vite-node@3.2.4(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15):
     dependencies:
       cac: 6.7.14
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+      vite: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -7317,18 +7411,18 @@ snapshots:
       - tsx
       - yaml
 
-  vite-tsconfig-paths@5.0.0(typescript@5.7.2)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)):
+  vite-tsconfig-paths@5.0.0(typescript@5.7.2)(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)):
     dependencies:
       debug: 4.4.3
       globrex: 0.1.2
       tsconfck: 3.1.6(typescript@5.7.2)
     optionalDependencies:
-      vite: 7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+      vite: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
     transitivePeerDependencies:
       - supports-color
       - typescript
 
-  vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15):
+  vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15):
     dependencies:
       esbuild: 0.28.2
       fdir: 6.5.0(picomatch@4.0.7)
@@ -7337,16 +7431,16 @@ snapshots:
       rollup: 4.65.0
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 22.20.5
+      '@types/node': 24.19.2
       fsevents: 2.3.3
       jiti: 2.7.0
       tsx: 4.23.15
 
-  vitest@3.2.7(@types/debug@4.1.13)(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15):
+  vitest@3.2.7(@types/debug@4.1.13)(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.7
-      '@vitest/mocker': 3.2.7(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15))
+      '@vitest/mocker': 3.2.7(vite@7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15))
       '@vitest/pretty-format': 3.2.7
       '@vitest/runner': 3.2.7
       '@vitest/snapshot': 3.2.7
@@ -7364,12 +7458,12 @@ snapshots:
       tinyglobby: 0.2.17
       tinypool: 1.1.1
       tinyrainbow: 2.0.0
-      vite: 7.3.7(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
-      vite-node: 3.2.4(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)
+      vite: 7.3.7(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
+      vite-node: 3.2.4(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/debug': 4.1.13
-      '@types/node': 22.20.5
+      '@types/node': 24.19.2
     transitivePeerDependencies:
       - jiti
       - less

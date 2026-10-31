@@ -214,10 +214,10 @@ class KeychainBackend implements Backend {
   }
 
   async set(key: string, value: string) {
-    const result = await runSecurity(
-      ['add-generic-password', '-U', '-s', this.service, '-a', key, '-w'],
-      `${value}\n${value}\n`,
-    )
+    // `security` prompts for the password on the controlling terminal, never on
+    // stdin; piping the value makes a non-TTY child hang until the timeout. The
+    // value is only visible to the same user via `ps` for the child's lifetime.
+    const result = await runSecurity(['add-generic-password', '-U', '-s', this.service, '-a', key, '-w', value])
     if (result.code !== 0) throw new SecretsError(`keychain write failed for "${key}": ${result.stderr.trim()}`)
     if (!this.keys.has(key)) {
       this.keys.add(key)
@@ -256,7 +256,10 @@ function runSecurity(args: string[], input?: string): Promise<{ code: number; st
     let settled = false
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      finish(new SecretsError(`security ${args[0]} timed out`))
+      const detail = Buffer.concat(err).toString('utf8').trim()
+      finish(new SecretsError(
+        `security ${args[0]} timed out after 10s${detail ? `: ${detail}` : ''}`,
+      ))
     }, 10_000)
 
     const finish = (error?: Error, code = child.exitCode ?? 1) => {

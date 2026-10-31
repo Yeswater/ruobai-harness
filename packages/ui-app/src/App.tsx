@@ -6,9 +6,12 @@ import { browserBus } from './panel-events.ts'
 import { api, type ActivitySummary, type PermissionMode, type SkillSummary, type ThemePreference } from './api.ts'
 import { PALETTE_COMMANDS } from './command-palette-model.ts'
 import {
-  isExpandShortcut, isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isSidebarShortcut,
-  isTerminalShortcut, modKeyLabel,
-} from './shortcuts.ts'
+  applySkin, loadCollapsedMode, loadSidebarBrand, loadSkin, saveCollapsedMode, saveSidebarBrand, saveSkin,
+  type CollapsedSidebar, type UiSkin,
+} from './preferences.ts'
+import { withDraftRow } from './draft-session.ts'
+import { matchesShortcut, modKeyLabel } from './shortcuts.ts'
+import { useShortcutLabel } from './useShortcuts.ts'
 import { ApprovalCard } from './components/ApprovalCard.tsx'
 import { CommitCard } from './components/CommitCard.tsx'
 import { PlanCard } from './components/PlanCard.tsx'
@@ -23,7 +26,7 @@ import { ChangesView } from './components/ChangesView.tsx'
 import { SessionDock } from './components/SessionDock.tsx'
 import { TodoPanel } from './components/TodoPanel.tsx'
 import { TrajectoryView } from './components/TrajectoryView.tsx'
-import { BranchIcon, FilePanelIcon, ListIcon, MenuIcon, MonitorIcon, MoreIcon, SearchIcon, TerminalIcon } from './components/Icons.tsx'
+import { BranchIcon, BrandMarkIcon, ChevronDownIcon, FilePanelIcon, FolderIcon, ListIcon, MenuIcon, MonitorIcon, MoreIcon, SearchIcon, TerminalIcon } from './components/Icons.tsx'
 import { SettingsDialog, type SettingsTab } from './components/settings/SettingsDialog.tsx'
 import { Sidebar } from './components/Sidebar.tsx'
 import { FunctionWorkspace } from './components/workspace/FunctionWorkspace.tsx'
@@ -35,6 +38,10 @@ import { WorkspacePicker } from './components/WorkspacePicker.tsx'
 
 type Theme = 'light' | 'dark'
 type MainView = 'chat' | 'changes' | 'trajectory' | 'context' | 'handoff'
+
+function workspaceLabel(path: string) {
+  return path.split('/').filter(Boolean).at(-1) ?? path
+}
 
 const MAIN_VIEW_KEY = 'rbh-main-view'
 const MAIN_TABS: Array<{ id: MainView; label: string }> = [
@@ -89,7 +96,14 @@ export function App() {
   const harness = useHarness()
   useClientPlugins()
   const contextMenu = useContextMenu()
+  const paletteKey = useShortcutLabel('palette')
+  const terminalKey = useShortcutLabel('terminal')
+  const sidebarKey = useShortcutLabel('sidebar')
+  const settingsKey = useShortcutLabel('settings')
   const [preference, setPreference] = useState<ThemePreference>(initialPreference)
+  const [skin, setSkin] = useState<UiSkin>(loadSkin)
+  const [showBrand, setShowBrand] = useState(loadSidebarBrand)
+  const [collapsedMode, setCollapsedMode] = useState<CollapsedSidebar>(loadCollapsedMode)
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
   const theme: Theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
   const [fileOpen, setFileOpen] = useState(false)
@@ -114,6 +128,12 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false)
+  // `withDraftRow` builds a fresh array, so memoize it: the sidebar groups and
+  // filters it on every change and would otherwise recompute each render.
+  const sidebarSessions = useMemo(
+    () => withDraftRow(harness.sessions, harness.draft),
+    [harness.sessions, harness.draft],
+  )
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const [skills, setSkills] = useState<SkillSummary[]>([])
@@ -191,6 +211,19 @@ export function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('rbh-theme', preference)
   }, [theme, preference])
+
+  useEffect(() => {
+    applySkin(skin)
+    saveSkin(skin)
+  }, [skin])
+
+  useEffect(() => {
+    saveSidebarBrand(showBrand)
+  }, [showBrand])
+
+  useEffect(() => {
+    saveCollapsedMode(collapsedMode)
+  }, [collapsedMode])
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? '1' : '0')
@@ -277,42 +310,51 @@ export function App() {
     return () => window.removeEventListener('resize', collapseOnNarrow)
   }, [])
 
+  /**
+   * A new session reuses the folder the user was last in. Switching folders is
+   * the empty screen's workspace chip, or the sidebar's "add workspace".
+   */
+  const startNewSession = useCallback(() => {
+    setFunctionView(null)
+    setMainView('chat')
+    harness.createSession(harness.session?.workspace ?? harness.recentWorkspaces[0])
+  }, [harness.createSession, harness.session?.workspace, harness.recentWorkspaces])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // ⌘K / Ctrl+K: the global search palette, toggled from anywhere.
-      if (isPaletteShortcut(event)) {
+      // Bindings come from the user's keymap; settings writes the same store.
+      if (matchesShortcut(event, 'palette')) {
         event.preventDefault()
         setPaletteOpen(current => !current)
         return
       }
-      // ⌘, / Ctrl+, opens settings from anywhere (and keeps the current tab).
-      if (isSettingsShortcut(event)) {
+      if (matchesShortcut(event, 'settings')) {
         event.preventDefault()
         setPaletteOpen(false)
         if (!settingsOpenRef.current) openSettings('behavior')
         return
       }
-      if (isNewSessionShortcut(event)) {
+      if (matchesShortcut(event, 'new-session')) {
         event.preventDefault()
-        setWorkspacePickerOpen(true)
+        startNewSession()
       }
-      if (isSidebarShortcut(event)) {
+      if (matchesShortcut(event, 'sidebar')) {
         event.preventDefault()
         toggleSidebar()
       }
-      if (isExpandShortcut(event)) {
+      if (matchesShortcut(event, 'expand-panel')) {
         event.preventDefault()
-        if (expandedPanel) setExpandedPanel(null)
-        else if (fileOpen) toggleExpandPanel()
+        // Opens the panel when nothing is open, expands it, then restores.
+        toggleExpandPanel()
       }
-      if (isTerminalShortcut(event)) {
+      if (matchesShortcut(event, 'terminal')) {
         event.preventDefault()
         showFilePanel('terminal')
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [openSettings, toggleSidebar, expandedPanel, fileOpen, toggleExpandPanel, showFilePanel])
+  }, [openSettings, startNewSession, toggleSidebar, expandedPanel, fileOpen, toggleExpandPanel, showFilePanel])
 
   // Commands that need runtime state (nothing streaming, nothing to stop) drop out.
   const paletteCommands = useMemo(
@@ -327,7 +369,7 @@ export function App() {
   const runPaletteCommand = (id: string) => {
     switch (id) {
       case 'new-session':
-        setWorkspacePickerOpen(true)
+        startNewSession()
         break
       case 'settings':
         openSettings('behavior')
@@ -381,8 +423,7 @@ export function App() {
         toggleSidebar()
         break
       case 'expand-panel':
-        if (expandedPanel) setExpandedPanel(null)
-        else if (fileOpen) toggleExpandPanel()
+        toggleExpandPanel()
         break
       case 'toggle-theme':
         setPreference(theme === 'dark' ? 'light' : 'dark')
@@ -397,6 +438,39 @@ export function App() {
 
   const activeFunction = functionView ? functionViewInfo(functionView) : null
 
+  const workspacePath = harness.session?.workspace
+  const workspaceName = workspacePath ? workspaceLabel(workspacePath) : ''
+
+  // The empty screen can move an unsent session to another folder; a saved
+  // session's folder is fixed on the host.
+  const workspaceChip = (
+    <div className="new-session-meta">
+      <button
+        type="button"
+        className="new-session-workspace"
+        title={workspacePath ?? '选择工作区'}
+        onClick={(event) => {
+          contextMenu.open(event, [
+            ...harness.recentWorkspaces.map(path => ({
+              label: path === workspacePath ? `${workspaceLabel(path)}（当前）` : workspaceLabel(path),
+              onSelect: () => {
+                if (path === workspacePath) return
+                if (harness.draft) harness.setDraftWorkspace(path)
+                else harness.createSession(path)
+              },
+            })),
+            { separator: true },
+            { label: '选择文件夹…', onSelect: () => setWorkspacePickerOpen(true) },
+          ])
+        }}
+      >
+        <FolderIcon size={15} />
+        <span>{workspaceName || '选择工作区'}</span>
+        <ChevronDownIcon size={12} />
+      </button>
+    </div>
+  )
+
   return (
     <div
       className={[
@@ -404,6 +478,7 @@ export function App() {
         fileOpen ? 'file-panel-open' : '',
         expandedPanel === 'file' ? 'file-expanded' : '',
         sidebarCollapsed ? 'sidebar-collapsed' : '',
+        sidebarCollapsed && collapsedMode === 'rail' ? 'sidebar-rail' : '',
       ].filter(Boolean).join(' ')}
       style={{
         '--details-width': `${detailsWidth}px`,
@@ -428,10 +503,12 @@ export function App() {
       }}
     >
       <Sidebar
-        sessions={harness.sessions}
-        activeId={harness.activeId}
+        sessions={sidebarSessions}
+        activeId={harness.draft?.id ?? harness.activeId}
         open={sidebarOpen}
         collapsed={sidebarCollapsed}
+        collapsedMode={collapsedMode}
+        showBrand={showBrand}
         onToggleCollapse={toggleSidebar}
         onSelect={(id) => {
           setFunctionView(null)
@@ -439,6 +516,10 @@ export function App() {
           setSidebarOpen(false)
         }}
         onCreate={() => {
+          startNewSession()
+          setSidebarOpen(false)
+        }}
+        onAddWorkspace={() => {
           setWorkspacePickerOpen(true)
           setSidebarOpen(false)
         }}
@@ -456,6 +537,7 @@ export function App() {
         onArchive={harness.archiveSession}
         onDelete={harness.deleteSession}
         onOpenSettings={() => openSettings('behavior')}
+        onOpenModelSettings={() => openSettings('providers')}
         functionView={functionView}
         onOpenFunction={(view) => {
           setFunctionView(view)
@@ -521,11 +603,11 @@ export function App() {
                   className="palette-trigger"
                   onClick={() => setPaletteOpen(true)}
                   aria-label="全局搜索"
-                  title={`全局搜索 (${modKeyLabel()}K)`}
+                  title={`全局搜索 (${paletteKey})`}
                 >
                   <SearchIcon size={13} />
                   <span>搜索</span>
-                  <span className="keycap">{modKeyLabel()}K</span>
+                  <span className="keycap">{paletteKey}</span>
                 </button>
               </div>
             )}
@@ -575,7 +657,7 @@ export function App() {
                     className={`icon-btn ${fileOpen && panelView === 'terminal' ? 'active' : ''}`}
                     onClick={() => showFilePanel('terminal')}
                     aria-label="终端"
-                    title={`终端 (${modKeyLabel()}J)`}
+                    title={`终端 (${terminalKey})`}
                   >
                     <TerminalIcon size={16} />
                   </button>
@@ -601,14 +683,14 @@ export function App() {
                           onClick={() => { setToolsMenuOpen(false); toggleSidebar() }}
                         >
                           切换工作区栏
-                          <span className="menu-key">{modKeyLabel()}B</span>
+                          <span className="menu-key">{sidebarKey}</span>
                         </button>
                         <button
                           role="menuitem"
                           onClick={() => { setToolsMenuOpen(false); openSettings('behavior') }}
                         >
                           打开设置
-                          <span className="menu-key">{modKeyLabel()},</span>
+                          <span className="menu-key">{settingsKey}</span>
                         </button>
                         <button
                           role="menuitem"
@@ -672,7 +754,9 @@ export function App() {
                 }}
               />
 
-              <TodoPanel todo={harness.todo} />
+              {/* The checklist belongs to a running turn; once it ends the
+                  finished list would just sit in the composer area. */}
+              {harness.session?.streaming ? <TodoPanel todo={harness.todo} /> : null}
 
               {harness.planProposal
                 ? (
@@ -713,7 +797,9 @@ export function App() {
                 : null}
 
               <Composer
-                disabled={!harness.session}
+                disabled={!harness.session || (emptySession && !workspacePath)}
+                header={emptySession ? workspaceChip : undefined}
+                placeholder={emptySession && !workspacePath ? '先选择一个工作区，再发送第一条消息' : undefined}
                 streaming={harness.session?.streaming ?? false}
                 sessionId={sessionId}
                 workspace={harness.session?.workspace}
@@ -733,7 +819,7 @@ export function App() {
                 onSend={harness.send}
                 onStop={harness.stop}
                 restore={restoredDrop}
-                onNewSession={() => setWorkspacePickerOpen(true)}
+                onNewSession={startNewSession}
                 onOpenConnectors={() => {
                   setToolsTab('connectors')
                   setFunctionView('tools')
@@ -813,7 +899,18 @@ export function App() {
         sessionId={sessionId}
         themePreference={preference}
         onThemeChange={setPreference}
-        onSaved={() => { void harness.refreshSettings() }}
+        skin={skin}
+        onSkinChange={setSkin}
+        showBrand={showBrand}
+        onShowBrandChange={setShowBrand}
+        collapsedMode={collapsedMode}
+        onCollapsedModeChange={setCollapsedMode}
+        onSaved={() => {
+          // Provider edits change the model list, so the pickers need a re-read
+          // as well as the command prefix.
+          void harness.refreshSettings()
+          void harness.refreshModels()
+        }}
         onClose={() => setSettingsOpen(false)}
       />
 

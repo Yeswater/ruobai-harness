@@ -51,6 +51,9 @@ cordis.yml     插件的组合方式（唯一应用定义）
   - `readOnly`：只读工具，read-only 权限模式下仍可用。
   - `approvalSubject`：持久审批规则匹配的键（命令或路径）。
   - `preview`：审批卡片里给人看的摘要/diff。
+  - `defer`：默认不进工具的可见集合，由 `tool_search` 按会话按需加载；模式在 `allowTools` / `extraTools` 里显式列出的仍直接可见。领域集成（gitee、wiki、memory、contract、delivery）用它，避免每个编码步骤都携带整套 schema。
+  - `keywords`：`tool_search` 的检索词（含中文），不发给模型。
+- 新增默认工具前先问：它是否每个任务都需要。只在特定领域用的工具标 `defer`，否则每次请求都在为它付上下文和选择成本。
 - 文件写入必须经过检查点（`checkpoints`），否则会话无法回退。
 - `tool-fs` 的读写必须查 `ctx.sandboxPolicy.check()`（进程内第二道守卫）；新增文件类工具同样要接。
 - 命令执行走 `ctx.shell`，不要在工具里直接 `child_process.spawn`；沙箱、超时、输出截断、环境清洗都在执行器里。
@@ -58,14 +61,16 @@ cordis.yml     插件的组合方式（唯一应用定义）
 
 ## 5. 沙箱与审批
 
-- 沙箱与审批是两条正交防线：沙箱插件不 `inject` 审批，审批也不 `inject` 沙箱；中间用 `denial` / `escalation` 解耦。
+- 沙箱与审批是两条正交防线：沙箱插件不 `inject` 审批，审批也不 `inject` 沙箱。二者通过**"边界即授权"**衔接：预计留在沙箱内的 bash 免审批（`sandbox.autoAllowBashIfSandboxed`），越过边界才审批。
 - **fail-closed**：provider 不可用、profile 编译失败、审批超时都必须拒绝，不允许"静默放行"。
-- 审批只在**硬边界实际触发**时介入；成功命令里的启动探测属于噪音，必须在分类层过滤。
-- 豁免必须与拒绝同粒度（`write-file` 单文件，不是 `dirname`）；网络、进程控制、mach、AppleEvent 永不放宽。
-- 修改 macOS 沙箱前先读 `docs/sandbox-macos.md` 与附录 F；**任何"Seatbelt 支持 X"的判断都要在本机实测**，语法有效 ≠ 能应用 ≠ 会匹配。
+- 审批只在**越过沙箱边界**时介入；成功命令里的启动探测属于噪音，必须在分类层过滤。内置危险命令与显式 ask/deny 规则始终优先于免审批。
+- 越过沙箱只有两条路：模型显式请求 `dangerouslyDisableSandbox`（需审批），或命令命中 `sandbox.excludedCommands`（直连但仍审批）。不再做路径级 escalation。
+- 网络出口只有一个：本机 `@ruobai/sandbox-proxy`。Seatbelt 只放行代理端口（必须是 `localhost:<port>`，数值 IP 会让 profile 整体失效）；域名白名单存在 `settings.sandbox.network.allowedDomains`，不要往 SBPL 里塞域名。
+- 策略来自 `settings.sandbox`（域名、排除命令、额外可写目录、三个开关），热更新靠 `settings/updated` bump policy version；不要把这些写死进 cordis.yml。
+- 修改 macOS 沙箱前先读 `docs/sandbox.md`、`docs/sandbox-macos.md` 与附录 F；**任何"Seatbelt 支持 X"的判断都要在本机实测**，语法有效 ≠ 能应用 ≠ 会匹配。
 - 保留 `shell-direct` 作为逃生舱；沙箱出问题时它必须还能跑（`cordis.yml` 一行切换）。
-- harness 自己的检查（lint/typecheck）走 `shell-direct` 注册的非默认 `direct` 执行器，不经过 agent 沙箱；agent 的 bash 仍走默认沙箱执行器，工具层不得选择执行器。
-- 热卸载：先摘 provider 表，再 abort 全部 run，最后 `destroyAll()`；不得留下孤儿 `sandbox-exec` / `log stream`。
+- harness 自己的检查（lint/typecheck）走 `shell-direct` 注册的非默认 `direct` 执行器，不经过 agent 沙箱；agent 的 bash 仍走默认沙箱执行器。工具层只能表达"是否请求越过沙箱"（`ShellRunSpec.sandbox`），由 shell 层决定用哪个执行器，不能直接点名 executor。
+- 热卸载：先摘 provider 表，再 abort 全部 run，最后 `destroyAll()`；不得留下孤儿 `sandbox-exec` / `log stream` / 代理端口。
 
 ## 6. Web 与客户端
 
@@ -77,6 +82,13 @@ cordis.yml     插件的组合方式（唯一应用定义）
   - 客户端插件通过 `register(window.__RBU__)` 注册 Slot；返回 disposer，宿主在卸载时调用。
   - `ui-app` 的 tsconfig 不包含 `vendor/`；浏览器侧不要 import 会带出 Cordis 的入口，类型走 `@ruobai/<pkg>/types`。
   - 客户端插件自带样式时注入 `<style id="...">`，不要依赖宿主 CSS 类名。
+
+### UI 规范（渐进式发现）
+
+- **入口**：`.claude/skills/ui-design/SKILL.md`。Claude Code 与 RuoBai 的 skills 插件都会从项目 `.claude/skills` 发现它：会话开始时只读取 description，做 UI 改动时才加载正文，需要细则再打开文档。
+- **细则**：`docs/ui-design-system.md`（token、皮肤契约、基础组件、设置页布局、保存策略、检查清单）。
+- **硬规则**：只用 token 与 `components/ui` 的基础组件；皮肤只覆盖 CSS 变量，不在组件里写死颜色；设置页只有一个滚动容器；偏好自动保存、实体表单显式保存；瞬态提示（保存状态等）用浮层、不占布局、数秒后自动移除；CC / DeepSeek × 明 / 暗四组都要检查。
+- **优先级**：本仓库的 UI 以 `ui-design` 技能与 `docs/ui-design-system.md` 为准。`.ruobai/skills` 下若存在通用 UI 技能（例如 Material/Pinterest 风格的生成器），不得覆盖这里的 token、组件与皮肤契约。
 
 ## 7. 测试
 

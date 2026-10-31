@@ -8,7 +8,7 @@ export interface ContributionCell {
 
 export interface ContributionWeek {
   key: string
-  /** Month name shown above the first week of that month, e.g. `6月`. */
+  /** Month name shown above the column that holds the month's first day. */
   label?: string
   cells: Array<ContributionCell | null>
 }
@@ -46,21 +46,17 @@ export function buildContributionWeeks(days: ActivityDay[], max: number): Contri
   while (cells.length % 7) cells.push(null)
 
   const weeks: ContributionWeek[] = []
-  let previousMonth = -1
   for (let index = 0; index < cells.length; index += 7) {
     const slice = cells.slice(index, index + 7)
     const anchor = slice.find(cell => cell !== null) ?? null
     const key = anchor?.date ?? `week-${index / 7}`
-    if (!anchor) {
-      weeks.push({ key, cells: slice })
-      continue
-    }
-    const month = parseDayKey(anchor.date).getMonth()
     const week: ContributionWeek = { key, cells: slice }
-    if (month !== previousMonth) {
-      week.label = `${month + 1}月`
-      previousMonth = month
-    }
+    // Label the column that holds the month's first day. Consecutive firsts
+    // are 28–31 days apart, i.e. four 12px columns, while the widest label
+    // (`12月`) renders ~22px: anchored this way two labels cannot collide, no
+    // matter where the window starts.
+    const first = slice.find(cell => cell?.date.endsWith('-01'))
+    if (first) week.label = `${parseDayKey(first.date).getMonth() + 1}月`
     weeks.push(week)
   }
   return weeks

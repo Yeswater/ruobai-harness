@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { join, isAbsolute } from 'node:path'
 import { Service, type Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
 import type { ContentPart, ImagePart, Message, ToolSchema } from '@ruobai/llm'
@@ -409,6 +411,10 @@ export class ContextService extends Service {
 
     const builtins: PromptSection[] = [
       { id: 'base', order: 10, stability: 'static', render: () => options.basePrompt ?? '' },
+      // Without this a session opened on a temp directory looks like an empty
+      // project: the model spends its first steps discovering where it is and
+      // which paths its file tools can actually reach.
+      { id: 'environment', order: 15, stability: 'static', render: ({ sessionId }) => this.environment(sessionId) },
       { id: 'mode', order: 20, stability: 'static', render: () => options.modePrompt ?? '' },
       { id: 'instructions', order: 30, stability: 'static', render: () => instructions },
       { id: 'skills', order: 35, stability: 'static', render: () => skills },
@@ -1010,7 +1016,15 @@ export class ContextService extends Service {
   private modelInfo(record: SessionRecord) {
     const settings = this.ctx.get('settings', false) as
       | {
-        raw?(): { llm?: { activeProvider?: string; activeModel?: string } }
+        raw?(): {
+          llm?: {
+            activeProvider?: string
+            activeModel?: string
+            providers?: Array<{
+              models: Array<{ id: string; contextWindow?: number; maxOutputTokens?: number }>
+            }>
+          }
+        }
         findProvider?(id: string): {
           models: Array<{ id: string; contextWindow?: number; maxOutputTokens?: number }>
         } | undefined
@@ -1019,9 +1033,19 @@ export class ContextService extends Service {
     const config = settings?.raw?.()
     const providerId = record.meta.provider ?? config?.llm?.activeProvider
     const modelId = record.meta.model ?? config?.llm?.activeModel
-    return providerId
-      ? settings?.findProvider?.(providerId)?.models.find(item => item.id === modelId)
-      : undefined
+    const direct = providerId ? settings?.findProvider?.(providerId) : undefined
+    if (modelId) {
+      const exact = direct?.models.find(item => item.id === modelId)
+      if (exact) return exact
+      // The provider may have been renamed or replaced since this session was
+      // created; the model id still identifies the window the user is billed on.
+      for (const provider of config?.llm?.providers ?? []) {
+        const hit = provider.models.find(item => item.id === modelId)
+        if (hit) return hit
+      }
+      return undefined
+    }
+    return direct?.models[0]
   }
 
   private instructionRoot(sessionId: string) {
@@ -1029,6 +1053,47 @@ export class ContextService extends Service {
       | { rootFor(id?: string | null): string }
       | undefined
     return workspace?.rootFor(sessionId) ?? process.cwd()
+  }
+
+  /**
+   * Where this session actually is. The workspace can differ from the folder
+   * the user is talking about (the desktop app opens on a temp directory), so
+   * state the root and the tools' path rule instead of letting the model find
+   * out through failed calls.
+   */
+  private environment(sessionId: string) {
+    const root = this.instructionRoot(sessionId)
+    const repository = this.repository(root)
+    const now = new Date()
+    const date = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+      .map((part, index) => (index ? String(part).padStart(2, '0') : String(part)))
+      .join('-')
+    return [
+      '## Environment',
+      `- Workspace root: ${root}`,
+      `- Platform: ${process.platform}`,
+      `- Date: ${date}`,
+      `- Repository: ${repository ?? 'none detected at the workspace root'}`,
+      '- File tools resolve paths against the workspace root; absolute paths are accepted only inside it and paths outside are rejected. bash starts in this directory but is sandboxed.',
+    ].join('\n')
+  }
+
+  /** Branch name when the workspace root itself is a git checkout. */
+  private repository(root: string): string | undefined {
+    try {
+      const gitDir = join(root, '.git')
+      if (!existsSync(gitDir)) return undefined
+      // A worktree or submodule stores `.git` as a file pointing elsewhere.
+      const pointer = statSync(gitDir).isDirectory()
+        ? undefined
+        : readFileSync(gitDir, 'utf8').replace(/^gitdir:\s*/, '').trim()
+      const headPath = join(pointer ? (isAbsolute(pointer) ? pointer : join(root, pointer)) : gitDir, 'HEAD')
+      const head = readFileSync(headPath, 'utf8').trim()
+      const branch = /^ref: refs\/heads\/(.+)$/.exec(head)?.[1]
+      return branch ? `git, branch ${branch}` : 'git, detached HEAD'
+    } catch {
+      return undefined
+    }
   }
 
   private async workspaceInstructions(sessionId: string) {

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Context } from '@ruobai/cordis'
+import type {} from '@ruobai/net'
 import z from '@ruobai/schemastery'
 import type { SemanticRetriever } from '@ruobai/wiki'
 import type {} from '@ruobai/wiki'
@@ -47,7 +48,7 @@ export function apply(ctx: Context, config: Config = {}) {
     const url = kind === 'ollama' ? `${baseUrl}/api/embed` : `${baseUrl}/embeddings`
     const headers: Record<string, string> = { 'content-type': 'application/json' }
     if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`
-    const response = await fetch(url, {
+    const response = await ctx.net.fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({ model, input: texts }),
@@ -168,7 +169,7 @@ function cosine(left: number[], right: number[]) {
 
 const plugin = {
   name: 'wiki-embed',
-  inject: ['wiki'],
+  inject: ['wiki', 'net'],
   Config: z.object({
     kind: z.union([z.const('ollama'), z.const('openai')]).default('ollama'),
     baseUrl: z.string(),

@@ -1,12 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@ruobai/cordis'
+import type {} from '@ruobai/net'
 import { builtinDangerRules } from '@ruobai/approval'
-import type { CommandPrefix, PermissionMode, ProviderInput } from '@ruobai/settings'
+import type { CommandPrefix, PermissionMode, ProviderEntry, ProviderInput } from '@ruobai/settings'
+import { modelsFromPayload, presetById, PROVIDER_PRESETS } from '@ruobai/provider-catalog'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
-import { PROVIDER_PRESETS } from './presets.ts'
 
 export const name = 'settings-web'
-export const inject = ['web', 'settings']
+export const inject = ['web', 'settings', 'net']
 
 /** Provider management + settings API. Secrets never leave the server. */
 export function apply(ctx: Context) {
@@ -14,6 +15,11 @@ export function apply(ctx: Context) {
     prefix: '/api/settings',
     handler: (req, res, url) => handleSettings(ctx, req, res, url),
   }), 'settings-web.settings')
+
+  ctx.effect(() => ctx.web.register({
+    prefix: '/api/network',
+    handler: (req, res, url) => handleNetwork(ctx, req, res, url),
+  }), 'settings-web.network')
 
   ctx.effect(() => ctx.web.register({
     prefix: '/api/providers',
@@ -47,6 +53,14 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
         ui: body?.ui && typeof body.ui === 'object' && (body.ui.theme === 'light' || body.ui.theme === 'dark')
           ? { theme: body.ui.theme }
           : undefined,
+        network: body?.network && typeof body.network === 'object'
+          ? {
+              enabled: typeof body.network.enabled === 'boolean' ? body.network.enabled : undefined,
+              httpProxy: typeof body.network.httpProxy === 'string' ? body.network.httpProxy.slice(0, 300) : undefined,
+              httpsProxy: typeof body.network.httpsProxy === 'string' ? body.network.httpsProxy.slice(0, 300) : undefined,
+              noProxy: typeof body.network.noProxy === 'string' ? body.network.noProxy.slice(0, 500) : undefined,
+            }
+          : undefined,
         agent: body?.agent && typeof body.agent === 'object'
           ? {
               defaultMode: typeof body.agent.defaultMode === 'string' ? body.agent.defaultMode : undefined,
@@ -68,6 +82,34 @@ async function handleSettings(ctx: Context, req: IncomingMessage, res: ServerRes
     fail(ctx, res, error, 'settings-web')
   }
   return true
+}
+
+/** Read the current proxy picture and probe it. */
+async function handleNetwork(ctx: Context, req: IncomingMessage, res: ServerResponse, url: URL) {
+  try {
+    if (url.pathname === '/api/network' && req.method === 'GET') {
+      sendJson(res, 200, { status: await ctx.net.status(url.searchParams.has('refresh')) })
+      return true
+    }
+    if (url.pathname === '/api/network/test' && req.method === 'POST') {
+      const body = await readJson(req) as { url?: unknown }
+      const target = typeof body.url === 'string' && body.url.trim() ? body.url.trim() : defaultProbe(ctx)
+      sendJson(res, 200, { result: await ctx.net.check(target) })
+      return true
+    }
+    throw new HttpError(404, 'not found')
+  } catch (error) {
+    fail(ctx, res, error, 'settings-web')
+  }
+  return true
+}
+
+/** Probe the active provider's /models; without one, a neutral connectivity URL. */
+function defaultProbe(ctx: Context) {
+  const active = ctx.settings.get().llm?.activeProvider
+  const provider = active ? ctx.settings.findProvider(active) : undefined
+  const base = provider?.baseUrl?.replace(/\/+$/, '')
+  return base ? `${base}/models` : 'https://www.gstatic.com/generate_204'
 }
 
 /**
@@ -109,7 +151,7 @@ async function handleProviders(ctx: Context, req: IncomingMessage, res: ServerRe
         return true
       }
       if (req.method === 'POST') {
-        const settings = await ctx.settings.upsertProvider(await readJson(req) as ProviderInput)
+        const settings = await ctx.settings.upsertProvider(applyPreset(ctx, await readJson(req) as ProviderInput))
         sendJson(res, 201, { settings })
         return true
       }
@@ -124,7 +166,7 @@ async function handleProviders(ctx: Context, req: IncomingMessage, res: ServerRe
 
     if (parts[2] === 'models' && parts.length === 3) {
       if (req.method !== 'POST') throw new HttpError(405, 'method not allowed')
-      const body = await readJson(req) as { baseUrl?: string; apiKey?: string; id?: string }
+      const body = await readJson(req) as { baseUrl?: string; apiKey?: string; id?: string; preset?: string }
       const models = await fetchModels(ctx, body)
       sendJson(res, 200, { models })
       return true
@@ -143,7 +185,10 @@ async function handleProviders(ctx: Context, req: IncomingMessage, res: ServerRe
 
     if (parts.length === 3) {
       if (req.method === 'PATCH' || req.method === 'PUT') {
-        const settings = await ctx.settings.upsertProvider(await readJson(req) as ProviderInput, id)
+        const settings = await ctx.settings.upsertProvider(
+          applyPreset(ctx, await readJson(req) as ProviderInput, ctx.settings.findProvider(id)),
+          id,
+        )
         sendJson(res, 200, { settings })
         return true
       }
@@ -162,15 +207,45 @@ async function handleProviders(ctx: Context, req: IncomingMessage, res: ServerRe
   return true
 }
 
-async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: string; id?: string }) {
+/**
+ * Fill an incomplete provider from its building block.
+ *
+ * A create may name only a preset and a key; edits keep whatever the user
+ * already saved, so PATCHing just `preset` never rewrites the endpoint.
+ */
+function applyPreset(ctx: Context, input: ProviderInput, existing?: ProviderEntry): ProviderInput {
+  const key = (input.preset ?? existing?.preset)?.trim()
+  if (!key) return input
+  const preset = presetById(key)
+  if (!preset) throw new HttpError(400, `unknown provider preset: ${key}`)
+  const next: ProviderInput = { ...input, preset: key }
+  if (existing) return next
+
+  // Connecting the same vendor twice should edit that connection, not queue a
+  // duplicate beside it (the seeded DeepSeek row is exactly this case).
+  const providers = ctx.settings.rawProviders()
+  const same = providers.find(provider => provider.preset === key)
+  if (same) next.id = same.id
+  else if (!providers.some(provider => provider.id === preset.id)) next.id = preset.id
+
+  if (!next.name?.trim()) next.name = preset.name
+  if (!next.baseUrl?.trim()) next.baseUrl = preset.baseUrl
+  if (!next.note) next.note = preset.note
+  if (!next.website) next.website = preset.website
+  if (!next.models?.length) next.models = preset.models
+  return next
+}
+
+async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: string; id?: string; preset?: string }) {
   const entry = body.id ? ctx.settings.findProvider(body.id) : undefined
   const baseUrl = (body.baseUrl?.trim() || entry?.baseUrl || '').replace(/\/+$/, '')
   if (!baseUrl) throw new HttpError(400, 'baseUrl is required')
   const key = body.apiKey?.trim() || (body.id ? ctx.settings.apiKeyFor(body.id) : undefined)
+  const presetId = body.preset?.trim() || entry?.preset
 
   let response: Response
   try {
-    response = await fetch(`${baseUrl}/models`, {
+    response = await ctx.net.fetch(`${baseUrl}/models`, {
       headers: key ? { Authorization: `Bearer ${key}` } : {},
       signal: AbortSignal.timeout(15_000),
     })
@@ -184,17 +259,7 @@ async function fetchModels(ctx: Context, body: { baseUrl?: string; apiKey?: stri
   }
 
   const payload: any = await response.json().catch(() => undefined)
-  const rows = Array.isArray(payload?.data)
-    ? payload.data
-    : Array.isArray(payload?.models)
-      ? payload.models
-      : Array.isArray(payload)
-        ? payload
-        : []
-  const ids = rows
-    .map((row: any) => typeof row === 'string' ? row : row?.id)
-    .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
-  return [...new Set<string>(ids)].map(id => ({ id }))
+  return modelsFromPayload(payload, presetId)
 }
 
 function describeHttpStatus(status: number, detail: string): string {

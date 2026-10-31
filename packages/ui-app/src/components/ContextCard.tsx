@@ -22,10 +22,10 @@ const BREAK_LABELS: Record<string, string> = {
   messages: '历史改写',
 }
 
-// K/M match TokenAmountInput's 1024-based factors, so a configured 400K window
-// reads back as 400k instead of 410k.
-const K = 1024
-const M = K * 1024
+// Decimal units match how vendors publish context windows (1M = 1,000,000),
+// so a 1M model never reads back as "977k".
+const K = 1_000
+const M = 1_000_000
 
 export function formatTokens(tokens: number) {
   if (tokens >= M) return `${(tokens / M).toFixed(1).replace(/\.0$/, '')}M`

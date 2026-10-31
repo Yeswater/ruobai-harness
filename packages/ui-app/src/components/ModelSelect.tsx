@@ -1,7 +1,8 @@
 import { createPortal } from 'react-dom'
 import type { ModelProvider, ProviderModel } from '../api.ts'
 import { useAnchoredMenu } from './AnchoredMenu.ts'
-import { BotIcon, CheckIcon, ChevronDownIcon } from './Icons.tsx'
+import { CheckIcon, ChevronDownIcon } from './Icons.tsx'
+import { formatTokens } from './ContextCard.tsx'
 
 interface ModelSelectProps {
   provider?: string
@@ -13,17 +14,9 @@ interface ModelSelectProps {
   onChange: (provider: string, model: string) => void
 }
 
-function formatWindow(tokens?: number) {
-  if (!tokens) return undefined
-  if (tokens >= 1024 * 1024) return `${(tokens / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')}M`
-  if (tokens >= 1024) return `${Math.round(tokens / 1024)}k`
-  return String(tokens)
-}
-
 function modelDescription(model: ProviderModel) {
   const parts: string[] = []
-  const window = formatWindow(model.contextWindow)
-  if (window) parts.push(`${window} 上下文`)
+  if (model.contextWindow) parts.push(`${formatTokens(model.contextWindow)} 上下文`)
   if (model.inputTypes?.length) {
     parts.push(model.inputTypes.map(type => type === 'image' ? '图片' : '文本').join(' / '))
   }
@@ -45,7 +38,10 @@ export function ModelSelect({
   const currentProviderLabel = providers.find(item => item.id === currentProvider)?.name
   const currentModel = providers.find(item => item.id === currentProvider)
     ?.models.find(entry => entry.id === model)
-  const chipLabel = currentModel?.name || model
+  // A session may still carry a model id from a provider that was removed
+  // (including the old mock adapter); showing it would advertise a model the
+  // user cannot use.
+  const chipLabel = !currentProvider ? '未配置模型' : currentModel?.name || model
 
   const pick = (nextProvider: string, nextModel: string) => {
     onOpenChange(false)
@@ -65,7 +61,6 @@ export function ModelSelect({
         onClick={() => onOpenChange(!open)}
         title={currentProviderLabel ? `${currentProviderLabel} / ${chipLabel}` : chipLabel}
       >
-        <BotIcon size={14} />
         <span>{chipLabel}</span>
         <ChevronDownIcon size={12} />
       </button>
@@ -99,7 +94,6 @@ export function ModelSelect({
                         className={`view-menu-row ${item.id === currentProvider && entry.id === model ? 'selected' : ''}`}
                         onClick={() => pick(item.id, entry.id)}
                       >
-                        <span className="view-menu-icon"><BotIcon size={15} /></span>
                         <span className="view-menu-text">
                           <span className="view-menu-title">{entry.name || entry.id}</span>
                           {modelDescription(entry)

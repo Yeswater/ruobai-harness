@@ -24,6 +24,10 @@ describe('composer tokenizer', () => {
     expect(kinds('see@file 5/8 and/or')).toEqual([['text', 'see@file 5/8 and/or']])
   })
 
+  it('leaves tilde and slash paths as text', () => {
+    expect(kinds('~/code /usr/bin ～/x')).toEqual([['text', '~/code /usr/bin ～/x']])
+  })
+
   it('keeps line breaks and full-width prefixes', () => {
     const tokens = tokenizeComposer('第一行\n／goal 你好')
     expect(tokens.map(token => [token.kind, token.text])).toEqual([

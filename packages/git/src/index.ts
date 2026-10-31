@@ -5,6 +5,8 @@ import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { Service, type Context } from '@ruobai/cordis'
+import type { NetService } from '@ruobai/net'
+import type {} from '@ruobai/net'
 import z from '@ruobai/schemastery'
 import {
   attachStats, errorLine, isBinaryDiff, parseBranches, parseCommitFiles, parseLog,
@@ -55,7 +57,11 @@ export class GitService extends Service {
       matches: url => /github\.com[/:]/i.test(url),
       status: async () => {
         try {
-          const { stdout, stderr } = await exec('gh', ['auth', 'status'], { timeout: 5_000, windowsHide: true })
+          const { stdout, stderr } = await exec('gh', ['auth', 'status'], {
+            timeout: 5_000,
+            windowsHide: true,
+            env: { ...process.env, ...(await this.proxyEnv()) },
+          })
           const account = /account\s+(\S+)/i.exec(`${stdout}\n${stderr}`)?.[1]
           return { configured: true, ...(account ? { account } : {}) }
         } catch {
@@ -105,6 +111,17 @@ export class GitService extends Service {
     }))
   }
 
+  /** git and gh follow the same proxy setting as the harness's own HTTP. */
+  private async proxyEnv(): Promise<NodeJS.ProcessEnv> {
+    const net = this.ctx.get('net', false) as NetService | undefined
+    if (!net) return {}
+    try {
+      return await net.subprocessEnv()
+    } catch {
+      return {}
+    }
+  }
+
   private async run(
     root: string,
     args: string[],
@@ -116,6 +133,7 @@ export class GitService extends Service {
         maxBuffer: this.config.maxOutputBytes,
         env: {
           ...process.env,
+          ...(await this.proxyEnv()),
           GIT_TERMINAL_PROMPT: '0',
           GIT_OPTIONAL_LOCKS: '0',
           LC_ALL: 'C',
@@ -680,7 +698,13 @@ export class GitService extends Service {
         cwd: root,
         timeout: this.config.networkTimeoutMs,
         maxBuffer: 1_000_000,
-        env: { ...process.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', NO_COLOR: '1' },
+        env: {
+          ...process.env,
+          ...(await this.proxyEnv()),
+          GH_PROMPT_DISABLED: '1',
+          GH_NO_UPDATE_NOTIFIER: '1',
+          NO_COLOR: '1',
+        },
       })
       const url = /https:\/\/github\.com\/\S+\/pull\/\d+/.exec(stdout)?.[0]
       if (!url) throw new GitError(`gh 未返回 PR 链接: ${stdout.slice(0, 200)}`)

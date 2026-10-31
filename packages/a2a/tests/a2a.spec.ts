@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@ruobai/cordis'
+import NetService from '@ruobai/net'
+import SettingsService from '@ruobai/settings'
 import ToolRegistry from '@ruobai/tools'
 import A2aService from '../src/index.ts'
 import { mergeA2aConfigs, readA2aConfig } from '../src/config.ts'
@@ -111,6 +113,12 @@ async function setupService(config: Record<string, unknown>) {
   await mkdir(join(workspaceRoot, '.ruobai'))
   await writeFile(join(workspaceRoot, '.ruobai', 'a2a.json'), JSON.stringify({ agents: [config] }))
   const ctx = new Context()
+  const settings = ctx.plugin(SettingsService, { path: join(workspaceRoot, 'settings.json') })
+  await settings
+  cleanups.push(() => settings.dispose())
+  const net = ctx.plugin(NetService)
+  await net
+  cleanups.push(() => net.dispose())
   const tools = ctx.plugin(ToolRegistry)
   await tools
   cleanups.push(() => tools.dispose())

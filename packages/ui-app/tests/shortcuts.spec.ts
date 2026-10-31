@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
-  isNewSessionShortcut, isPaletteShortcut, isSettingsShortcut, isMacPlatform, modKeyLabel, shortcutLabel,
+  SHORTCUTS, chordFor, chordOf, findConflict, formatChord, getKeymap, isNewSessionShortcut,
+  isPaletteShortcut, isSettingsShortcut, isMacPlatform, matchesShortcut, modKeyLabel, resetKeymap,
+  setKeymap, shortcutLabel,
 } from '../src/shortcuts.ts'
 
 describe('shortcuts', () => {
@@ -43,5 +45,36 @@ describe('shortcuts', () => {
     expect(shortcutLabel(',', 'MacIntel')).toBe('⌘,')
     expect(modKeyLabel('MacIntel')).toBe('⌘')
     expect(modKeyLabel('Linux x86_64')).toBe('Ctrl+')
+  })
+})
+
+describe('keymap', () => {
+  afterEach(() => resetKeymap())
+
+  it('ships a unique default chord per command', () => {
+    const seen = new Set(SHORTCUTS.map(item => `${item.default.key}|${item.default.shift}|${item.default.alt}`))
+    expect(seen.size).toBe(SHORTCUTS.length)
+  })
+
+  it('reads a chord off an event', () => {
+    expect(chordOf({ key: 'K', metaKey: true })).toEqual({ key: 'k', shift: false, alt: false })
+    expect(chordOf({ key: 'K', ctrlKey: true, shiftKey: true })).toEqual({ key: 'k', shift: true, alt: false })
+    expect(chordOf({ key: 'k' })).toBeUndefined()
+    expect(chordOf({ key: 'Shift', metaKey: true })).toBeUndefined()
+    // Full-width comma from a CJK IME still means the physical comma.
+    expect(chordOf({ key: '，', ctrlKey: true })).toEqual({ key: ',', shift: false, alt: false })
+  })
+
+  it('prefers the user binding over the default', () => {
+    setKeymap({ palette: { key: 'p', shift: true, alt: false } })
+    expect(matchesShortcut({ key: 'p', metaKey: true, shiftKey: true }, 'palette')).toBe(true)
+    expect(matchesShortcut({ key: 'k', metaKey: true }, 'palette')).toBe(false)
+    expect(formatChord(chordFor('palette', getKeymap()), 'MacIntel')).toBe('⌘⇧P')
+    expect(formatChord(chordFor('palette', getKeymap()), 'Win32')).toBe('Ctrl+Shift+P')
+  })
+
+  it('reports which command already owns a chord', () => {
+    expect(findConflict('palette', { key: 'n', shift: false, alt: false }, {})?.id).toBe('new-session')
+    expect(findConflict('sidebar', { key: 'z', shift: false, alt: false }, {})).toBeUndefined()
   })
 })

@@ -1,17 +1,20 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEscapeKey } from '../../useEscapeKey.ts'
 import { api, type PublicSettings, type ThemePreference } from '../../api.ts'
+import type { CollapsedSidebar, UiSkin } from '../../preferences.ts'
 import {
-  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
+  BotIcon, BrainIcon, CheckIcon, CloseIcon, CommandIcon, FolderTreeIcon, GlobeIcon, MonitorIcon, PlugIcon, PuzzleIcon, SearchIcon, ShieldIcon, SlidersIcon,
 } from '../Icons.tsx'
 import { PermissionsSettings } from '../PermissionsSettings.tsx'
 import { SkillDraftsSettings } from './SkillDraftsSettings.tsx'
 import { ProtocolsSettings } from '../ProtocolsSettings.tsx'
 import { Slot } from '../Slot.tsx'
 import { GeneralSettings } from './GeneralSettings.tsx'
+import { NetworkSettings } from './NetworkSettings.tsx'
 import { PluginsSettings } from './PluginsSettings.tsx'
 import { ProvidersSettings } from './ProvidersSettings.tsx'
 import { WikiSettings } from './WikiSettings.tsx'
+import { IconButton, Toast, type SaveState } from '../ui/index.tsx'
 
 interface SettingsDialogProps {
   open: boolean
@@ -19,11 +22,17 @@ interface SettingsDialogProps {
   sessionId?: string
   themePreference: ThemePreference
   onThemeChange: (value: ThemePreference) => void
+  skin: UiSkin
+  onSkinChange: (skin: UiSkin) => void
+  showBrand: boolean
+  onShowBrandChange: (show: boolean) => void
+  collapsedMode: CollapsedSidebar
+  onCollapsedModeChange: (mode: CollapsedSidebar) => void
   onClose: () => void
   onSaved?: () => void
 }
 
-export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki' | 'skills'
+export type SettingsTab = 'providers' | 'permissions' | 'behavior' | 'runtime' | 'network' | 'sandbox' | 'protocols' | 'hooks' | 'gitee' | 'memory' | 'wiki' | 'skills'
 
 interface NavItem {
   id: SettingsTab
@@ -42,7 +51,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
         label: '通用',
         description: '外观、默认模式、权限与上下文压缩。',
         icon: <SlidersIcon size={15} />,
-        keywords: '模式 权限 主题 外观 深色 浅色 前缀 上下文 压缩 命令',
+        keywords: '模式 权限 主题 外观 深色 浅色 前缀 上下文 压缩 命令 皮肤 主题皮肤',
       },
       {
         id: 'providers',
@@ -106,6 +115,13 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
         keywords: '沙箱 守卫 拒绝 升级 seatbelt 审批',
       },
       {
+        id: 'network',
+        label: '网络',
+        description: '代理开关、系统代理检测与外发连接测试。',
+        icon: <GlobeIcon size={15} />,
+        keywords: '网络 代理 proxy 端口 系统代理 7890 直连 测试 连接',
+      },
+      {
         id: 'gitee',
         label: 'Gitee',
         description: 'Gitee 账号、仓库与发布。',
@@ -125,6 +141,14 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
 
 const NAV_ITEMS = NAV_GROUPS.flatMap(group => group.items)
 
+const SAVE_LABEL: Record<SaveState, string> = {
+  idle: '',
+  dirty: '未保存',
+  saving: '保存中…',
+  saved: '已保存',
+  error: '保存失败',
+}
+
 function matchesItem(item: NavItem, term: string) {
   if (!term) return true
   return item.label.toLowerCase().includes(term)
@@ -133,12 +157,23 @@ function matchesItem(item: NavItem, term: string) {
 }
 
 export function SettingsDialog({
-  open, initialTab, sessionId, themePreference, onThemeChange, onClose, onSaved,
+  open, initialTab, sessionId, themePreference, onThemeChange, skin, onSkinChange,
+  showBrand, onShowBrandChange, collapsedMode, onCollapsedModeChange, onClose, onSaved,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>('behavior')
   const [query, setQuery] = useState('')
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+
+  // Autosave feedback floats over the header; it disappears on its own so it
+  // never takes space or lingers across pages. Errors keep their inline notice.
+  useEffect(() => {
+    if (saveState !== 'saved' && saveState !== 'error') return
+    const timer = window.setTimeout(() => setSaveState('idle'), 2400)
+    return () => window.clearTimeout(timer)
+  }, [saveState])
 
   useEffect(() => {
     if (!open) return
@@ -159,6 +194,13 @@ export function SettingsDialog({
     }
   }, [open, initialTab])
 
+  // Each tab is a page, not a scroll position: start it at the top and drop
+  // the previous page's save hint.
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0 })
+    setSaveState('idle')
+  }, [tab])
+
   // Esc leaves settings; a nested dropdown consumes the first press instead.
   useEscapeKey(onClose, open)
 
@@ -170,15 +212,17 @@ export function SettingsDialog({
     .map(group => ({ ...group, items: group.items.filter(item => matchesItem(item, term)) }))
     .filter(group => group.items.length)
   const providers = settings?.llm?.providers ?? []
-  const activeProvider = settings?.llm?.activeProvider ?? 'mock'
-  const activeModel = settings?.llm?.activeModel ?? ''
-  const activeProviderName = providers.find(provider => provider.id === activeProvider)?.name
-    ?? (activeProvider === 'mock' ? 'Mock（离线）' : activeProvider)
+  const activeProvider = settings?.llm?.activeProvider ?? ''
+  const activeEntry = providers.find(provider => provider.id === activeProvider)
+  const activeModel = activeEntry ? settings?.llm?.activeModel ?? '' : ''
+  const activeProviderName = activeEntry?.name ?? '未配置模型'
 
   const handleSettingsChange = (next: PublicSettings) => {
     setSettings(next)
     onSaved?.()
   }
+
+  const flush = tab === 'providers' || tab === 'permissions'
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -230,7 +274,6 @@ export function SettingsDialog({
               ))}
               {matchedGroups.length ? null : <div className="settings-nav-empty">没有匹配的设置</div>}
             </nav>
-
           </aside>
 
           <section
@@ -239,90 +282,98 @@ export function SettingsDialog({
             role="tabpanel"
             aria-labelledby={`settings-tab-${tab}`}
           >
-            <button
-              className="icon-btn settings-close"
-              onClick={onClose}
-              aria-label="关闭设置"
-              title="关闭设置 (Esc)"
-            >
-              <CloseIcon />
-            </button>
-
             <header className="settings-page-head">
               <div className="settings-page-heading">
                 <h2>{active.label}</h2>
                 <p className="settings-page-sub">{active.description}</p>
               </div>
-              {tab === 'providers'
-                ? (
-                  <div className="settings-page-side">
-                    当前默认
-                    <strong>{activeProviderName}</strong>
-                    {activeModel ? <span>{activeModel}</span> : null}
-                  </div>
-                )
-                : null}
+              <div className="settings-page-actions">
+                {saveState !== 'idle'
+                  ? (
+                    <span className="settings-save-slot">
+                      <Toast tone={saveState === 'saved' ? 'ok' : saveState === 'error' ? 'error' : 'neutral'}>
+                        {SAVE_LABEL[saveState]}
+                      </Toast>
+                    </span>
+                  )
+                  : null}
+                {tab === 'providers'
+                  ? (
+                    <div className="settings-page-current">
+                      当前默认
+                      <strong>{activeProviderName}</strong>
+                      {activeModel ? <span>{activeModel}</span> : null}
+                    </div>
+                  )
+                  : null}
+                <IconButton className="settings-close" onClick={onClose} aria-label="关闭设置" title="关闭设置 (Esc)">
+                  <CloseIcon />
+                </IconButton>
+              </div>
             </header>
 
-            {loadError
-              ? <div className="detail-note error settings-load-error">{loadError}</div>
-              : null}
+            {loadError ? <div className="ui-notice error settings-load-error">{loadError}</div> : null}
 
-            {tab === 'behavior'
-              ? (
-                <GeneralSettings
-                  settings={settings}
-                  themePreference={themePreference}
-                  onThemeChange={onThemeChange}
-                  onSaved={handleSettingsChange}
-                />
-              )
-              : tab === 'providers'
+            <div className={flush ? 'settings-page-body flush' : 'settings-page-body'} ref={bodyRef}>
+              {tab === 'behavior'
                 ? (
-                  <ProvidersSettings
+                  <GeneralSettings
                     settings={settings}
-                    onSettingsChange={handleSettingsChange}
+                    themePreference={themePreference}
+                    onThemeChange={onThemeChange}
+                    skin={skin}
+                    onSkinChange={onSkinChange}
+                    showBrand={showBrand}
+                    onShowBrandChange={onShowBrandChange}
+                    collapsedMode={collapsedMode}
+                    onCollapsedModeChange={onCollapsedModeChange}
+                    onSaved={handleSettingsChange}
+                    onSaveState={setSaveState}
                   />
                 )
-                : tab === 'runtime'
-                  ? <PluginsSettings />
-                  : tab === 'protocols'
-                    ? <ProtocolsSettings sessionId={sessionId} />
-                    : tab === 'permissions'
-                      ? <PermissionsSettings />
-                      : tab === 'memory'
+                : tab === 'providers'
+                  ? (
+                    <ProvidersSettings
+                      settings={settings}
+                      onSettingsChange={handleSettingsChange}
+                    />
+                  )
+                  : tab === 'runtime'
+                    ? <PluginsSettings />
+                    : tab === 'protocols'
+                      ? <ProtocolsSettings sessionId={sessionId} />
+                      : tab === 'network'
                         ? (
-                          <div className="settings-page-body scroll">
-                            <Slot name="settings.memory" props={{ sessionId }} />
-                          </div>
+                          <NetworkSettings
+                            settings={settings}
+                            onSettingsChange={handleSettingsChange}
+                            onSaveState={setSaveState}
+                          />
                         )
-                        : tab === 'wiki'
-                          ? <WikiSettings />
-                          : tab === 'skills'
-                            ? (
-                              <>
-                                <SkillDraftsSettings />
-                                <Slot name="settings.eval" props={{ sessionId }} />
-                              </>
-                            )
-                          : tab === 'sandbox'
-                          ? (
-                            <div className="settings-page-body scroll">
-                              <Slot name="settings.sandbox" props={{ sessionId }} />
-                            </div>
-                          )
-                          : tab === 'hooks'
-                            ? (
-                              <div className="settings-page-body scroll">
-                                <Slot name="settings.hooks" props={{ sessionId }} />
-                                <Slot name="settings.rubric" props={{ sessionId }} />
-                              </div>
-                            )
-                            : (
-                              <div className="settings-page-body scroll">
-                                <Slot name="settings.gitee" props={{ sessionId }} />
-                              </div>
-                            )}
+                        : tab === 'permissions'
+                        ? <PermissionsSettings />
+                        : tab === 'memory'
+                          ? <div className="settings-slot"><Slot name="settings.memory" props={{ sessionId }} /></div>
+                          : tab === 'wiki'
+                            ? <WikiSettings />
+                            : tab === 'skills'
+                              ? (
+                                <>
+                                  <SkillDraftsSettings />
+                                  <div className="settings-slot"><Slot name="settings.eval" props={{ sessionId }} /></div>
+                                </>
+                              )
+                              : tab === 'sandbox'
+                                ? <div className="settings-slot"><Slot name="settings.sandbox" props={{ sessionId }} /></div>
+                                : tab === 'hooks'
+                                  ? (
+                                    <>
+                                      <div className="settings-slot"><Slot name="settings.hooks" props={{ sessionId }} /></div>
+                                      <div className="settings-slot"><Slot name="settings.rubric" props={{ sessionId }} /></div>
+                                    </>
+                                  )
+                                  : <div className="settings-slot"><Slot name="settings.gitee" props={{ sessionId }} /></div>}
+            </div>
           </section>
         </div>
       </div>

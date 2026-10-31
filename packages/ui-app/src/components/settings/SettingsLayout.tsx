@@ -1,13 +1,5 @@
 import type { ReactNode } from 'react'
 
-export function SettingsScroll({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={className ? `settings-panel-scroll ${className}` : 'settings-panel-scroll'}>
-      {children}
-    </div>
-  )
-}
-
 export function SettingsGroup({ label, children }: { label?: string; children: ReactNode }) {
   return (
     <section className="settings-group">

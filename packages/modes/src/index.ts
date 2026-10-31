@@ -92,6 +92,18 @@ export class ModeService extends Service {
     if (mode.denyTools?.includes(tool)) return false
     return true
   }
+
+  /**
+   * Whether the mode names this tool itself, rather than leaving it to the
+   * default catalog. Deferred tools stay visible in such a mode even before
+   * `tool_search` runs: the mode author already decided they belong there.
+   */
+  explicit(modeId: string | undefined, tool: string): boolean {
+    const mode = this.get(modeId)
+    if (!mode) return false
+    if (mode.denyTools?.includes(tool)) return false
+    return Boolean(mode.allowTools?.includes(tool) || mode.extraTools?.includes(tool))
+  }
 }
 
 export default ModeService

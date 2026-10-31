@@ -9,6 +9,8 @@
   "dependencies": {
     "@ruobai/approval": "workspace:*",
     "@ruobai/cordis": "workspace:*",
+    "@ruobai/net": "workspace:*",
+    "@ruobai/provider-catalog": "workspace:*",
     "@ruobai/settings": "workspace:*",
     "@ruobai/web-server": "workspace:*"
   }

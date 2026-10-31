@@ -26,6 +26,8 @@ export function apply(ctx: Context) {
   ctx.effect(() => ctx.modes.register(mode), 'mode-goal.register')
   ctx.effect(() => ctx.tools.register({
     name: GOAL_COMPLETE,
+    defer: true,
+    keywords: ['goal', 'complete', '目标', '完成'],
     description: 'Mark the current goal as complete and stop the autonomous turn.',
     readOnly: true,
     parameters: {

@@ -28,6 +28,88 @@ async function setup(config: ConstructorParameters<typeof SandboxPolicyService>[
   return { ctx, root, policy: ctx.sandboxPolicy }
 }
 
+describe('user settings drive the policy', () => {
+  it('uses the domain list through the proxy and adds extra write roots', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rbh-policy-settings-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    const ctx = new Context()
+    class StubSettings extends Service {
+      constructor(inner: Context) {
+        super(inner, 'settings')
+      }
+
+      get() {
+        return {
+          sandbox: {
+            network: { allowedDomains: ['example.com'], allowLocalBinding: false },
+            filesystem: { allowWrite: ['~/rbh-extra-write'] },
+          },
+        }
+      }
+    }
+    const settings = ctx.plugin(StubSettings)
+    await settings
+    const fiber = ctx.plugin(SandboxPolicyService, { root })
+    await fiber
+    cleanups.push(() => fiber.dispose(), () => settings.dispose())
+
+    const proxy = ctx.sandboxPolicy.forSession({ proxyPort: 7777 })
+    expect(proxy.net).toMatchObject({ mode: 'proxy', allowLocalBinding: false })
+    expect(proxy.fs.write.some(grant => grant.path.endsWith('/rbh-extra-write'))).toBe(true)
+
+    // Without a proxy port the same list fails closed instead of opening a
+    // kernel-level allowlist Seatbelt cannot express.
+    expect(ctx.sandboxPolicy.forSession({}).net.mode).toBe('deny')
+  })
+
+  it('keeps localhost binding when the user allows it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rbh-policy-local-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    const ctx = new Context()
+    class StubSettings extends Service {
+      constructor(inner: Context) {
+        super(inner, 'settings')
+      }
+
+      get() {
+        return { sandbox: { network: { allowedDomains: [], allowLocalBinding: true } } }
+      }
+    }
+    const settings = ctx.plugin(StubSettings)
+    await settings
+    const fiber = ctx.plugin(SandboxPolicyService, { root })
+    await fiber
+    cleanups.push(() => fiber.dispose(), () => settings.dispose())
+
+    const snapshot = ctx.sandboxPolicy.forSession({})
+    expect(snapshot.net).toMatchObject({ mode: 'deny', allowLocalBinding: true })
+  })
+  it('uses the built-in defaults before the user touches sandbox settings', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'rbh-policy-defaults-'))
+    cleanups.push(() => rm(root, { recursive: true, force: true }))
+    const ctx = new Context()
+    class EmptySettings extends Service {
+      constructor(inner: Context) {
+        super(inner, 'settings')
+      }
+
+      get() {
+        return {}
+      }
+    }
+    const settings = ctx.plugin(EmptySettings)
+    await settings
+    const fiber = ctx.plugin(SandboxPolicyService, { root })
+    await fiber
+    cleanups.push(() => fiber.dispose(), () => settings.dispose())
+
+    expect(ctx.sandboxPolicy.forSession({ proxyPort: 7777 }).net).toMatchObject({
+      mode: 'proxy',
+      allowLocalBinding: true,
+    })
+  })
+})
+
 describe('globToRegExp', () => {
   it('keeps * inside a segment and lets ** cross directories', () => {
     expect(globToRegExp('/w/*.env').test('/w/a.env')).toBe(true)

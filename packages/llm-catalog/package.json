@@ -10,6 +10,7 @@
     "@ruobai/cordis": "workspace:*",
     "@ruobai/llm": "workspace:*",
     "@ruobai/llm-openai": "workspace:*",
+    "@ruobai/net": "workspace:*",
     "@ruobai/settings": "workspace:*"
   }
 }

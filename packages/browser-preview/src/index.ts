@@ -458,7 +458,8 @@ function clickTool(service: BrowserPreviewService, allowedHosts: string[], confi
   return {
     name: 'browser_click',
     description: [
-      'Click an element in the open page by uid from browser_snapshot, or by CSS selector.',
+      'Click an element in the open page by uid from a fresh browser_snapshot, or by CSS selector.',
+      'Take a new snapshot after an action that changes the UI before the next click; stale uids fail.',
       'The page keeps its state for the next call, so click then snapshot/screenshot to verify.',
     ].join(' '),
     readOnly: false,
@@ -495,7 +496,8 @@ function fillTool(service: BrowserPreviewService, allowedHosts: string[], config
     name: 'browser_fill',
     description: [
       'Set the value of an input, textarea, select or contenteditable element in the open page,',
-      'by uid from browser_snapshot or by CSS selector; input and change events are dispatched.',
+      'by uid from a fresh browser_snapshot or by CSS selector; input and change events are dispatched.',
+      'Snapshot again before the next click: one action per call, or a React state update may not have rendered.',
     ].join(' '),
     readOnly: false,
     parameters: {
@@ -597,6 +599,8 @@ function networkTool(service: BrowserPreviewService, allowedHosts: string[], con
 function resizeTool(service: BrowserPreviewService, allowedHosts: string[], config: Config): ToolDefinition {
   return {
     name: 'browser_resize',
+    defer: true,
+    keywords: ['browser', 'viewport', 'resize', 'mobile', '浏览器', '尺寸', '移动端'],
     description: [
       'Resize the open page: mobile (375x812), tablet (768x1024), desktop (the configured size),',
       'or explicit width/height; colorScheme re-emulates prefers-color-scheme. The page reloads',
@@ -631,6 +635,8 @@ function resizeTool(service: BrowserPreviewService, allowedHosts: string[], conf
 function closeTool(service: BrowserPreviewService, allowedHosts: string[], config: Config): ToolDefinition {
   return {
     name: 'browser_close',
+    defer: true,
+    keywords: ['browser', 'close', 'page', '浏览器', '关闭'],
     description: 'Close the open page (or every page of this session with all) and free its Chrome process.',
     readOnly: true,
     parameters: {
@@ -737,9 +743,10 @@ function evalTool(service: BrowserPreviewService, allowedHosts: string[], config
     name: 'browser_eval',
     description: [
       'Evaluate one JavaScript expression in the open page and return the JSON value.',
-      'Use it for computed styles, element sizes, scrollWidth overflow checks and',
-      'prefers-color-scheme assertions. It runs in the page the other browser_* tools use,',
-      'so interaction state is visible to it.',
+      'Inspection only: use it for computed styles, element sizes, scrollWidth overflow checks and',
+      'prefers-color-scheme assertions. Do not click, fill, scroll or otherwise act through it —',
+      'use browser_click and browser_fill so the transcript and verification stay honest.',
+      'It runs in the page the other browser_* tools use, so interaction state is visible to it.',
     ].join(' '),
     readOnly: true,
     parameters: {

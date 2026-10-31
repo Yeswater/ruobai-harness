@@ -4,12 +4,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join, relative, sep } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { Context } from '@ruobai/cordis'
+import type {} from '@ruobai/net'
 import { parseSkillDocument } from '@ruobai/skills'
 import type {} from '@ruobai/workspace'
 import { HttpError, readJson, sendJson } from '@ruobai/web-server'
 
 export const name = 'skills-web'
-export const inject = ['web', 'skills', 'sessions', 'workspace']
+export const inject = ['web', 'skills', 'sessions', 'workspace', 'net']
 
 const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -103,14 +104,14 @@ async function handleSkillHub(ctx: Context, req: IncomingMessage, res: ServerRes
       const value = url.searchParams.get(key)
       if (value) params.set(key, value)
     }
-    const body: any = await hubJson(`/api/skills?${params.toString()}`)
+    const body: any = await hubJson(ctx, `/api/skills?${params.toString()}`)
     sendJson(res, 200, { skills: body?.data?.skills ?? [], total: body?.data?.total ?? 0 })
     return
   }
 
   if (url.pathname === '/api/skillhub/categories') {
     if (req.method !== 'GET') throw new HttpError(405, 'method not allowed')
-    const body: any = await hubJson('/api/v1/categories')
+    const body: any = await hubJson(ctx, '/api/v1/categories')
     sendJson(res, 200, { items: body?.items ?? [] })
     return
   }
@@ -119,7 +120,7 @@ async function handleSkillHub(ctx: Context, req: IncomingMessage, res: ServerRes
     if (req.method !== 'GET') throw new HttpError(405, 'method not allowed')
     const section = url.searchParams.get('section') ?? 'recommended'
     if (!['recommended', 'trending', 'new'].includes(section)) throw new HttpError(400, 'invalid section')
-    const body: any = await hubJson(`/api/v1/showcase/${section}`)
+    const body: any = await hubJson(ctx, `/api/v1/showcase/${section}`)
     sendJson(res, 200, { skills: body?.skills ?? [] })
     return
   }
@@ -154,14 +155,14 @@ async function handleSkillHub(ctx: Context, req: IncomingMessage, res: ServerRes
   throw new HttpError(404, 'not found')
 }
 
-async function hubJson(path: string) {
+async function hubJson(ctx: Context, path: string) {
   let last: unknown
   // The public edge occasionally drops one of the three parallel first-load
   // requests; a couple of short retries keeps the skills page from flashing an
   // error while the other two sections render.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(`${SKILLHUB_API}${path}`, {
+      const response = await ctx.net.fetch(`${SKILLHUB_API}${path}`, {
         headers: { accept: 'application/json' },
         signal: AbortSignal.timeout(SKILLHUB_TIMEOUT_MS),
       })
@@ -183,7 +184,7 @@ async function hubJson(path: string) {
 async function installHubSkill(ctx: Context, slug: string, sessionId: string) {
   let response: Response
   try {
-    response = await fetch(`${SKILLHUB_API}/api/v1/download?slug=${encodeURIComponent(slug)}`, {
+    response = await ctx.net.fetch(`${SKILLHUB_API}/api/v1/download?slug=${encodeURIComponent(slug)}`, {
       redirect: 'follow',
       signal: AbortSignal.timeout(45_000),
     })

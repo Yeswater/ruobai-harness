@@ -1,5 +1,10 @@
 # macOS 沙箱层设计：Seatbelt × Cordis 插件化
 
+> **2026-10-31 说明**：审批模型已按 Claude Code 重构为"边界即授权"——沙箱内命令免审批、
+> 域名白名单走本机代理、越过边界才审批。当前设计见 [`docs/sandbox.md`](sandbox.md)。
+> 本文仍有效的是 Seatbelt 机制、profile 结构与全部实测数据；其中 §2.7（网络默认完全关闭）
+> 与 §3（路径级 escalation）已不再代表应用行为。
+
 > 目标仓库：ruobai-harness（`cordis.yml` 驱动，Cordis 插件框架）
 > 平台：macOS 26.6.2 (25G83)、Apple Silicon、`/usr/bin/sandbox-exec`
 > 本文所有"实测"结论都在本机跑过，命令与结果见附录 A。未验证的 SBPL 语法用 ⚠️ 标出。

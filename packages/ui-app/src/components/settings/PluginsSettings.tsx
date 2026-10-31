@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, type RuntimeInfo } from '../../api.ts'
 import { SearchIcon } from '../Icons.tsx'
-import { SettingsGroup, SettingsScroll } from './SettingsLayout.tsx'
+import { SettingsGroup } from './SettingsLayout.tsx'
+import { EmptyState, Switch } from '../ui/index.tsx'
 
 function runtimeState(state: string) {
   if (state === 'ACTIVE') return 'ok'
@@ -65,7 +66,7 @@ export function PluginsSettings() {
   const globalPlugins = plugins.filter(plugin => !plugin.name.includes('mode-'))
 
   return (
-    <SettingsScroll className="plugins-page">
+    <div className="plugins-page">
       <div className="plugin-search">
         <SearchIcon size={14} />
         <input
@@ -80,7 +81,7 @@ export function PluginsSettings() {
       </div>
       <p className="settings-section-note">开关作用于当前进程，重启后按 cordis.yml 恢复。</p>
 
-      {runtimeError ? <div className="detail-note error">{runtimeError}</div> : null}
+      {runtimeError ? <div className="ui-notice error">{runtimeError}</div> : null}
 
       {runtime
         ? (
@@ -111,11 +112,11 @@ export function PluginsSettings() {
               ))}
             </SettingsGroup>
 
-            {plugins.length ? null : <div className="detail-note">没有匹配的插件。</div>}
+            {plugins.length ? null : <EmptyState title="没有匹配的插件">换个关键词试试，或清空搜索查看全部。</EmptyState>}
           </>
         )
         : <div className="loading">loading plugins…</div>}
-    </SettingsScroll>
+    </div>
   )
 }
 
@@ -143,17 +144,12 @@ function PluginRow({ plugin, busy, onToggle }: {
       </div>
       {plugin.toggleable && plugin.entryId
         ? (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={plugin.enabled}
-            aria-label={`${plugin.enabled ? '停用' : '启用'} ${title}`}
-            className={`plugin-switch ${plugin.enabled ? 'on' : ''}`}
+          <Switch
+            checked={plugin.enabled}
+            label={`${plugin.enabled ? '停用' : '启用'} ${title}`}
             disabled={busy}
-            onClick={() => onToggle(plugin.entryId!, !plugin.enabled)}
-          >
-            <span />
-          </button>
+            onChange={() => onToggle(plugin.entryId!, !plugin.enabled)}
+          />
         )
         : null}
     </article>

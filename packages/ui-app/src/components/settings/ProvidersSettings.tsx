@@ -9,9 +9,11 @@ import {
   type PublicSettings,
 } from '../../api.ts'
 import { useConfirm } from '../ConfirmDialog.tsx'
+import { formatTokens } from '../ContextCard.tsx'
 import { CloseIcon, PlusIcon } from '../Icons.tsx'
 import { Select } from '../Select.tsx'
 import { TokenAmountInput } from '../TokenAmountInput.tsx'
+import { Button, Disclosure } from '../ui/index.tsx'
 
 interface ProvidersSettingsProps {
   settings: PublicSettings | null
@@ -27,6 +29,7 @@ interface Draft {
   apiKey: string
   mode: ProviderMode
   models: ProviderModel[]
+  preset?: string
 }
 
 function draftOf(provider?: PublicProvider | null): Draft {
@@ -38,6 +41,7 @@ function draftOf(provider?: PublicProvider | null): Draft {
     baseUrl: provider?.baseUrl ?? 'https://api.deepseek.com/v1',
     apiKey: '',
     mode: provider?.mode ?? 'direct',
+    preset: provider?.preset,
     models: provider?.models.map(model => ({
       ...model,
       // Existing models predate capability metadata; keep images enabled until
@@ -50,7 +54,7 @@ function draftOf(provider?: PublicProvider | null): Draft {
 export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSettingsProps) {
   const confirm = useConfirm()
   const providers = settings?.llm?.providers ?? []
-  const activeProvider = settings?.llm?.activeProvider ?? 'mock'
+  const activeProvider = settings?.llm?.activeProvider ?? ''
   const activeModel = settings?.llm?.activeModel ?? ''
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -60,6 +64,9 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
   const [notice, setNotice] = useState<string | null>(null)
   const [presets, setPresets] = useState<ProviderPreset[]>([])
   const [presetPick, setPresetPick] = useState('')
+  const [quickPreset, setQuickPreset] = useState('')
+  const [quickKey, setQuickKey] = useState('')
+  const [quickBusy, setQuickBusy] = useState(false)
 
   useEffect(() => {
     void api.providerPresets().then(setPresets).catch(() => undefined)
@@ -77,9 +84,12 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
       note: preset.note ?? '',
       website: preset.website ?? '',
       baseUrl: preset.baseUrl,
+      preset: preset.id,
       models: preset.models.map(model => known.get(model.id) ?? {
         id: model.id,
-        name: '',
+        name: model.name ?? '',
+        contextWindow: model.contextWindow,
+        maxOutputTokens: model.maxOutputTokens,
         inputTypes: model.inputTypes ?? ['text'],
       }),
     })
@@ -87,6 +97,7 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
   }
 
   const selected = providers.find(provider => provider.id === selectedId)
+  const quick = presets.find(item => item.id === quickPreset)
 
   // Server settings are authoritative. Prefer the provider the user is
   // editing; fall back to the active one when it disappeared.
@@ -160,12 +171,19 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
         baseUrl: draft.baseUrl,
         apiKey: draft.apiKey || undefined,
         id: draft.id,
+        preset: draft.preset,
       })
       const known = new Map(draft.models.filter(model => model.id).map(model => [model.id, model]))
       const merged = [...draft.models]
       for (const model of models) {
         if (!model.id || known.has(model.id)) continue
-        const entry: ProviderModel = { id: model.id, inputTypes: ['text'] }
+        const entry: ProviderModel = {
+          id: model.id,
+          name: model.name,
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxOutputTokens,
+          inputTypes: model.inputTypes ?? ['text'],
+        }
         known.set(model.id, entry)
         merged.push(entry)
       }
@@ -179,12 +197,71 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
     }
   }
 
+  const quickConnect = async () => {
+    const preset = presets.find(item => item.id === quickPreset)
+    if (!preset) {
+      setError('先选择厂商')
+      return
+    }
+    setQuickBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      let next = await api.createProvider({
+        preset: preset.id,
+        ...(quickKey.trim() ? { apiKey: quickKey.trim() } : {}),
+      })
+      const provider = next.llm?.providers.find(item => item.preset === preset.id)
+        ?? next.llm?.providers.find(item => item.name === preset.name)
+      if (!provider) throw new Error('接入后没有找到供应商配置')
+
+      let models = provider.models
+      let fetchNote = ''
+      try {
+        const fetched = await api.fetchProviderModels({ id: provider.id, preset: preset.id })
+        if (fetched.length) {
+          models = fetched.map(model => ({ ...model }))
+          next = await api.updateProvider(provider.id, {
+            name: provider.name,
+            baseUrl: provider.baseUrl,
+            mode: provider.mode,
+            preset: preset.id,
+            models,
+          })
+        }
+      } catch (caught) {
+        // The key still works for chat; only the catalog probe failed.
+        fetchNote = `，但获取模型列表失败：${caught instanceof Error ? caught.message : String(caught)}`
+      }
+
+      if (models[0]?.id) next = await api.activateProvider(provider.id, models[0].id)
+      const saved = next.llm?.providers.find(item => item.id === provider.id) ?? provider
+      onSettingsChange(next)
+      setSelectedId(saved.id)
+      setDraft(draftOf(saved))
+      setDefaultModel(
+        saved.id === next.llm?.activeProvider ? next.llm?.activeModel ?? '' : saved.models[0]?.id ?? '',
+      )
+      setQuickPreset('')
+      setQuickKey('')
+      setNotice(`已接入 ${saved.name}，共 ${saved.models.length} 个模型${fetchNote}`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setQuickBusy(false)
+    }
+  }
+
   const save = async () => {
     if (!draft) return
     setBusy('save')
     setError(null)
     setNotice(null)
     try {
+      const name = draft.name.trim()
+      const baseUrl = draft.baseUrl.trim()
+      if (!name) throw new Error('请填写供应商名称')
+      if (!baseUrl) throw new Error('请填写请求地址')
       const seen = new Set<string>()
       const models: ProviderModel[] = []
       for (const model of draft.models) {
@@ -194,8 +271,10 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
         seen.add(id)
         const next: ProviderModel = { id }
         if (model.name?.trim()) next.name = model.name.trim()
-        if (model.contextWindow && model.contextWindow > 0) next.contextWindow = Math.floor(model.contextWindow)
-        if (model.maxOutputTokens && model.maxOutputTokens > 0) next.maxOutputTokens = Math.floor(model.maxOutputTokens)
+        const contextWindow = Number(model.contextWindow)
+        if (Number.isFinite(contextWindow) && contextWindow > 0) next.contextWindow = Math.floor(contextWindow)
+        const maxOutputTokens = Number(model.maxOutputTokens)
+        if (Number.isFinite(maxOutputTokens) && maxOutputTokens > 0) next.maxOutputTokens = Math.floor(maxOutputTokens)
         next.inputTypes = model.inputTypes?.length ? model.inputTypes : ['text']
         models.push(next)
       }
@@ -203,12 +282,13 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
         setDefaultModel(models[0]?.id ?? '')
       }
       const input: ProviderInput = {
-        name: draft.name.trim(),
+        name,
         note: draft.note.trim() || undefined,
         website: draft.website.trim() || undefined,
-        baseUrl: draft.baseUrl.trim(),
+        baseUrl,
         mode: draft.mode,
         models,
+        ...(draft.preset ? { preset: draft.preset } : {}),
         ...(draft.apiKey ? { apiKey: draft.apiKey } : {}),
       }
       const next = draft.id
@@ -310,6 +390,55 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
         {draft
           ? (
             <>
+              {!draft.id ? (
+                <div className="settings-form-section quick-connect">
+                  <h3 className="settings-form-title">快速接入</h3>
+                  <p className="field-help">
+                    选择官方厂商，填 API Key 就会自动带入地址、模型、上下文窗口和图片能力。
+                  </p>
+                  <div className="form-row two">
+                    <label className="field">
+                      <span>厂商</span>
+                      <Select
+                        value={quickPreset}
+                        options={[
+                          { value: '', label: '选择厂商…' },
+                          ...presets.map(preset => ({
+                            value: preset.id,
+                            label: preset.name,
+                            description: preset.baseUrl,
+                          })),
+                        ]}
+                        onChange={setQuickPreset}
+                        ariaLabel="选择厂商"
+                      />
+                    </label>
+                    <label className="field">
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        value={quickKey}
+                        onChange={event => setQuickKey(event.target.value)}
+                        placeholder={quick?.note ?? 'sk-…'}
+                        autoComplete="off"
+                      />
+                    </label>
+                  </div>
+                  <div className="quick-connect-actions">
+                    {quick?.keyUrl
+                      ? (
+                        <a href={quick.keyUrl} target="_blank" rel="noreferrer">
+                          获取 API Key ↗
+                        </a>
+                      )
+                      : <span className="field-help">{quick?.note}</span>}
+                    <button className="btn" onClick={quickConnect} disabled={quickBusy || !quickPreset}>
+                      {quickBusy ? '接入中…' : '接入并获取模型'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="settings-form-section">
                 <h3 className="settings-form-title">基本信息</h3>
                 {presets.length
@@ -402,80 +531,97 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
               <div className="settings-form-section">
                 <div className="settings-form-title-row">
                   <h3 className="settings-form-title">模型</h3>
-                  <button className="btn ghost compact" onClick={fetchModels} disabled={busy !== null}>
+                  <Button variant="ghost" small onClick={fetchModels} disabled={busy !== null}>
                     {busy === 'models' ? '获取中…' : '获取模型列表'}
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="model-editor">
                   {draft.models.map((model, index) => (
-                    <div className="model-card" key={index}>
-                      <div className="model-card-head">
-                        <input
-                          className="model-id-input mono"
-                          value={model.id}
-                          onChange={event => updateModel(index, { id: event.target.value })}
-                          placeholder="模型 ID，例如 deepseek-chat"
-                          aria-label="Model id"
-                        />
-                        <input
-                          className="model-name-input"
-                          value={model.name ?? ''}
-                          onChange={event => updateModel(index, { name: event.target.value })}
-                          placeholder="显示名称，例如 DeepSeek-V4.1-Flash"
-                          aria-label="Model display name"
-                        />
-                        <button
-                          className="icon-btn subtle"
-                          onClick={() => removeModel(index)}
-                          aria-label={`删除模型 ${model.id || index + 1}`}
-                        >
-                          <CloseIcon size={13} />
-                        </button>
-                      </div>
-                      <div className="model-card-row">
-                        <label className="model-mini-field">
-                          <span>上下文窗口</span>
-                          <TokenAmountInput
-                            value={model.contextWindow}
-                            onChange={contextWindow => updateModel(index, { contextWindow })}
-                            ariaLabel="上下文窗口"
+                    <Disclosure
+                      key={index}
+                      defaultOpen={!model.id}
+                      title={model.name || model.id || '新模型'}
+                      meta={model.contextWindow ? `${formatTokens(model.contextWindow)} 上下文` : '未设置窗口'}
+                    >
+                      <div className="model-card">
+                        <div className="model-card-row">
+                          <input
+                            className="model-id-input mono"
+                            value={model.id}
+                            onChange={event => updateModel(index, { id: event.target.value })}
+                            placeholder="模型 ID，例如 deepseek-chat"
+                            aria-label="Model id"
                           />
-                        </label>
-                        <label className="model-mini-field">
-                          <span>最大输出 token</span>
-                          <TokenAmountInput
-                            value={model.maxOutputTokens}
-                            onChange={maxOutputTokens => updateModel(index, { maxOutputTokens })}
-                            ariaLabel="最大输出 token"
+                          <input
+                            className="model-name-input"
+                            value={model.name ?? ''}
+                            onChange={event => updateModel(index, { name: event.target.value })}
+                            placeholder="显示名称，例如 DeepSeek-V4.1-Flash"
+                            aria-label="Model display name"
                           />
-                        </label>
-                      </div>
-                      <div className="model-types">
-                        <span>输入类型</span>
-                        {(['text', 'image'] as const).map(type => (
-                          <label key={type}>
-                            <input
-                              type="checkbox"
-                              checked={(model.inputTypes ?? ['text']).includes(type)}
-                              onChange={(event) => {
-                                const current = model.inputTypes ?? ['text']
-                                const next = event.target.checked
-                                  ? [...new Set([...current, type])]
-                                  : current.filter(item => item !== type)
-                                updateModel(index, { inputTypes: next })
-                              }}
+                          <Button
+                            variant="ghost"
+                            small
+                            onClick={() => removeModel(index)}
+                            aria-label={`删除模型 ${model.id || index + 1}`}
+                          >
+                            <CloseIcon size={13} />
+                          </Button>
+                        </div>
+                        <div className="model-card-row two">
+                          <label className="model-mini-field">
+                            <span>上下文窗口</span>
+                            <TokenAmountInput
+                              value={model.contextWindow}
+                              onChange={contextWindow => updateModel(index, { contextWindow })}
+                              ariaLabel="上下文窗口"
                             />
-                            {type === 'image' ? '图片' : '文本'}
                           </label>
-                        ))}
+                          <label className="model-mini-field">
+                            <span>最大输出 token</span>
+                            <TokenAmountInput
+                              value={model.maxOutputTokens}
+                              onChange={maxOutputTokens => updateModel(index, { maxOutputTokens })}
+                              ariaLabel="最大输出 token"
+                            />
+                          </label>
+                        </div>
+                        {model.contextWindow || model.inputTypes?.length ? (
+                          <div className="model-capabilities">
+                            {model.contextWindow ? <span className="model-chip">{formatTokens(model.contextWindow)} 上下文</span> : null}
+                            {model.maxOutputTokens ? <span className="model-chip">输出 {formatTokens(model.maxOutputTokens)}</span> : null}
+                            <span className="model-chip">
+                              {model.inputTypes?.includes('image') ? '支持图片' : '纯文本'}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className="model-types">
+                          <span>输入类型</span>
+                          {(['text', 'image'] as const).map(type => (
+                            <label key={type}>
+                              <input
+                                type="checkbox"
+                                checked={(model.inputTypes ?? ['text']).includes(type)}
+                                onChange={(event) => {
+                                  const current = model.inputTypes ?? ['text']
+                                  const next = event.target.checked
+                                    ? [...new Set([...current, type])]
+                                    : current.filter(item => item !== type)
+                                  updateModel(index, { inputTypes: next })
+                                }}
+                              />
+                              {type === 'image' ? '图片' : '文本'}
+                            </label>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    </Disclosure>
                   ))}
-                  <button className="btn ghost model-add" onClick={addModel}>
+                  <Button variant="ghost" small className="model-add" onClick={addModel}>
                     <PlusIcon size={14} />
                     添加模型
-                  </button>
+                  </Button>
                 </div>
 
                 <p className="field-help">
@@ -484,26 +630,29 @@ export function ProvidersSettings({ settings, onSettingsChange }: ProvidersSetti
                 </p>
               </div>
 
-              {error ? <div className="detail-note error">{error}</div> : null}
-              {notice ? <div className="detail-note">{notice}</div> : null}
-
               <div className="provider-actions">
                 {draft.id ? (
-                  <button className="btn ghost danger" onClick={remove} disabled={busy !== null}>删除</button>
+                  <Button variant="danger" onClick={remove} disabled={busy !== null}>删除</Button>
                 ) : null}
-                <span className="spacer" />
+                <span
+                  className={`provider-action-status ${error ? 'error' : ''}`}
+                  role={error ? 'alert' : 'status'}
+                  title={error ?? notice ?? ''}
+                >
+                  {error ?? notice ?? ''}
+                </span>
                 {draft.id ? (
-                  <button
-                    className="btn ghost"
+                  <Button
+                    variant="ghost"
                     onClick={activate}
                     disabled={busy !== null || activeProvider === draft.id}
                   >
                     {activeProvider === draft.id ? '当前供应商' : '设为当前'}
-                  </button>
+                  </Button>
                 ) : null}
-                <button className="btn" onClick={save} disabled={busy !== null}>
+                <Button variant="primary" onClick={save} disabled={busy !== null}>
                   {busy === 'save' ? '保存中…' : '保存'}
-                </button>
+                </Button>
               </div>
             </>
           )

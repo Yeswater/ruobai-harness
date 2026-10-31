@@ -190,4 +190,41 @@ describe('agent modes', () => {
     if (tool?.type === 'tool') expect(tool.name).toBe('goal_complete')
     expect(step).toBe(2)
   })
+
+  it('Agent mode loads a deferred integration tool with tool_search', async () => {
+    const harness = await createHarness()
+    harnesses.push(harness)
+
+    const seen: string[][] = []
+    await useScripted(harness.ctx, {
+      name: 'scripted',
+      async *stream(request) {
+        seen.push((request.tools ?? []).map(tool => tool.name))
+        if (seen.length === 1) {
+          yield {
+            type: 'tool-call',
+            id: 'call_search',
+            name: 'tool_search',
+            arguments: JSON.stringify({ query: 'gitee issue' }),
+          }
+          yield { type: 'done', reason: 'tool-calls' }
+        } else {
+          yield { type: 'text-delta', text: 'done' }
+          yield { type: 'done', reason: 'stop' }
+        }
+      },
+    })
+
+    const session = harness.ctx.chat.create(undefined, 'agent')
+    const done = nextDone(harness.ctx)
+    harness.ctx.chat.send(session.id, 'look at a gitee issue')
+    await done
+
+    expect(seen[0]).toContain('tool_search')
+    expect(seen[0]).not.toContain('gitee_repo')
+    expect(seen[1]).toContain('gitee_repo')
+    // Ask mode names the read-only Gitee tools itself, so they stay visible there.
+    expect(harness.ctx.modes.explicit('ask', 'gitee_repo')).toBe(true)
+    expect(harness.ctx.modes.explicit('agent', 'gitee_repo')).toBe(false)
+  })
 })

@@ -1,28 +1,36 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@ruobai/cordis'
 import z from '@ruobai/schemastery'
-import type { SandboxRunResult } from '@ruobai/sandbox'
+import {
+  DEFAULT_EXCLUDED_COMMANDS,
+  isExcludedCommand,
+  type SandboxRunResult,
+} from '@ruobai/sandbox'
 import type { Denial, DenialService } from '@ruobai/sandbox-denial'
 import type { SandboxPolicyService } from '@ruobai/sandbox-policy'
-import type { EscalationService } from '@ruobai/sandbox-escalation'
+import type { SandboxProxyService } from '@ruobai/sandbox-proxy'
 import { renderOutput, scrubbedEnv, ShellUnavailableError, type ShellRunResult, type ShellRunSpec } from '@ruobai/shell'
-import type { Exemption } from '@ruobai/sandbox'
 import type { SettingsService } from '@ruobai/settings'
 
 export interface Config {
   /**
-   * Default escalation mode. A session can override it from the status panel;
-   * `never` still reports denials to the model, it only skips the prompt.
+   * Extra commands that always run outside the sandbox. Added to the user's
+   * `sandbox.excludedCommands`.
    */
-  escalate?: 'auto' | 'never'
+  excludedCommands?: string[]
 }
 
 function outputOf(result: SandboxRunResult) {
   return { stdout: result.stdout, stderr: result.stderr, truncated: result.truncated }
 }
 
+export interface DenialGuidance {
+  /** Whether the user allows a retry outside the sandbox. */
+  allowUnsandboxed?: boolean
+}
+
 /** The denial block the model actually reads. */
-export function renderDenials(denials: readonly Denial[], settled?: { decision: string; attempt: number }) {
+export function renderDenials(denials: readonly Denial[], guidance: DenialGuidance = {}) {
   if (!denials.length) return ''
   const lines = ['', '[sandbox] 操作被 macOS Seatbelt 拒绝（不是文件权限不足，sudo 无效）']
   for (const denial of denials) {
@@ -31,8 +39,14 @@ export function renderDenials(denials: readonly Denial[], settled?: { decision: 
     if (denial.target) lines.push(`target: ${denial.target}`)
     lines.push(`evidence: ${denial.evidence} (${denial.confidence})`)
   }
-  if (settled) lines.push(`decision: ${settled.decision} (attempt ${settled.attempt})`)
-  lines.push('请勿重试同一操作；如需该资源，请让用户把它复制进工作区或显式放宽策略。')
+  if (denials.some(denial => denial.kind === 'network-outbound')) {
+    lines.push('网络请求被沙箱拦截。允许的域名在 设置 → 沙箱 → 允许的域名 中维护；沙箱内只有该列表和本地回环可达。')
+  }
+  lines.push(
+    guidance.allowUnsandboxed === false
+      ? '请勿重试同一操作；请让用户在 设置 → 沙箱 中调整策略，或把所需资源复制进工作区。'
+      : '不要原样反复重试：说明原因后可请用户批准，再用 bash 的 dangerouslyDisableSandbox: true 重跑一次，或在 设置 → 沙箱 中放宽策略。',
+  )
   return lines.join('\n')
 }
 
@@ -51,56 +65,85 @@ export function renderDenialNotice(denials: readonly Denial[]) {
   return `[sandbox] 命令成功，但其中有操作被拒绝：${parts.join('; ')}（未升级审批）`
 }
 
-/** Human/model readable form of one exemption. */
-export function describeExemption(exemption: Exemption): string {
-  if (exemption.kind === 'guard-read' || exemption.kind === 'guard-write') {
-    return `${exemption.kind}:${exemption.guard}`
-  }
-  return `${exemption.kind}:${exemption.path}`
+/** Proxy-level denials leave no kernel record; name the hosts explicitly. */
+export function renderProxyDenials(hosts: readonly string[]) {
+  if (!hosts.length) return ''
+  return `\n[sandbox] 沙箱代理拒绝了网络请求：${hosts.join(', ')}。可在 设置 → 沙箱 → 允许的域名 中添加，或经批准后不经沙箱重试。`
+}
+
+interface SandboxUserSettings {
+  allowUnsandboxedCommands?: boolean
+  excludedCommands?: string[]
 }
 
 /**
- * The default executor: confines every command through `ctx.sandbox` and turns
- * denials into approvals. Mounting `@ruobai/shell-direct` instead is an
- * explicit opt-out; with neither mounted `tool-bash` fails closed.
+ * The default executor: confines every command through `ctx.sandbox`.
+ *
+ * The boundary is the security decision, so a command that stays inside it
+ * runs without an approval prompt (the approval policy decides that). Only
+ * commands that leave the sandbox — explicitly requested, or listed in
+ * `excludedCommands` — go through the direct executor.
  */
 export default class SandboxedShell {
   static inject = ['shell', 'sandbox', 'sandboxPolicy', 'denial']
 
   static Config: z<Config> = z.object({
-    escalate: z.union([z.const('auto'), z.const('never')]).default('auto'),
+    excludedCommands: z.array(z.string()).default([]),
   })
 
   constructor(ctx: Context, config: Config = {}) {
     const policyService = ctx.get('sandboxPolicy') as SandboxPolicyService
     const denialService = ctx.get('denial') as DenialService
-    const escalate = config.escalate ?? 'auto'
+    const settings = () => (ctx.get('settings', false) as SettingsService | undefined)?.get().sandbox as
+      | SandboxUserSettings
+      | undefined
 
-    const runOnce = async (spec: ShellRunSpec, relax: readonly Exemption[] = []) => {
-      const policy = policyService.forSession({ sessionId: spec.sessionId })
+    const runDirect = async (spec: ShellRunSpec, note: string): Promise<ShellRunResult> => {
+      const direct = ctx.shell.executor('direct')
+      if (!direct) {
+        throw new ShellUnavailableError('this command needs the direct executor, which is not registered')
+      }
+      const result = await direct.run(spec)
+      return {
+        ...result,
+        executor: 'direct',
+        sandboxed: false,
+        content: `[sandbox] ${note}\n${result.content}`,
+      }
+    }
+
+    const runOnce = async (spec: ShellRunSpec) => {
+      // Resolved per run so a settings change or a proxy restart applies at once.
+      const proxy = ctx.get('sandboxProxy', false) as SandboxProxyService | undefined
+      const policy = policyService.forSession({
+        sessionId: spec.sessionId,
+        ...(proxy?.active ? { proxyPort: proxy.port } : {}),
+      })
+      const env: NodeJS.ProcessEnv = {
+        ...scrubbedEnv(),
+        // The marker lets a confined process know it cannot, for example,
+        // signal its own process group — that permission belongs to the harness.
+        RBU_SANDBOX_ACTIVE: '1',
+      }
+      if (policy.net.mode === 'proxy' && proxy?.active) Object.assign(env, proxy.env())
+
       const result = await ctx.sandbox.execute({
         runId: randomUUID(),
         command: spec.command,
         cwd: spec.cwd,
         policy,
-        // Sandboxed commands get the same scrubbed environment as direct ones:
-        // Seatbelt does not restrict `env`, so the harness token would
-        // otherwise be readable via `echo $RBU_TOKEN`. The marker lets a
-        // confined process know it cannot, for example, signal its own process
-        // group — that permission belongs to the harness, not to the sandbox.
-        env: { ...scrubbedEnv(), RBU_SANDBOX_ACTIVE: '1' },
+        env,
         timeoutMs: spec.timeoutMs,
         maxOutputBytes: spec.maxOutputBytes,
         signal: spec.signal,
         sessionId: spec.sessionId,
-        ...(relax.length ? { relax } : {}),
       })
       const denials = denialService.classify(result, {
         command: spec.command,
         sessionId: spec.sessionId,
         cwd: spec.cwd,
       })
-      return { result, denials, policy }
+      return { result, denials }
     }
 
     ctx.effect(() => ctx.shell.register({
@@ -108,22 +151,42 @@ export default class SandboxedShell {
       sandboxed: true,
       async run(spec: ShellRunSpec): Promise<ShellRunResult> {
         // The settings switch is evaluated per run, so enabling or disabling
-        // the sandbox never needs a restart. Approvals stay in the tool layer.
-        const settings = ctx.get('settings', false) as SettingsService | undefined
-        const sandboxOff = typeof settings?.sandboxEnabled === 'function' && !settings.sandboxEnabled()
+        // the sandbox never needs a restart.
+        const current = settings()
+        const sandboxOff = (ctx.get('settings', false) as SettingsService | undefined)?.sandboxEnabled() === false
         if (sandboxOff) {
-          const direct = ctx.shell.executor('direct')
-          if (!direct) {
-            throw new ShellUnavailableError('sandbox is disabled but no direct executor is registered')
-          }
-          const result = await direct.run(spec)
-          return { ...result, executor: 'direct', sandboxed: false }
+          return runDirect(spec, '沙箱已关闭，命令直连执行。')
         }
 
-        const attempt = spec.attempt ?? 1
+        const excluded = current?.excludedCommands
+          ?? [...DEFAULT_EXCLUDED_COMMANDS, ...(config.excludedCommands ?? [])]
+        const requested = spec.sandbox === false
+        const excludedCommand = !requested && isExcludedCommand(spec.command, excluded)
+        if (requested || excludedCommand) {
+          if (current?.allowUnsandboxedCommands === false) {
+            return {
+              content: '[sandbox] 该命令需要不经沙箱执行，但设置已禁止（allowUnsandboxedCommands=false）。请在 设置 → 沙箱 中允许，或改用沙箱内可完成的命令。',
+              exitCode: 1,
+              signal: null,
+              durationMs: 0,
+              truncated: false,
+              denials: [],
+              executor: 'sandbox',
+              sandboxed: true,
+            }
+          }
+          return runDirect(
+            spec,
+            requested ? '按请求未经沙箱执行。' : '该命令在排除列表中，未经沙箱执行。',
+          )
+        }
+
+        const startedAt = Date.now()
         const first = await runOnce(spec)
+        const proxy = ctx.get('sandboxProxy', false) as SandboxProxyService | undefined
+        const proxyNote = renderProxyDenials(proxy?.deniedSince(startedAt) ?? [])
         const base: ShellRunResult = {
-          content: renderOutput(outputOf(first.result), first.result.exitCode, first.result.signal, first.result.durationMs),
+          content: renderOutput(outputOf(first.result), first.result.exitCode, first.result.signal, first.result.durationMs) + proxyNote,
           exitCode: first.result.exitCode,
           signal: first.result.signal,
           durationMs: first.result.durationMs,
@@ -132,60 +195,15 @@ export default class SandboxedShell {
           executor: 'sandbox',
           sandboxed: true,
         }
-        // A zero exit code means the command as a whole was not stopped, so
-        // there is nothing to escalate. Start-up noise (dyld probing
-        // /dev/dtracehelper) is filtered out earlier, but a denial *inside* a
-        // successful command (e.g. `git status | head -5`) must still be
-        // surfaced as a diagnostic: a silent partial failure reads as success.
         if (!first.denials.length) return base
         if (first.result.exitCode === 0) {
           return { ...base, content: `${base.content}\n${renderDenialNotice(first.denials)}` }
         }
-
-        // Not the same as "failed": the sandbox blocked it. Always surfacing
-        // this block keeps the model from retrying the same path forever.
-        const denial = first.denials[0]
-        const escalation = ctx.get('escalation', false) as EscalationService | undefined
-        // The session switch lives on the escalation service, so the panel and
-        // the executor can never disagree about whether escalation is on.
-        const mode = escalation?.modeFor(spec.sessionId) ?? escalate
-        if (mode === 'never' || !escalation) {
-          return {
-            ...base,
-            content: `${base.content}\n${renderDenials(first.denials)}`,
-          }
-        }
-
-        const outcome = await escalation.escalate(denial, {
-          sessionId: spec.sessionId,
-          attempt,
-          signal: spec.signal,
-        })
-        if (!outcome.approved || !outcome.exemption) {
-          return {
-            ...base,
-            content: `${base.content}\n${renderDenials(first.denials, { decision: outcome.reason, attempt })}`,
-          }
-        }
-
-        const second = await runOnce(spec, [outcome.exemption])
-        const relaxed = describeExemption(outcome.exemption)
-        const content = renderOutput(outputOf(second.result), second.result.exitCode, second.result.signal, second.result.durationMs)
-        const settled = renderDenials(second.denials, { decision: 'approved', attempt: attempt + 1 })
         return {
-          content: [
-            `[sandbox] 本次放宽：${relaxed}（仅此一次，未写入策略）`,
-            content,
-            second.denials.length && second.result.exitCode !== 0 ? settled : '',
-          ].filter(Boolean).join('\n'),
-          exitCode: second.result.exitCode,
-          signal: second.result.signal,
-          durationMs: second.result.durationMs,
-          truncated: second.result.truncated,
-          denials: second.denials,
-          executor: 'sandbox',
-          sandboxed: true,
-          relaxed: [relaxed],
+          ...base,
+          content: `${base.content}\n${renderDenials(first.denials, {
+            allowUnsandboxed: current?.allowUnsandboxedCommands !== false,
+          })}`,
         }
       },
     }, { default: true }), 'shell.sandboxed')
@@ -194,5 +212,5 @@ export default class SandboxedShell {
 
 export const meta = {
   title: '沙箱 Shell',
-  description: '经 Seatbelt 执行命令，并把拒绝升级为审批。',
+  description: '沙箱内命令免审批执行；越过沙箱时经审批走直连。',
 }

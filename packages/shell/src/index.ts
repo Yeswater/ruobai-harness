@@ -31,6 +31,12 @@ export interface ShellRunSpec {
   signal?: AbortSignal
   /** Attempt counter, 1 for the first run. Escalation bumps it. */
   attempt?: number
+  /**
+   * False asks for execution outside the sandbox (approved by the tool layer
+   * first). The executor decides whether that is allowed; it is not an
+   * executor name.
+   */
+  sandbox?: boolean
 }
 
 /**

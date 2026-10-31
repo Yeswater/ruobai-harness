@@ -5,6 +5,7 @@ import { isContextOverflow, type PrefixDivergence } from '@ruobai/context'
 import type { AttachmentMeta, TurnStats } from '@ruobai/chat-protocol'
 import type { ContentPart, Message, ModelRequest, StopReason, ToolCallPart, Usage } from '@ruobai/llm'
 import type { ModeDefinition } from '@ruobai/modes'
+import type { ToolDefinition } from '@ruobai/tools'
 import type { SessionRecord } from '@ruobai/session'
 
 export type TurnEndReason = 'done' | 'stopped' | 'error' | 'max-steps'
@@ -122,24 +123,46 @@ export class AgentService extends Service {
   static inject = ['llm', 'sessions', 'tools', 'modes', 'context']
 
   static Config: z<Config> = z.object({
-    systemPrompt: z.string().default(
-      'You are ruobai, a concise assistant running inside the ruobai harness. '
-        + 'Use tools when they help, and answer in the user\'s language. '
-        // Independent reads belong in one step (they execute concurrently);
-        // merging unrelated work into one shell line hides failures and loses
-        // per-call attribution.
-        + 'When independent reads or searches can answer the request, issue them together in one step; '
-        + 'keep dependent calls in separate steps instead of chaining unrelated commands into one shell call. '
-        // Scratch files belong in the ignored data directory; a temp file under
-        // src/ is picked up by builds, git status and reviewers.
-        + 'Put temporary or scratch files under .ruobai/scratch/ inside the workspace, never in the source tree. '
-        // Large files are served as line windows; two field reports came from
-        // treating the byte cap as "this file cannot be edited".
-        + 'For files larger than the read cap, page through them with read_file offset/limit; edit_file rewrites the whole file and has a separate, larger cap. '
-        // Reasoning models echo the prompt's language; the UI shows the trace
-        // to a Chinese-reading user, so ask for it explicitly.
-        + 'Write your reasoning in Simplified Chinese (中文) even when the request is in another language.',
-    ),
+    systemPrompt: z.string().default([
+      'You are ruobai, an agent running inside the ruobai harness.',
+      'Use tools instead of guessing, and answer in the user\'s language.',
+      // Reasoning models echo the prompt's language; the UI shows the trace to
+      // a Chinese-reading user, so ask for it explicitly.
+      'Write your reasoning in Simplified Chinese (中文) even when the request is in another language.',
+      '',
+      '## Working style',
+      '- Keep each reasoning block short: name the next concrete check, not a survey of hypothetical paths.',
+      '- Do not describe code you have not read. Read it, then speak.',
+      '- For a reported bug, reproduce it before changing code. If the report and the code disagree, say what you observed and ask for the missing repro step instead of exploring every plausible cause.',
+      '- Before editing, state the root cause in one or two sentences and name the files you will change.',
+      '- After each change, run the narrowest check that can fail (targeted test, typecheck, the command under test); run the full suite before declaring the work done.',
+      '- Never call a fix verified without running it. If a check could not run, say so plainly.',
+      '',
+      '## Paths and environment',
+      // The workspace and the file tools are a hard boundary; a session opened
+      // on a temp directory cannot edit the repository it is asked about.
+      '- File tools (read_file, list_dir, glob, grep, edit_file, write_file) resolve paths against the workspace root in the Environment section. Absolute paths are accepted only inside that root; anything outside is rejected.',
+      '- bash starts in the workspace root but is sandboxed. If the target repository is outside the workspace, stop and ask the user to point the session workspace at it. If they instead open the sandbox and tell you to edit in place, bash is the only route: keep the change small and review the diff.',
+      '- Put temporary or scratch files under .ruobai/scratch/ inside the workspace, never in the source tree.',
+      '- For files larger than the read cap, page through them with read_file offset/limit; edit_file rewrites the whole file and has a separate, larger cap.',
+      '',
+      '## Tool choice',
+      '- Read with read_file, list with list_dir, search with grep/glob. Do not use bash cat/sed/head/tail/grep/find/ls to inspect workspace files.',
+      '- Edit with edit_file (one exact occurrence) or write_file (new or whole file). When a file tool can reach the file, never rewrite it through shell redirection, sed or python: checkpoints, diffs and approvals only work through those tools.',
+      '- Run commands, builds, tests and git with bash. Keep one purpose per call; do not chain unrelated commands with && or ; to save a step.',
+      // Independent reads run concurrently in one step; a weaker model that
+      // issues them serially roughly doubles the turn length.
+      '- Batch independent calls: several read_file/grep/glob calls in one step. Keep dependent calls in separate steps and writers serial.',
+      '- Browser: take browser_snapshot for uids, then use browser_click/browser_fill. Use browser_eval only to inspect state, never to click, type or scroll; re-snapshot after the UI changes.',
+      '- Use todo_write when the work takes three or more steps, with one item in progress. Use ask_user when the request has several plausible meanings.',
+      '- Use task (when available) for broad, independent research.',
+      '- Domain tools (Gitee, wiki, memory, contracts, delivery, plan) are not loaded by default. When the task enters one of those domains, call tool_search first; the matching tools become available on the next step.',
+      '',
+      '## Boundaries',
+      '- A sandbox denial that says the resource is not allowed is final: report it and ask the user, never retry with another command or path.',
+      '- Before starting a dev server or long-running process, check whether one is already running; log under .ruobai/scratch, wait briefly instead of sleeping in long blocks, and stop it when done.',
+      '- Do not git commit unless the user asks; this harness offers a commit card when a turn ends.',
+    ].join('\n')),
     maxTokens: z.number().min(1),
     temperature: z.number(),
     provider: z.string(),
@@ -151,6 +174,7 @@ export class AgentService extends Service {
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agents')
+    ctx.effect(() => ctx.tools.register(this.searchTool()), 'agents.tool-search')
     ctx.effect(() => () => {
       for (const controller of this.turns.values()) controller.abort()
       this.turns.clear()
@@ -274,7 +298,7 @@ export class AgentService extends Service {
         signal: controller.signal,
         basePrompt: this.config.systemPrompt,
         modePrompt: mode?.systemPrompt,
-        tools: this.toolsFor(mode, options.denyTools),
+        tools: this.toolsFor(mode, options.denyTools, sessionId),
       })
 
       // `/compact [focus]` is a maintenance gesture: summarize now and end the
@@ -441,7 +465,7 @@ export class AgentService extends Service {
           // only option.
           this.ctx.sessions.append(sessionId, 'agent/decision', {
             chosen: calls.map(call => call.name),
-            available: this.ctx.tools.list().map(tool => tool.name).slice(0, 200),
+            available: this.toolsFor(mode, options.denyTools, sessionId).map(tool => tool.name).slice(0, 200),
             at: completedTime,
           })
         }
@@ -689,7 +713,7 @@ export class AgentService extends Service {
     const record = this.ctx.sessions.get(sessionId)
     if (!record) throw new Error(`unknown session: ${sessionId}`)
 
-    const tools = this.toolsFor(mode, denyTools)
+    const tools = this.toolsFor(mode, denyTools, sessionId)
     const built = await this.ctx.context.build(sessionId, {
       basePrompt: this.config.systemPrompt,
       modePrompt: mode?.systemPrompt,
@@ -790,16 +814,71 @@ export class AgentService extends Service {
     }
   }
 
-  private toolsFor(mode: ModeDefinition | undefined, denyTools?: string[]) {
-    // Permission presets do not filter the offered set: it renders at position
-    // zero of the prompt, so a per-request filter would void the cache. The
-    // registry refuses a disallowed call and approval decides the rest.
-    return this.ctx.tools.list().filter((tool) => {
-      if (!this.ctx.modes.allows(mode?.id, tool.name)) return false
-      if (denyTools?.includes(tool.name)) return false
-      return true
+  /**
+   * The tool catalog for one request. Deferred integration tools stay out
+   * until `tool_search` opens them for this session, or until the mode names
+   * them itself (Ask/Plan list the read-only Gitee tools, Goal adds its
+   * completion tool). Permission presets still do not filter the offered set:
+   * it renders at position zero of the prompt, so a per-request filter would
+   * void the cache. The registry refuses a disallowed call and approval
+   * decides the rest.
+   */
+  private toolsFor(mode: ModeDefinition | undefined, denyTools: string[] | undefined, sessionId: string | undefined) {
+    return this.ctx.tools.offered(sessionId, {
+      allow: name => this.ctx.modes.allows(mode?.id, name),
+      includeDeferred: name => this.ctx.modes.explicit(mode?.id, name),
+      deny: denyTools,
     })
   }
+
+  /**
+   * Load a domain's tools on demand. The schema is small; the payoff is that
+   * Forge, wiki, memory, contract and delivery tools no longer render in
+   * every step of a coding task.
+   */
+  private searchTool(): ToolDefinition {
+    return {
+      name: 'tool_search',
+      description: [
+        'Load tools that are not in the current tool set.',
+        'Search by tool name, group prefix or an English keyword:',
+        'gitee (repositories, issues, pull requests, releases), wiki (knowledge base),',
+        'memory (long-term memory), contract (acceptance contract), delivery (handoff),',
+        'plan (submit a plan), browser (resize/close), skill (propose a skill).',
+        'Matching tools become available on the next step of this turn. Chinese keywords',
+        'such as 仓库/问题/知识库/记忆/契约/交付/计划/浏览器 are also matched.',
+      ].join(' '),
+      readOnly: true,
+      // Its result decides what the next step should call; run it before any
+      // sibling so the step's intent is not split across two turns.
+      blocksBatch: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Tool name, group prefix, or keyword, e.g. "gitee issue".' },
+        },
+        required: ['query'],
+      },
+      execute: (args, run) => {
+        const query = String(args?.query ?? '').trim()
+        const record = run.sessionId ? this.ctx.sessions.get(run.sessionId) : undefined
+        const modeId = record?.meta.mode
+        const matches = this.ctx.tools.searchDeferred(query, name => this.ctx.modes.allows(modeId, name))
+        if (!matches.length) {
+          const groups = [...new Set(this.ctx.tools.searchDeferred('')
+            .map(tool => tool.name.split('_')[0]))].sort()
+          return `No matching tools for "${query}". Available groups: ${groups.join(', ')}.`
+        }
+        const opened = this.ctx.tools.activate(run.sessionId, matches.map(tool => tool.name))
+        const names = matches.map(tool => tool.name).join(', ')
+        if (!run.sessionId) return `Matching tools: ${names}.`
+        return opened.length
+          ? `Activated: ${opened.join(', ')}. They are available from the next step.`
+          : `${names} are already available.`
+      },
+    }
+  }
+
 
   private modelFor(record: SessionRecord) {
     const settings = this.ctx.get('settings', false) as

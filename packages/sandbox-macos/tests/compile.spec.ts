@@ -182,6 +182,30 @@ describe('compileProfile', () => {
     expect(compiled.text).toContain('(allow network-outbound (literal "/private/var/run/mDNSResponder"))')
   })
 
+  it('routes proxy mode through the loopback port using a hostname Seatbelt accepts', () => {
+    const compiled = compileProfile({
+      ...policy({}, { mode: 'proxy', allow: [] }),
+      platform: { proxyPort: 7890 },
+    })
+    expect(compiled.text).toContain('(allow network-outbound (remote tcp "localhost:7890"))')
+    // A numeric address makes sandbox-exec reject the whole profile (A28).
+    expect(compiled.text).not.toContain('127.0.0.1:7890')
+  })
+
+  it('falls back to deny when proxy mode has no port', () => {
+    const compiled = compileProfile(policy({}, { mode: 'proxy', allow: [] }))
+    expect(compiled.warnings.join(' ')).toMatch(/proxy mode without platform.proxyPort/)
+    expect(compiled.text).toContain('(deny network*)')
+  })
+
+  it('opens localhost binding and connections when the policy allows local servers', () => {
+    const compiled = compileProfile(policy({}, { mode: 'deny', allow: [], allowLocalBinding: true }))
+    expect(compiled.text).toContain('(allow network-outbound (remote tcp "localhost:*"))')
+    expect(compiled.text).toContain('(allow network-bind (local ip "localhost:*"))')
+    expect(compiled.text).toContain('(allow network-inbound (local ip "localhost:*"))')
+    expect(compiled.text).toContain('(deny network*)')
+  })
+
   it('accepts localhost as an enforceable host', () => {
     const compiled = compileProfile(policy({}, {
       mode: 'allowlist',

@@ -2,7 +2,9 @@ import { useState } from 'react'
 
 type TokenUnit = 'K' | 'M'
 
-const FACTORS: Record<TokenUnit, number> = { K: 1024, M: 1024 * 1024 }
+// Token counts are decimal, not binary: 1M means 1,000,000 exactly, which is
+// what vendors publish and what the context meter compares against.
+const FACTORS: Record<TokenUnit, number> = { K: 1_000, M: 1_000_000 }
 
 interface TokenAmountInputProps {
   value?: number

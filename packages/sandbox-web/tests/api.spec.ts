@@ -9,7 +9,7 @@ import SandboxService from '@ruobai/sandbox'
 import DenialService from '@ruobai/sandbox-denial'
 import SandboxPolicyService from '@ruobai/sandbox-policy'
 import EscalationService from '@ruobai/sandbox-escalation'
-import { createHandler, type SandboxRequest, type StatusResponse } from '../src/index.ts'
+import { createHandler, sandboxPatch, type SandboxRequest, type StatusResponse } from '../src/index.ts'
 
 /**
  * The panel is exercised through `createHandler`, not over HTTP.
@@ -92,6 +92,32 @@ async function setup(options: SetupOptions = {}) {
 
   return { ctx, root, handler: createHandler(ctx), denial: ctx.denial }
 }
+
+describe('sandbox settings patch', () => {
+  it('accepts domains, toggles and write roots', () => {
+    expect(sandboxPatch({
+      enabled: true,
+      autoAllowBashIfSandboxed: false,
+      allowUnsandboxedCommands: true,
+      excludedCommands: ['docker', 'docker'],
+      network: { allowedDomains: ['example.com', '*.example.com', 'host.test:8080'], allowLocalBinding: false },
+      filesystem: { allowWrite: ['~/.cache/probe'] },
+    })).toEqual({
+      enabled: true,
+      autoAllowBashIfSandboxed: false,
+      allowUnsandboxedCommands: true,
+      excludedCommands: ['docker'],
+      network: { allowedDomains: ['example.com', '*.example.com', 'host.test:8080'], allowLocalBinding: false },
+      filesystem: { allowWrite: ['~/.cache/probe'] },
+    })
+  })
+
+  it('rejects malformed domains and non-boolean switches', () => {
+    expect(() => sandboxPatch({ network: { allowedDomains: ['https://example.com'] } })).toThrow('invalid domain')
+    expect(() => sandboxPatch({ enabled: 'yes' })).toThrow('must be a boolean')
+    expect(() => sandboxPatch({ network: { allowedDomains: 'example.com' } })).toThrow('must be an array')
+  })
+})
 
 describe('GET /api/sandbox/status', () => {
   it('reports an unavailable sandbox instead of pretending it works', async () => {

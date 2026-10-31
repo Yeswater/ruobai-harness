@@ -419,6 +419,26 @@ export function RefreshIcon({ size }: IconProps) {
   )
 }
 
+export function GlobeIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.4 2.4 3.7 5.4 3.7 9s-1.3 6.6-3.7 9c-2.4-2.4-3.7-5.4-3.7-9S9.6 5.4 12 3Z" />
+    </svg>
+  )
+}
+
+export function WalletIcon({ size }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a3 3 0 0 1 3 3v9a2 2 0 0 1-2 2H5.5A2.5 2.5 0 0 1 3 16.5Z" />
+      <path d="M3 8h15" />
+      <path d="M16 12.5h2.5" />
+    </svg>
+  )
+}
+
 export function SyncIcon({ size }: IconProps) {
   return (
     <svg {...base(size)}>

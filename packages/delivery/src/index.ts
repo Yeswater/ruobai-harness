@@ -195,6 +195,8 @@ function latestClaim(claims: DeliveryClaim[], acceptanceId: string): DeliveryCla
 function claimTool(ctx: Context): ToolDefinition {
   return {
     name: 'delivery_claim',
+    defer: true,
+    keywords: ['delivery', 'handoff', 'acceptance', '交付', '交接', '验收'],
     description: [
       'Claim that one or more acceptance items are met, citing the tool calls that prove it.',
       'Evidence points at a tool/result seq; the verdict is recomputed from the log, so a made-up seq fails.',
@@ -251,6 +253,8 @@ function claimTool(ctx: Context): ToolDefinition {
 function waiveTool(ctx: Context): ToolDefinition {
   return {
     name: 'delivery_waive',
+    defer: true,
+    keywords: ['delivery', 'handoff', 'acceptance', '交付', '交接', '验收'],
     description: [
       'Record the user\'s explicit waiver for a manual acceptance item (for example "the customer signed off verbally").',
       'Only manual items can be waived; automatic items need traceable evidence instead.',

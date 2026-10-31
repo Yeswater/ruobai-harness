@@ -125,6 +125,8 @@ const SKILL_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 function skillProposeTool(ctx: Context): ToolDefinition {
   return {
     name: 'skill_propose',
+    defer: true,
+    keywords: ['skill', 'propose', '技能', '提议', '流程'],
     description: 'Draft a SKILL.md from a recurring procedure or memory. Writes a proposal only; a person must accept it.',
     parameters: {
       type: 'object',

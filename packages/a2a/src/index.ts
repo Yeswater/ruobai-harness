@@ -1,5 +1,6 @@
 import { unwatchFile, watchFile } from 'node:fs'
 import { Service, type Context } from '@ruobai/cordis'
+import type {} from '@ruobai/net'
 import z from '@ruobai/schemastery'
 import { fetchAgentCard } from './card.ts'
 import {
@@ -40,7 +41,7 @@ declare module '@ruobai/cordis' {
  * Card, and registers one tool per agent. Reloads when the config changes.
  */
 export class A2aService extends Service {
-  static inject = ['tools']
+  static inject = ['tools', 'net']
 
   static Config: z<Config> = z.object({
     workspaceRoot: z.string(),
@@ -116,6 +117,7 @@ export class A2aService extends Service {
           timeoutMs: this.config.cardTimeoutMs ?? 15_000,
           signal: controller.signal,
           allowPrivateHosts: agent.allowPrivateHosts,
+          fetch: this.ctx.net.fetch,
         })
         if (generation !== this.generation) return
         const tool = createA2aTool(agent, card)

@@ -369,11 +369,13 @@ describe('openai adapter', () => {
           res.write('data: [DONE]\n\n')
           res.end()
         }
-      }, 30)
+      }, 45)
     })
 
     // The idle timer resets on every chunk; a slow stream is not a stalled one.
-    const chunks = await collect(baseUrl, { idleTimeoutMs: 80, maxRetries: 0 })
+    // 45ms chunks vs a 130ms window keeps the margin meaningful (the stream
+    // outlives the timeout) without racing the rest of the suite.
+    const chunks = await collect(baseUrl, { idleTimeoutMs: 130, maxRetries: 0 })
 
     expect(chunks.filter(chunk => chunk.type === 'text-delta')).toHaveLength(4)
     expect(chunks.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })

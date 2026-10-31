@@ -29,6 +29,8 @@ import HooksWeb from '@ruobai/hooks-web'
 import LintService from '@ruobai/lint'
 import LlmService from '@ruobai/llm'
 import LlmCatalog from '@ruobai/llm-catalog'
+import LlmBalance from '@ruobai/llm-balance'
+import LlmBalanceWeb from '@ruobai/llm-balance-web'
 import MemoryService from '@ruobai/memory'
 import MemoryDistill from '@ruobai/memory-distill'
 import MemoryWeb from '@ruobai/memory-web'
@@ -50,6 +52,7 @@ import PreviewWeb from '@ruobai/preview-web'
 import SessionService from '@ruobai/session'
 import SessionExport from '@ruobai/session-export'
 import SecretsService from '@ruobai/secrets'
+import NetService from '@ruobai/net'
 import SettingsService from '@ruobai/settings'
 import ShellService from '@ruobai/shell'
 import DirectShell from '@ruobai/shell-direct'
@@ -129,6 +132,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(FsTools, { root: process.cwd() }))
   await mount(ctx.plugin(BashTools, { root: process.cwd() }))
   await mount(ctx.plugin(SettingsService, { path: join(dir, 'settings.json') }))
+  // Tests never configure a proxy; requests stay direct.
+  await mount(ctx.plugin(NetService))
   // File backend: tests must never touch the developer's login keychain.
   await mount(ctx.plugin(SecretsService, { provider: 'file', path: join(dir, 'secrets.json') }))
   // Deterministic tests: ignore ambient keys and the seeded provider.
@@ -215,6 +220,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(PreviewWeb))
   await mount(ctx.plugin(ChatService))
   await mount(ctx.plugin(LlmCatalog))
+  await mount(ctx.plugin(LlmBalance))
 
   await mount(ctx.plugin(WebServer, { port: 0, host: '127.0.0.1', ...options.web }))
   await mount(ctx.plugin(Trajectory))
@@ -228,6 +234,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   await mount(ctx.plugin(GiteeWeb))
   await mount(ctx.plugin(CheckpointsWeb))
   await mount(ctx.plugin(SettingsWeb))
+  await mount(ctx.plugin(LlmBalanceWeb))
   await mount(ctx.plugin(SkillsWeb))
   await mount(ctx.plugin(MemoryWeb))
   await mount(ctx.plugin(WikiWeb))

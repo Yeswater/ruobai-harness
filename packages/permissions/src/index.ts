@@ -1,9 +1,39 @@
 import { Service, type Context } from '@ruobai/cordis'
+import { DEFAULT_EXCLUDED_COMMANDS, isExcludedCommand } from '@ruobai/sandbox'
 import type { PermissionMode } from '@ruobai/settings'
 import type { ToolDefinition } from '@ruobai/tools'
 import type {} from '@ruobai/session'
 
 export type { PermissionMode } from '@ruobai/settings'
+
+export interface SandboxApprovalSettings {
+  enabled?: boolean
+  autoAllowBashIfSandboxed?: boolean
+  excludedCommands?: string[]
+}
+
+/**
+ * A bash command that stays inside the sandbox is its own security decision;
+ * prompting on top of it is what makes the sandbox feel unusable.
+ */
+export function autoAllowSandboxedBash(input: {
+  sandbox?: SandboxApprovalSettings
+  command?: string
+  args?: unknown
+  sandboxAvailable: boolean
+}): boolean {
+  const { sandbox } = input
+  if (!input.sandboxAvailable) return false
+  if (sandbox?.enabled === false) return false
+  if (sandbox?.autoAllowBashIfSandboxed === false) return false
+  if (input.args && typeof input.args === 'object'
+    && (input.args as { dangerouslyDisableSandbox?: unknown }).dangerouslyDisableSandbox === true) {
+    return false
+  }
+  const excluded = sandbox?.excludedCommands ?? DEFAULT_EXCLUDED_COMMANDS
+  if (input.command && isExcludedCommand(input.command, excluded)) return false
+  return true
+}
 
 export const PERMISSION_MODES: readonly PermissionMode[] = [
   'read-only',
@@ -67,6 +97,7 @@ export class PermissionService extends Service {
     sessionId: string | undefined,
     toolName: string | undefined,
     subject?: ApprovalSubject,
+    args?: unknown,
   ): 'allow' | 'deny' | undefined {
     const tool = toolName
       ? (this.ctx.get('tools', false) as { get(name: string): ToolDefinition | undefined } | undefined)
@@ -76,6 +107,21 @@ export class PermissionService extends Service {
     if (mode === 'read-only') return tool?.readOnly ? 'allow' : 'deny'
     if (mode === 'full-access' || mode === 'auto-review') return 'allow'
     if (mode === 'workspace-write' && subject?.kind === 'path') return 'allow'
+
+    if (toolName === 'bash' && subject?.kind === 'command') {
+      const settings = this.ctx.get('settings', false) as
+        | { get(): { sandbox?: SandboxApprovalSettings } }
+        | undefined
+      const sandbox = this.ctx.get('sandbox', false) as
+        | { provider?(): { available?: boolean } | undefined }
+        | undefined
+      if (autoAllowSandboxedBash({
+        sandbox: settings?.get().sandbox,
+        command: subject.value,
+        args,
+        sandboxAvailable: Boolean(sandbox?.provider?.()),
+      })) return 'allow'
+    }
     return undefined
   }
 }
